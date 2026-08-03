@@ -47,11 +47,11 @@ function main(argv = process.argv.slice(2)) {
   run(process.execPath, ["scripts/validate-updater-config.mjs", updaterConfigPath]);
 
   // Step 3: 使用 overlay 配置执行 tauri build，透传额外参数
+  // npm run tauri 已经是 tauri CLI 入口，不需要再传 tauri 子命令
   const tauriArgs = [
     "run-script",
     "tauri",
     "--",
-    "tauri",
     "build",
     "--config",
     updaterConfigPath,
