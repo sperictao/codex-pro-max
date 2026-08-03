@@ -58,7 +58,8 @@ function main(argv = process.argv.slice(2)) {
     ...normalizeForwardedArgs(argv),
   ];
 
-  run("npm", tauriArgs);
+  // Windows 上 spawnSync 找不到 npm，需要 shell 模式
+  run("npm", tauriArgs, { shell: true });
 }
 
 const isDirectExecution =
