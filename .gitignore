@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+release-assets/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Environment and local overrides
+.env
+.env.*
+*.local
+!.env.example
+!.env.*.example
+
+# TypeScript and tool caches
+*.tsbuildinfo
+.cache/
+.vite/
+
+# Editor and IDE
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Tauri
+src-tauri/target/
+src-tauri/gen/
+src-tauri/tauri.conf.updater.prod.json

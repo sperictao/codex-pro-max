@@ -1,0 +1,13 @@
+{
+  "bundle": {
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "REPLACE_WITH_MINISIGN_PUBKEY",
+      "endpoints": [
+        "https://github.com/chuspeeism/dashi-taskboard-launcher/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}
