@@ -18,7 +18,7 @@ if (!pubkey || pubkey.includes("REPLACE_WITH")) {
   process.exit(1);
 }
 
-const repoSlug = process.env.TAURI_UPDATER_REPO || "chuspeeism/dashi-taskboard-launcher";
+const repoSlug = process.env.TAURI_UPDATER_REPO || "sperictao/dashi-taskboard-launcher";
 const endpoint =
   process.env.TAURI_UPDATER_ENDPOINT ||
   `https://github.com/${repoSlug}/releases/latest/download/latest.json`;

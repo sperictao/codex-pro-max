@@ -36,7 +36,7 @@ export TAURI_UPDATER_PUBKEY='YOUR_MINISIGN_PUBKEY'
 3. 如需覆盖默认 GitHub Release 更新地址，可额外设置：
 
 ```bash
-export TAURI_UPDATER_ENDPOINT='https://github.com/chuspeeism/dashi-taskboard-launcher/releases/latest/download/latest.json'
+export TAURI_UPDATER_ENDPOINT='https://github.com/sperictao/dashi-taskboard-launcher/releases/latest/download/latest.json'
 ```
 
 4. 构建时会自动生成生产 overlay，并先校验 updater 配置：
@@ -72,7 +72,7 @@ npm run build:updater
 - 默认更新源为 GitHub Release 的 `latest.json`：
 
 ```text
-https://github.com/chuspeeism/dashi-taskboard-launcher/releases/latest/download/latest.json
+https://github.com/sperictao/dashi-taskboard-launcher/releases/latest/download/latest.json
 ```
 
 - 若使用非 HTTPS 地址，release 构建会被 updater 插件拦截。
