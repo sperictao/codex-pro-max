@@ -290,7 +290,7 @@ async fn run_taskctl(
     if output.status.success() {
         Ok(stdout)
     } else {
-        Err(stderr.is_empty().then(|| stdout).unwrap_or(stderr))
+        Err(if stderr.is_empty() { stdout } else { stderr })
     }
 }
 
