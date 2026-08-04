@@ -138,6 +138,12 @@ impl ProcessManager {
                         .arg(pid.to_string())
                         .output();
                 }
+                #[cfg(windows)]
+                {
+                    let _ = std::process::Command::new("taskkill")
+                        .args(["/PID", &pid.to_string(), "/T", "/F"])
+                        .output();
+                }
             }
             // 等待退出，超时则强制 kill
             match tokio::time::timeout(
@@ -236,6 +242,12 @@ impl ProcessManager {
                     let _ = std::process::Command::new("kill")
                         .arg("-TERM")
                         .arg(pid.to_string())
+                        .output();
+                }
+                #[cfg(windows)]
+                {
+                    let _ = std::process::Command::new("taskkill")
+                        .args(["/PID", &pid.to_string(), "/T", "/F"])
                         .output();
                 }
             }

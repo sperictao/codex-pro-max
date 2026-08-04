@@ -38,7 +38,20 @@ pub struct LauncherConfig {
 }
 
 fn default_codex_path() -> String {
-    "/Applications/ChatGPT.app".to_string()
+    #[cfg(target_os = "macos")]
+    {
+        "/Applications/ChatGPT.app".to_string()
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // Windows 上 Codex 桌面应用常见安装路径
+        let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
+        format!("{}\\Programs\\ChatGPT\\ChatGPT.exe", local_app_data)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "/usr/bin/chatgpt".to_string()
+    }
 }
 
 fn default_taskboard_port() -> u16 {
@@ -72,11 +85,27 @@ impl Default for LauncherConfig {
     }
 }
 
+/// 跨平台获取用户主目录
+fn home_dir() -> Result<PathBuf, String> {
+    // Unix 使用 HOME，Windows 使用 USERPROFILE
+    #[cfg(unix)]
+    {
+        std::env::var("HOME")
+            .map(PathBuf::from)
+            .map_err(|_| "无法获取 HOME 环境变量".to_string())
+    }
+    #[cfg(windows)]
+    {
+        std::env::var("USERPROFILE")
+            .map(PathBuf::from)
+            .map_err(|_| "无法获取 USERPROFILE 环境变量".to_string())
+    }
+}
+
 /// 获取配置文件路径
 pub fn config_file_path() -> Result<PathBuf, String> {
-    let home = std::env::var("HOME")
-        .map_err(|_| "无法获取 HOME 环境变量".to_string())?;
-    Ok(PathBuf::from(home).join(".dashi-launcher").join("config.json"))
+    let home = home_dir()?;
+    Ok(home.join(".dashi-launcher").join("config.json"))
 }
 
 /// 加载配置文件，不存在则返回默认值

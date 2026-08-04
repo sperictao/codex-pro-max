@@ -208,6 +208,18 @@ async fn stop_injector(state: State<'_, AppState>) -> Result<(), String> {
     state.pm.stop_injector().await
 }
 
+/// 跨平台获取用户主目录
+fn home_dir() -> Result<String, String> {
+    #[cfg(unix)]
+    {
+        std::env::var("HOME").map_err(|_| "无法获取 HOME 环境变量".to_string())
+    }
+    #[cfg(windows)]
+    {
+        std::env::var("USERPROFILE").map_err(|_| "无法获取 USERPROFILE 环境变量".to_string())
+    }
+}
+
 /// 在浏览器中打开 Taskboard
 #[tauri::command]
 async fn open_taskboard(config: LauncherConfig) -> Result<(), String> {
@@ -219,45 +231,58 @@ async fn open_taskboard(config: LauncherConfig) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("无法打开浏览器: {}", e))?;
     }
+    #[cfg(windows)]
+    {
+        std::process::Command::new("cmd")
+            .args(["/c", "start", "", &url])
+            .spawn()
+            .map_err(|e| format!("无法打开浏览器: {}", e))?;
+    }
     Ok(())
 }
 
 /// 安装 Codex Skill（创建符号链接）
 #[tauri::command]
 async fn install_skill(taskboard_path: String) -> Result<String, String> {
-    let home = std::env::var("HOME")
-        .map_err(|_| "无法获取 HOME".to_string())?;
-    let skill_source = format!("{}/skills/manage-taskboard", taskboard_path);
-    let skill_target = format!("{}/.codex/skills/manage-taskboard", home);
+    let home = home_dir()?;
+    let skill_source = std::path::Path::new(&taskboard_path).join("skills/manage-taskboard");
+    let skill_target = std::path::Path::new(&home).join(".codex/skills/manage-taskboard");
 
     // 检查源路径
-    if !std::path::Path::new(&skill_source).exists() {
-        return Err(format!("Skill 源路径不存在: {}", skill_source));
+    if !skill_source.exists() {
+        return Err(format!("Skill 源路径不存在: {}", skill_source.display()));
     }
 
     // 创建目标目录
-    let skills_dir = format!("{}/.codex/skills", home);
+    let skills_dir = std::path::Path::new(&home).join(".codex/skills");
     std::fs::create_dir_all(&skills_dir)
         .map_err(|e| format!("创建 skills 目录失败: {}", e))?;
 
     // 如果已存在则先删除
-    if std::path::Path::new(&skill_target).exists() {
-        #[cfg(unix)]
-        {
-            std::fs::remove_file(&skill_target)
-                .or_else(|_| std::fs::remove_dir_all(&skill_target))
-                .map_err(|e| format!("删除旧链接失败: {}", e))?;
-        }
+    if skill_target.exists() {
+        std::fs::remove_file(&skill_target)
+            .or_else(|_| std::fs::remove_dir_all(&skill_target))
+            .map_err(|e| format!("删除旧链接失败: {}", e))?;
     }
 
-    // 创建符号链接
+    // 创建符号链接（跨平台）
     #[cfg(unix)]
     {
         std::os::unix::fs::symlink(&skill_source, &skill_target)
             .map_err(|e| format!("创建符号链接失败: {}", e))?;
     }
+    #[cfg(windows)]
+    {
+        // Windows 上根据源类型选择 symlink_file 或 symlink_dir
+        let result = if skill_source.is_dir() {
+            std::os::windows::fs::symlink_dir(&skill_source, &skill_target)
+        } else {
+            std::os::windows::fs::symlink_file(&skill_source, &skill_target)
+        };
+        result.map_err(|e| format!("创建符号链接失败: {}（可能需要管理员权限或开启开发者模式）", e))?;
+    }
 
-    Ok(format!("Skill 已安装到 {}", skill_target))
+    Ok(format!("Skill 已安装到 {}", skill_target.display()))
 }
 
 /// 运行 taskctl 命令
