@@ -39,7 +39,7 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "vendor/dashi-taskboard"
+      "../vendor/dashi-taskboard"
     ],
     "macOS": {
       "hardenedRuntime": true,
