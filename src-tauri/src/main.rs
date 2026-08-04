@@ -14,6 +14,18 @@ pub struct AppState {
     pub pm: Arc<ProcessManager>,
 }
 
+/// 获取内置 taskboard 路径（打包后在 resource_dir/vendor/dashi-taskboard）
+#[tauri::command]
+fn get_bundled_taskboard_path(app: tauri::AppHandle) -> Option<String> {
+    let resource_path = app.path().resource_dir().ok()?;
+    let bundled = resource_path.join("vendor").join("dashi-taskboard");
+    if bundled.exists() {
+        Some(bundled.to_string_lossy().to_string())
+    } else {
+        None
+    }
+}
+
 /// 加载配置
 #[tauri::command]
 async fn load_config() -> Result<LauncherConfig, String> {
@@ -375,6 +387,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            get_bundled_taskboard_path,
             load_config,
             save_config,
             validate_taskboard_path,

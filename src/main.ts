@@ -1,6 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getVersion } from "@tauri-apps/api/app";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openUrl } from "@tauri-apps/plugin-shell";
+import { check } from "@tauri-apps/plugin-updater";
 
 // ============ 类型定义 ============
 interface LauncherConfig {
@@ -21,14 +24,24 @@ interface ProcessInfo {
   message: string;
 }
 
+interface UpdaterConfigHealth {
+  configured: boolean;
+  message: string;
+}
+
+type ThemeMode = "light" | "dark" | "system";
+
 // ============ 全局状态 ============
-let config: LauncherConfig | null = null;
 let statusPolling: ReturnType<typeof setInterval> | null = null;
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-void statusPolling;
+
+const themeLabels: Record<ThemeMode, string> = {
+  light: "亮色",
+  dark: "暗色",
+  system: "系统",
+};
 
 // ============ Toast 通知 ============
-function toast(message: string, type: "success" | "error" | "info" = "info") {
+function toast(message: string, type: "success" | "error" | "info" = "info"): void {
   const container = document.getElementById("toast-container")!;
   const el = document.createElement("div");
   el.className = `toast ${type}`;
@@ -41,37 +54,65 @@ function toast(message: string, type: "success" | "error" | "info" = "info") {
   }, 3000);
 }
 
-// ============ 配置管理 ============
-async function loadConfig(): Promise<LauncherConfig> {
-  const cfg = await invoke<LauncherConfig>("load_config");
-  config = cfg;
-  return cfg;
+// ============ 主题管理 ============
+function getStoredTheme(): ThemeMode {
+  const stored = localStorage.getItem("theme");
+  if (stored === "light" || stored === "dark" || stored === "system") {
+    return stored;
+  }
+  return "system";
 }
 
-async function saveConfig() {
-  if (!config) return;
-  try {
-    await invoke("save_config", { config });
-    toast("配置已保存", "success");
-  } catch (e) {
-    toast(`保存失败: ${e}`, "error");
+function applyTheme(mode: ThemeMode): void {
+  const html = document.documentElement;
+  const isDark =
+    mode === "dark" ||
+    (mode === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+
+  if (isDark) {
+    html.classList.add("dark");
+  } else {
+    html.classList.remove("dark");
+  }
+
+  const label = document.getElementById("theme-label");
+  if (label) {
+    label.textContent = themeLabels[mode];
   }
 }
 
-function fillConfigUI(cfg: LauncherConfig) {
+function toggleTheme(): void {
+  const current = getStoredTheme();
+  const next: ThemeMode =
+    current === "light" ? "dark" : current === "dark" ? "system" : "light";
+  localStorage.setItem("theme", next);
+  applyTheme(next);
+}
+
+// ============ 配置管理 ============
+function fillConfigUI(cfg: LauncherConfig): void {
   (document.getElementById("cfg-path") as HTMLInputElement).value = cfg.taskboard_path;
   (document.getElementById("cfg-node") as HTMLInputElement).value = cfg.node_path;
   (document.getElementById("cfg-codex") as HTMLInputElement).value = cfg.codex_app_path;
+  (document.getElementById("cfg-host") as HTMLInputElement).value = cfg.taskboard_host;
   (document.getElementById("cfg-port") as HTMLInputElement).value = String(cfg.taskboard_port);
   (document.getElementById("cfg-cdp") as HTMLInputElement).value = String(cfg.cdp_port);
 
-  const toggle = document.getElementById("toggle-mode")!;
+  const modeToggle = document.getElementById("toggle-mode")!;
   if (cfg.separate_window_mode) {
-    toggle.classList.add("active");
+    modeToggle.classList.add("active");
   } else {
-    toggle.classList.remove("active");
+    modeToggle.classList.remove("active");
   }
-  updateToggleLabel();
+  updateModeLabel();
+
+  const autoOpenToggle = document.getElementById("toggle-auto-open")!;
+  if (cfg.auto_open) {
+    autoOpenToggle.classList.add("active");
+  } else {
+    autoOpenToggle.classList.remove("active");
+  }
+  updateAutoOpenLabel();
 }
 
 function readConfigFromUI(): LauncherConfig {
@@ -79,21 +120,30 @@ function readConfigFromUI(): LauncherConfig {
     taskboard_path: (document.getElementById("cfg-path") as HTMLInputElement).value,
     node_path: (document.getElementById("cfg-node") as HTMLInputElement).value,
     codex_app_path: (document.getElementById("cfg-codex") as HTMLInputElement).value,
+    taskboard_host: (document.getElementById("cfg-host") as HTMLInputElement).value || "127.0.0.1",
     taskboard_port: parseInt((document.getElementById("cfg-port") as HTMLInputElement).value) || 47823,
-    taskboard_host: "127.0.0.1",
     cdp_port: parseInt((document.getElementById("cfg-cdp") as HTMLInputElement).value) || 9231,
-    auto_open: true,
+    auto_open: document.getElementById("toggle-auto-open")!.classList.contains("active"),
     separate_window_mode: document.getElementById("toggle-mode")!.classList.contains("active"),
   };
 }
 
-function onConfigChange() {
-  if (!config) return;
-  config = readConfigFromUI();
+function onConfigChange(): void {
   validatePaths();
 }
 
-async function validatePaths() {
+async function saveConfig(): Promise<void> {
+  const cfg = readConfigFromUI();
+  try {
+    await invoke("save_config", { config: cfg });
+    toast("配置已保存", "success");
+  } catch (e) {
+    toast(`保存失败: ${e}`, "error");
+  }
+}
+
+// ============ 路径验证 ============
+async function validatePaths(): Promise<void> {
   const cfg = readConfigFromUI();
 
   // 验证 taskboard 路径
@@ -109,19 +159,18 @@ async function validatePaths() {
     }
   } else {
     pathEl.textContent = "";
+    pathEl.className = "config-validate";
   }
 
-  // 验证 node
+  // 验证 node（空路径也检查，因为会用系统 node）
   const nodeEl = document.getElementById("validate-node")!;
-  if (cfg.node_path || true) {
-    try {
-      const version = await invoke<string>("check_node_version", { nodePath: cfg.node_path });
-      nodeEl.textContent = version;
-      nodeEl.className = "config-validate ok";
-    } catch {
-      nodeEl.textContent = "不可用";
-      nodeEl.className = "config-validate err";
-    }
+  try {
+    const version = await invoke<string>("check_node_version", { nodePath: cfg.node_path });
+    nodeEl.textContent = version;
+    nodeEl.className = "config-validate ok";
+  } catch {
+    nodeEl.textContent = "不可用";
+    nodeEl.className = "config-validate err";
   }
 
   // 验证 codex app
@@ -132,13 +181,33 @@ async function validatePaths() {
       codexEl.textContent = exists ? "存在" : "不存在";
       codexEl.className = `config-validate ${exists ? "ok" : "err"}`;
     } catch {
-      codexEl.textContent = "";
+      codexEl.textContent = "检查失败";
+      codexEl.className = "config-validate err";
     }
+  } else {
+    codexEl.textContent = "";
+    codexEl.className = "config-validate";
+  }
+}
+
+// ============ 使用内置 Taskboard ============
+async function useBundledTaskboard(): Promise<void> {
+  try {
+    const path = await invoke<string | null>("get_bundled_taskboard_path");
+    if (path) {
+      (document.getElementById("cfg-path") as HTMLInputElement).value = path;
+      onConfigChange();
+      toast("已使用内置 Taskboard 路径", "success");
+    } else {
+      toast("未找到内置 Taskboard", "error");
+    }
+  } catch (e) {
+    toast(`获取内置路径失败: ${e}`, "error");
   }
 }
 
 // ============ 文件浏览 ============
-async function browsePath() {
+async function browsePath(): Promise<void> {
   const selected = await openDialog({ directory: true, multiple: false });
   if (selected) {
     (document.getElementById("cfg-path") as HTMLInputElement).value = selected as string;
@@ -146,7 +215,7 @@ async function browsePath() {
   }
 }
 
-async function browseNode() {
+async function browseNode(): Promise<void> {
   const selected = await openDialog({
     directory: false,
     multiple: false,
@@ -158,7 +227,7 @@ async function browseNode() {
   }
 }
 
-async function browseCodex() {
+async function browseCodex(): Promise<void> {
   const selected = await openDialog({ directory: true, multiple: false });
   if (selected) {
     (document.getElementById("cfg-codex") as HTMLInputElement).value = selected as string;
@@ -167,14 +236,14 @@ async function browseCodex() {
 }
 
 // ============ 模式切换 ============
-function toggleMode() {
+function toggleMode(): void {
   const toggle = document.getElementById("toggle-mode")!;
   toggle.classList.toggle("active");
-  updateToggleLabel();
+  updateModeLabel();
   onConfigChange();
 }
 
-function updateToggleLabel() {
+function updateModeLabel(): void {
   const toggle = document.getElementById("toggle-mode")!;
   const label = document.getElementById("toggle-mode-label")!;
   if (toggle.classList.contains("active")) {
@@ -184,29 +253,79 @@ function updateToggleLabel() {
   }
 }
 
-// ============ 面板切换 ============
-function toggleSettings() {
-  document.getElementById("settings-panel")!.classList.toggle("settings-hidden");
-  document.getElementById("skill-panel")!.classList.add("settings-hidden");
-  const btn = document.getElementById("btn-settings")!;
-  btn.classList.toggle("active");
-  document.getElementById("btn-skill")!.classList.remove("active");
+function toggleAutoOpen(): void {
+  const toggle = document.getElementById("toggle-auto-open")!;
+  toggle.classList.toggle("active");
+  updateAutoOpenLabel();
+  onConfigChange();
 }
 
-function toggleSkill() {
-  document.getElementById("skill-panel")!.classList.toggle("settings-hidden");
-  document.getElementById("settings-panel")!.classList.add("settings-hidden");
-  const btn = document.getElementById("btn-skill")!;
-  btn.classList.toggle("active");
-  document.getElementById("btn-settings")!.classList.remove("active");
+function updateAutoOpenLabel(): void {
+  const toggle = document.getElementById("toggle-auto-open")!;
+  const label = document.getElementById("toggle-auto-open-label")!;
+  if (toggle.classList.contains("active")) {
+    label.textContent = "启动时自动打开浏览器";
+  } else {
+    label.textContent = "不自动打开浏览器";
+  }
+}
+
+// ============ 视图切换 ============
+function toggleSettings(): void {
+  const mainView = document.getElementById("main-view")!;
+  const settingsView = document.getElementById("settings-view")!;
+  const btn = document.getElementById("btn-settings")!;
+
+  const isHidden = settingsView.classList.contains("hidden");
+
+  if (isHidden) {
+    mainView.classList.add("hidden");
+    settingsView.classList.remove("hidden");
+    btn.classList.add("active");
+  } else {
+    mainView.classList.remove("hidden");
+    settingsView.classList.add("hidden");
+    btn.classList.remove("active");
+  }
+}
+
+function showSkill(): void {
+  const settingsView = document.getElementById("settings-view")!;
+  if (settingsView.classList.contains("hidden")) {
+    toggleSettings();
+  }
+  switchSection("mode");
+}
+
+function switchSection(section: string): void {
+  document.querySelectorAll(".settings-section").forEach((el) => {
+    el.classList.add("hidden");
+  });
+  document.getElementById(`section-${section}`)!.classList.remove("hidden");
+
+  document.querySelectorAll(".nav-item").forEach((el) => {
+    el.classList.remove("active");
+  });
+  document.getElementById(`nav-${section}`)!.classList.add("active");
+
+  const footer = document.getElementById("settings-footer")!;
+  if (section === "about") {
+    footer.classList.add("hidden");
+  } else {
+    footer.classList.remove("hidden");
+  }
 }
 
 // ============ 启动/停止 ============
-async function startAll() {
+async function startAll(): Promise<void> {
   const cfg = readConfigFromUI();
   if (!cfg.taskboard_path) {
     toast("请先在设置中配置 Taskboard 路径", "error");
-    toggleSettings();
+    const settingsView = document.getElementById("settings-view")!;
+    if (settingsView.classList.contains("hidden")) {
+      toggleSettings();
+    }
+    switchSection("general");
     return;
   }
 
@@ -215,10 +334,7 @@ async function startAll() {
   btn.textContent = "启动中...";
 
   try {
-    // 先保存配置
-    config = cfg;
     await invoke("save_config", { config: cfg });
-
     await invoke("start_all", { config: cfg });
     toast("所有服务已启动", "success");
     await refreshStatus();
@@ -230,7 +346,7 @@ async function startAll() {
   }
 }
 
-async function stopAll() {
+async function stopAll(): Promise<void> {
   const btn = document.getElementById("btn-stop-all")! as HTMLButtonElement;
   btn.disabled = true;
   btn.textContent = "停止中...";
@@ -247,7 +363,7 @@ async function stopAll() {
   }
 }
 
-async function startTaskboard() {
+async function startTaskboard(): Promise<void> {
   const cfg = readConfigFromUI();
   try {
     await invoke("start_taskboard", { config: cfg });
@@ -258,7 +374,7 @@ async function startTaskboard() {
   }
 }
 
-async function stopTaskboard() {
+async function stopTaskboard(): Promise<void> {
   try {
     await invoke("stop_taskboard");
     toast("Taskboard 服务已停止", "info");
@@ -268,7 +384,7 @@ async function stopTaskboard() {
   }
 }
 
-async function startInjector() {
+async function startInjector(): Promise<void> {
   const cfg = readConfigFromUI();
   try {
     await invoke("start_injector", { config: cfg });
@@ -279,7 +395,7 @@ async function startInjector() {
   }
 }
 
-async function stopInjector() {
+async function stopInjector(): Promise<void> {
   try {
     await invoke("stop_injector");
     toast("Codex 注入器已停止", "info");
@@ -289,7 +405,7 @@ async function stopInjector() {
   }
 }
 
-async function openTaskboard() {
+async function openTaskboard(): Promise<void> {
   const cfg = readConfigFromUI();
   try {
     await invoke("open_taskboard", { config: cfg });
@@ -299,7 +415,7 @@ async function openTaskboard() {
 }
 
 // ============ Skill 安装 ============
-async function installSkill() {
+async function installSkill(): Promise<void> {
   const cfg = readConfigFromUI();
   if (!cfg.taskboard_path) {
     toast("请先配置 Taskboard 路径", "error");
@@ -315,8 +431,56 @@ async function installSkill() {
   }
 }
 
+// ============ 更新检查 ============
+async function checkUpdaterHealth(): Promise<void> {
+  const el = document.getElementById("updater-health")!;
+  try {
+    const health = await invoke<UpdaterConfigHealth>("get_updater_config_health");
+    if (health.configured) {
+      el.textContent = "已就绪";
+      el.className = "health-status ok";
+    } else {
+      el.textContent = health.message;
+      el.className = "health-status err";
+    }
+  } catch (e) {
+    el.textContent = `检查失败: ${e}`;
+    el.className = "health-status err";
+  }
+}
+
+async function checkUpdate(): Promise<void> {
+  const btn = document.getElementById("btn-check-update")! as HTMLButtonElement;
+  btn.disabled = true;
+  btn.textContent = "检查中...";
+  try {
+    const update = await check();
+    if (update) {
+      toast(`发现新版本: ${update.version}`, "info");
+      await update.downloadAndInstall();
+      toast("更新已下载，即将重启...", "success");
+    } else {
+      toast("当前已是最新版本", "info");
+    }
+  } catch (e) {
+    toast(`检查更新失败: ${e}`, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "检查更新";
+  }
+}
+
+// ============ GitHub 链接 ============
+async function openGithub(): Promise<void> {
+  try {
+    await openUrl("https://github.com");
+  } catch (e) {
+    toast(`打开链接失败: ${e}`, "error");
+  }
+}
+
 // ============ 状态更新 ============
-async function refreshStatus() {
+async function refreshStatus(): Promise<void> {
   try {
     const statuses = await invoke<ProcessInfo[]>("get_status");
     for (const s of statuses) {
@@ -324,32 +488,31 @@ async function refreshStatus() {
     }
     updateGlobalButtons(statuses);
   } catch {
-    // 忽略
+    // 忽略轮询错误
   }
 }
 
-function updateStatusUI(info: ProcessInfo) {
+function updateStatusUI(info: ProcessInfo): void {
   const isTaskboard = info.name === "taskboard-server";
   const prefix = isTaskboard ? "taskboard" : "injector";
 
   const badge = document.getElementById(`badge-${prefix}`)!;
   const msg = document.getElementById(`msg-${prefix}`)!;
-  const statusText = badge.querySelector("span:last-child")!;
+  const statusText = document.getElementById(`badge-${prefix}-text`)!;
 
-  const statusMap: Record<string, { text: string; class: string }> = {
-    running: { text: "运行中", class: "running" },
-    stopped: { text: "已停止", class: "stopped" },
-    starting: { text: "启动中", class: "starting" },
-    stopping: { text: "停止中", class: "stopping" },
-    failed: { text: "失败", class: "failed" },
+  const statusMap: Record<string, { text: string; cls: string }> = {
+    running: { text: "运行中", cls: "running" },
+    stopped: { text: "已停止", cls: "stopped" },
+    starting: { text: "启动中", cls: "starting" },
+    stopping: { text: "停止中", cls: "stopping" },
+    failed: { text: "失败", cls: "failed" },
   };
 
   const s = statusMap[info.status] || statusMap.stopped;
-  badge.className = `status-badge ${s.class}`;
+  badge.className = `status-badge ${s.cls}`;
   statusText.textContent = s.text;
-  msg.textContent = info.message || "—";
+  msg.textContent = info.message || "-";
 
-  // 更新按钮状态
   const startBtn = document.getElementById(`btn-start-${isTaskboard ? "tb" : "inj"}`)! as HTMLButtonElement;
   const stopBtn = document.getElementById(`btn-stop-${isTaskboard ? "tb" : "inj"}`)! as HTMLButtonElement;
 
@@ -362,18 +525,18 @@ function updateStatusUI(info: ProcessInfo) {
   }
 }
 
-function updateGlobalButtons(statuses: ProcessInfo[]) {
-  const anyRunning = statuses.some(s => s.status === "running" || s.status === "starting");
-  const allStopped = statuses.every(s => s.status === "stopped" || s.status === "failed");
+function updateGlobalButtons(statuses: ProcessInfo[]): void {
+  const anyRunning = statuses.some((s) => s.status === "running" || s.status === "starting");
+  const allStopped = statuses.every((s) => s.status === "stopped" || s.status === "failed");
 
   (document.getElementById("btn-start-all")! as HTMLButtonElement).disabled = anyRunning;
   (document.getElementById("btn-stop-all")! as HTMLButtonElement).disabled = allStopped;
 }
 
 // ============ 事件监听 ============
-async function setupEventListener() {
-  await listen("status-update", (event: any) => {
-    const payload = event.payload as { name: string; status: string; message: string };
+async function setupEventListener(): Promise<void> {
+  await listen<{ name: string; status: string; message: string }>("status-update", (event) => {
+    const payload = event.payload;
     const info: ProcessInfo = {
       name: payload.name,
       status: payload.status as ProcessInfo["status"],
@@ -385,37 +548,73 @@ async function setupEventListener() {
 }
 
 // ============ 初始化 ============
-async function init() {
+async function init(): Promise<void> {
+  // 应用主题
+  applyTheme(getStoredTheme());
+
+  // 监听系统主题变化
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    if (getStoredTheme() === "system") {
+      applyTheme("system");
+    }
+  });
+
   try {
-    const cfg = await loadConfig();
+    // 加载配置并填充 UI
+    const cfg = await invoke<LauncherConfig>("load_config");
     fillConfigUI(cfg);
     await validatePaths();
+
+    // 获取应用版本
+    try {
+      const version = await getVersion();
+      document.getElementById("about-version")!.textContent = version;
+    } catch {
+      document.getElementById("about-version")!.textContent = "unknown";
+    }
+
+    // 检查更新源健康状态
+    await checkUpdaterHealth();
+
+    // 设置事件监听
     await setupEventListener();
+
+    // 刷新状态
     await refreshStatus();
 
     // 启动状态轮询（每 3 秒）
+    if (statusPolling !== null) {
+      clearInterval(statusPolling);
+    }
     statusPolling = setInterval(refreshStatus, 3000);
   } catch (e) {
     toast(`初始化失败: ${e}`, "error");
   }
 }
 
-// 暴露到全局
-(window as any).toggleSettings = toggleSettings;
-(window as any).toggleSkill = toggleSkill;
-(window as any).browsePath = browsePath;
-(window as any).browseNode = browseNode;
-(window as any).browseCodex = browseCodex;
-(window as any).toggleMode = toggleMode;
-(window as any).onConfigChange = onConfigChange;
-(window as any).saveConfig = saveConfig;
-(window as any).startAll = startAll;
-(window as any).stopAll = stopAll;
-(window as any).startTaskboard = startTaskboard;
-(window as any).stopTaskboard = stopTaskboard;
-(window as any).startInjector = startInjector;
-(window as any).stopInjector = stopInjector;
-(window as any).openTaskboard = openTaskboard;
-(window as any).installSkill = installSkill;
+// ============ 暴露到全局 ============
+const w = window as unknown as Record<string, unknown>;
+w.toggleSettings = toggleSettings;
+w.showSkill = showSkill;
+w.toggleTheme = toggleTheme;
+w.switchSection = switchSection;
+w.browsePath = browsePath;
+w.browseNode = browseNode;
+w.browseCodex = browseCodex;
+w.useBundledTaskboard = useBundledTaskboard;
+w.toggleMode = toggleMode;
+w.toggleAutoOpen = toggleAutoOpen;
+w.onConfigChange = onConfigChange;
+w.saveConfig = saveConfig;
+w.startAll = startAll;
+w.stopAll = stopAll;
+w.startTaskboard = startTaskboard;
+w.stopTaskboard = stopTaskboard;
+w.startInjector = startInjector;
+w.stopInjector = stopInjector;
+w.openTaskboard = openTaskboard;
+w.installSkill = installSkill;
+w.checkUpdate = checkUpdate;
+w.openGithub = openGithub;
 
 init();

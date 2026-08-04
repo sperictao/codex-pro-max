@@ -38,3 +38,8 @@ Thumbs.db
 src-tauri/target/
 src-tauri/gen/
 src-tauri/tauri.conf.updater.prod.json
+
+# Vendor (dashi-taskboard) - keep source, exclude deps/build artifacts
+vendor/dashi-taskboard/node_modules/
+vendor/dashi-taskboard/web/dist/
+vendor/dashi-taskboard/.data/

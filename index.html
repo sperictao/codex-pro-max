@@ -5,231 +5,127 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Dashi Taskboard Launcher</title>
     <style>
+      /* ============ Geist Design Variables ============ */
       :root {
-        --bg-primary: #0d1117;
-        --bg-secondary: #161b22;
-        --bg-tertiary: #21262d;
-        --bg-hover: #30363d;
-        --border: #30363d;
-        --text-primary: #e6edf3;
-        --text-secondary: #8b949e;
-        --text-muted: #6e7681;
-        --accent: #2f81f7;
-        --accent-hover: #388bfd;
-        --green: #3fb950;
-        --red: #f85149;
-        --yellow: #d29922;
-        --orange: #db6d28;
-        --radius: 8px;
+        --background: #ffffff;
+        --foreground: #171717;
+        --card: #ffffff;
+        --border: hsl(0 0% 92%);
+        --muted: hsl(0 0% 96%);
+        --muted-foreground: hsl(0 0% 40%);
+        --interactive: hsl(215 100% 50%);
+        --interactive-hover: hsl(217 100% 46%);
+        --destructive: hsl(347 100% 49%);
+        --success: hsl(135 62% 41%);
+        --warning: hsl(39 100% 50%);
+        --radius-sm: 6px;
+        --radius-md: 12px;
+        --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+        --font-mono: "SF Mono", "Fira Code", ui-monospace, monospace;
+        --ease-geist: cubic-bezier(0.175, 0.885, 0.32, 1.1);
+        --shadow-sm: 0 2px 2px rgba(0, 0, 0, 0.04);
       }
 
-      * { margin: 0; padding: 0; box-sizing: border-box; }
+      .dark {
+        --background: #000000;
+        --foreground: #ededed;
+        --card: #0a0a0a;
+        --border: hsl(0 0% 15%);
+        --muted: hsl(0 0% 10%);
+        --muted-foreground: hsl(0 0% 63%);
+        --interactive: hsl(214 100% 50%);
+        --destructive: hsl(355 89% 57%);
+        --success: hsl(138 100% 29%);
+        --warning: hsl(39 100% 46%);
+      }
+
+      /* ============ Reset ============ */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
 
       body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-        background: var(--bg-primary);
-        color: var(--text-primary);
+        font-family: var(--font-sans);
+        background: var(--background);
+        color: var(--foreground);
         height: 100vh;
         overflow: hidden;
         user-select: none;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
       }
 
+      .hidden {
+        display: none !important;
+      }
+
+      .mono {
+        font-family: var(--font-mono);
+      }
+
+      /* ============ App Layout ============ */
       .app {
         display: flex;
         flex-direction: column;
         height: 100vh;
       }
 
-      /* 顶部标题栏 */
+      /* ============ Header ============ */
       .header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 16px 24px;
+        padding: 12px 24px;
         border-bottom: 1px solid var(--border);
-        background: var(--bg-secondary);
-      }
-
-      .header-left {
-        display: flex;
-        align-items: center;
-        gap: 12px;
+        background: var(--background);
+        flex-shrink: 0;
       }
 
       .logo {
-        font-size: 20px;
-        font-weight: 700;
-        letter-spacing: -0.5px;
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: -0.3px;
+        color: var(--foreground);
       }
 
-      .logo .accent { color: var(--accent); }
-
-      .header-right {
+      .header-actions {
         display: flex;
         gap: 8px;
+        align-items: center;
       }
 
       .header-btn {
         padding: 6px 14px;
         border: 1px solid var(--border);
-        background: var(--bg-tertiary);
-        color: var(--text-secondary);
-        border-radius: var(--radius);
+        background: var(--background);
+        color: var(--muted-foreground);
+        border-radius: var(--radius-sm);
         cursor: pointer;
         font-size: 13px;
-        transition: all 0.15s;
+        font-family: var(--font-sans);
+        font-weight: 500;
+        transition: all 150ms var(--ease-geist);
       }
 
       .header-btn:hover {
-        background: var(--bg-hover);
-        color: var(--text-primary);
+        background: var(--muted);
+        color: var(--foreground);
       }
 
       .header-btn.active {
-        border-color: var(--accent);
-        color: var(--accent);
+        color: var(--interactive);
+        border-color: var(--interactive);
       }
 
-      /* 主内容区 */
-      .main {
+      /* ============ Main View ============ */
+      .main-view {
         flex: 1;
         overflow-y: auto;
         padding: 24px;
       }
 
-      /* 状态卡片 */
-      .status-section {
-        margin-bottom: 24px;
-      }
-
-      .section-title {
-        font-size: 13px;
-        font-weight: 600;
-        color: var(--text-muted);
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        margin-bottom: 12px;
-      }
-
-      .status-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-      }
-
-      .status-card {
-        background: var(--bg-secondary);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        padding: 20px;
-        transition: border-color 0.2s;
-      }
-
-      .status-card:hover {
-        border-color: var(--bg-hover);
-      }
-
-      .status-card-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 12px;
-      }
-
-      .status-card-title {
-        font-size: 15px;
-        font-weight: 600;
-      }
-
-      .status-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        padding: 4px 10px;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 500;
-      }
-
-      .status-badge .dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-      }
-
-      .status-badge.running { background: rgba(63,185,80,0.15); color: var(--green); }
-      .status-badge.running .dot { background: var(--green); }
-      .status-badge.stopped { background: rgba(110,118,129,0.15); color: var(--text-muted); }
-      .status-badge.stopped .dot { background: var(--text-muted); }
-      .status-badge.starting { background: rgba(210,153,34,0.15); color: var(--yellow); }
-      .status-badge.starting .dot { background: var(--yellow); animation: pulse 1s infinite; }
-      .status-badge.stopping { background: rgba(210,153,34,0.15); color: var(--yellow); }
-      .status-badge.stopping .dot { background: var(--yellow); }
-      .status-badge.failed { background: rgba(248,81,73,0.15); color: var(--red); }
-      .status-badge.failed .dot { background: var(--red); }
-
-      @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.4; }
-      }
-
-      .status-message {
-        font-size: 13px;
-        color: var(--text-secondary);
-        margin-bottom: 12px;
-        font-family: "SF Mono", "Fira Code", monospace;
-      }
-
-      .status-actions {
-        display: flex;
-        gap: 8px;
-      }
-
-      .btn {
-        padding: 8px 16px;
-        border: none;
-        border-radius: var(--radius);
-        cursor: pointer;
-        font-size: 13px;
-        font-weight: 500;
-        transition: all 0.15s;
-      }
-
-      .btn:disabled {
-        opacity: 0.4;
-        cursor: not-allowed;
-      }
-
-      .btn-primary {
-        background: var(--accent);
-        color: white;
-      }
-
-      .btn-primary:hover:not(:disabled) {
-        background: var(--accent-hover);
-      }
-
-      .btn-danger {
-        background: rgba(248,81,73,0.15);
-        color: var(--red);
-        border: 1px solid rgba(248,81,73,0.3);
-      }
-
-      .btn-danger:hover:not(:disabled) {
-        background: rgba(248,81,73,0.25);
-      }
-
-      .btn-secondary {
-        background: var(--bg-tertiary);
-        color: var(--text-primary);
-        border: 1px solid var(--border);
-      }
-
-      .btn-secondary:hover:not(:disabled) {
-        background: var(--bg-hover);
-      }
-
-      /* 主操作区 */
       .action-bar {
         display: flex;
         gap: 12px;
@@ -247,97 +143,317 @@
         gap: 8px;
       }
 
-      /* 配置面板 */
-      .config-panel {
-        background: var(--bg-secondary);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        padding: 20px;
+      /* ============ Status Section ============ */
+      .section-title {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted-foreground);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 12px;
       }
 
-      .config-row {
+      .status-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+
+      .status-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: 20px;
+        box-shadow: var(--shadow-sm);
+        transition: border-color 150ms var(--ease-geist);
+      }
+
+      .status-card:hover {
+        border-color: var(--muted-foreground);
+      }
+
+      .status-card-header {
         display: flex;
         align-items: center;
-        gap: 12px;
-        margin-bottom: 16px;
+        justify-content: space-between;
+        margin-bottom: 12px;
       }
 
-      .config-row:last-child {
-        margin-bottom: 0;
+      .status-card-title {
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--foreground);
+      }
+
+      .status-message {
+        font-size: 12px;
+        color: var(--muted-foreground);
+        margin-bottom: 16px;
+        min-height: 16px;
+        word-break: break-all;
+      }
+
+      .status-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      /* ============ Status Badge ============ */
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      .status-badge .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+      }
+
+      .status-badge.running {
+        background: hsl(135 62% 41% / 0.1);
+        color: var(--success);
+      }
+      .status-badge.running .dot {
+        background: var(--success);
+      }
+      .status-badge.stopped {
+        background: var(--muted);
+        color: var(--muted-foreground);
+      }
+      .status-badge.stopped .dot {
+        background: var(--muted-foreground);
+      }
+      .status-badge.starting {
+        background: hsl(39 100% 50% / 0.1);
+        color: var(--warning);
+      }
+      .status-badge.starting .dot {
+        background: var(--warning);
+        animation: pulse 1s infinite;
+      }
+      .status-badge.stopping {
+        background: hsl(39 100% 50% / 0.1);
+        color: var(--warning);
+      }
+      .status-badge.stopping .dot {
+        background: var(--warning);
+      }
+      .status-badge.failed {
+        background: hsl(347 100% 49% / 0.1);
+        color: var(--destructive);
+      }
+      .status-badge.failed .dot {
+        background: var(--destructive);
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.4;
+        }
+      }
+
+      /* ============ Buttons ============ */
+      .btn {
+        padding: 8px 16px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 500;
+        font-family: var(--font-sans);
+        transition: all 150ms var(--ease-geist);
+        background: var(--background);
+        color: var(--foreground);
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .btn:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      .btn-primary {
+        background: var(--interactive);
+        color: #ffffff;
+        border-color: var(--interactive);
+      }
+
+      .btn-primary:hover:not(:disabled) {
+        background: var(--interactive-hover);
+        border-color: var(--interactive-hover);
+      }
+
+      .btn-secondary {
+        background: var(--background);
+        color: var(--foreground);
+        border-color: var(--border);
+      }
+
+      .btn-secondary:hover:not(:disabled) {
+        background: var(--muted);
+      }
+
+      .btn-danger {
+        background: var(--background);
+        color: var(--destructive);
+        border-color: var(--border);
+      }
+
+      .btn-danger:hover:not(:disabled) {
+        background: hsl(347 100% 49% / 0.08);
+        border-color: var(--destructive);
+      }
+
+      .btn-sm {
+        padding: 6px 12px;
+        font-size: 12px;
+      }
+
+      /* ============ Settings View ============ */
+      .settings-view {
+        flex: 1;
+        display: flex;
+        overflow: hidden;
+      }
+
+      .settings-sidebar {
+        width: 200px;
+        border-right: 1px solid var(--border);
+        padding: 16px 0;
+        flex-shrink: 0;
+      }
+
+      .nav-item {
+        display: block;
+        width: 100%;
+        padding: 10px 20px;
+        border: none;
+        background: none;
+        color: var(--muted-foreground);
+        font-size: 14px;
+        font-weight: 500;
+        font-family: var(--font-sans);
+        text-align: left;
+        cursor: pointer;
+        transition: all 150ms var(--ease-geist);
+      }
+
+      .nav-item:hover {
+        background: var(--muted);
+        color: var(--foreground);
+      }
+
+      .nav-item.active {
+        color: var(--interactive);
+        background: hsl(215 100% 50% / 0.08);
+      }
+
+      .settings-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 24px 32px;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .section-heading {
+        font-size: 18px;
+        font-weight: 600;
+        color: var(--foreground);
+        margin-bottom: 24px;
+      }
+
+      .settings-section {
+        flex: 1;
+      }
+
+      /* ============ Config Rows ============ */
+      .config-row {
+        margin-bottom: 20px;
       }
 
       .config-label {
-        width: 140px;
+        display: block;
         font-size: 13px;
-        color: var(--text-secondary);
-        flex-shrink: 0;
+        font-weight: 500;
+        color: var(--foreground);
+        margin-bottom: 6px;
+      }
+
+      .config-input-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
       }
 
       .config-input {
         flex: 1;
         padding: 8px 12px;
-        background: var(--bg-tertiary);
+        background: var(--background);
         border: 1px solid var(--border);
-        border-radius: 6px;
-        color: var(--text-primary);
+        border-radius: var(--radius-sm);
+        color: var(--foreground);
         font-size: 13px;
-        font-family: inherit;
+        font-family: var(--font-sans);
         outline: none;
-        transition: border-color 0.15s;
+        transition: border-color 150ms var(--ease-geist);
       }
 
       .config-input:focus {
-        border-color: var(--accent);
+        border-color: var(--interactive);
       }
 
-      .config-input.path-input {
-        font-family: "SF Mono", "Fira Code", monospace;
+      .config-input.mono {
+        font-family: var(--font-mono);
         font-size: 12px;
-      }
-
-      .config-browse {
-        padding: 8px 12px;
-        background: var(--bg-tertiary);
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        color: var(--text-secondary);
-        cursor: pointer;
-        font-size: 13px;
-        white-space: nowrap;
-      }
-
-      .config-browse:hover {
-        background: var(--bg-hover);
-        color: var(--text-primary);
       }
 
       .config-validate {
         font-size: 12px;
-        padding: 2px 8px;
-        border-radius: 4px;
+        font-family: var(--font-mono);
+        white-space: nowrap;
       }
 
-      .config-validate.ok { color: var(--green); }
-      .config-validate.err { color: var(--red); }
+      .config-validate.ok {
+        color: var(--success);
+      }
 
+      .config-validate.err {
+        color: var(--destructive);
+      }
+
+      /* ============ Toggle Switch ============ */
       .config-toggle {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
       }
 
       .toggle-switch {
         position: relative;
         width: 40px;
         height: 22px;
-        background: var(--bg-tertiary);
+        background: var(--border);
         border-radius: 11px;
         cursor: pointer;
-        transition: background 0.2s;
+        transition: background 150ms var(--ease-geist);
+        flex-shrink: 0;
       }
 
       .toggle-switch.active {
-        background: var(--accent);
+        background: var(--interactive);
       }
 
       .toggle-switch::after {
@@ -347,9 +463,9 @@
         left: 3px;
         width: 16px;
         height: 16px;
-        background: white;
+        background: #ffffff;
         border-radius: 50%;
-        transition: transform 0.2s;
+        transition: transform 150ms var(--ease-geist);
       }
 
       .toggle-switch.active::after {
@@ -358,37 +474,85 @@
 
       .toggle-label {
         font-size: 13px;
-        color: var(--text-secondary);
+        color: var(--muted-foreground);
       }
 
-      /* Skill 安装 */
-      .skill-section {
-        margin-top: 16px;
-        padding: 16px;
-        background: var(--bg-secondary);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
+      /* ============ Skill Install ============ */
+      .skill-install-area {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
       }
 
-      .skill-header {
+      .skill-result {
+        font-size: 12px;
+        color: var(--muted-foreground);
+        min-height: 16px;
+        word-break: break-all;
+      }
+
+      /* ============ About Section ============ */
+      .about-row {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        margin-bottom: 8px;
+        gap: 16px;
+        padding: 14px 0;
+        border-bottom: 1px solid var(--border);
       }
 
-      .skill-title {
-        font-size: 14px;
-        font-weight: 600;
+      .about-row:last-child {
+        border-bottom: none;
       }
 
-      .skill-desc {
+      .about-label {
+        font-size: 13px;
+        color: var(--muted-foreground);
+        min-width: 120px;
+      }
+
+      .about-value {
+        font-size: 13px;
+        color: var(--foreground);
+      }
+
+      .about-value.mono {
+        font-family: var(--font-mono);
+      }
+
+      .about-link {
+        color: var(--interactive);
+        text-decoration: none;
+        font-size: 13px;
+        cursor: pointer;
+      }
+
+      .about-link:hover {
+        text-decoration: underline;
+      }
+
+      .health-status {
         font-size: 12px;
-        color: var(--text-muted);
-        margin-bottom: 12px;
+        font-family: var(--font-mono);
       }
 
-      /* Toast */
+      .health-status.ok {
+        color: var(--success);
+      }
+
+      .health-status.err {
+        color: var(--destructive);
+      }
+
+      /* ============ Settings Footer ============ */
+      .settings-footer {
+        padding-top: 20px;
+        border-top: 1px solid var(--border);
+        margin-top: 20px;
+        display: flex;
+        justify-content: flex-end;
+      }
+
+      /* ============ Toast ============ */
       .toast-container {
         position: fixed;
         bottom: 24px;
@@ -401,48 +565,55 @@
 
       .toast {
         padding: 12px 20px;
-        border-radius: var(--radius);
+        border-radius: var(--radius-sm);
         font-size: 13px;
         max-width: 400px;
-        animation: slideIn 0.2s ease;
+        background: var(--card);
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow-sm);
+        color: var(--foreground);
+        animation: slideIn 150ms var(--ease-geist);
       }
 
-      .toast.success { background: rgba(63,185,80,0.15); color: var(--green); border: 1px solid rgba(63,185,80,0.3); }
-      .toast.error { background: rgba(248,81,73,0.15); color: var(--red); border: 1px solid rgba(248,81,73,0.3); }
-      .toast.info { background: rgba(47,129,247,0.15); color: var(--accent); border: 1px solid rgba(47,129,247,0.3); }
+      .toast.success {
+        border-left: 3px solid var(--success);
+      }
+      .toast.error {
+        border-left: 3px solid var(--destructive);
+      }
+      .toast.info {
+        border-left: 3px solid var(--interactive);
+      }
 
       @keyframes slideIn {
-        from { transform: translateX(100%); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
-      }
-
-      /* 隐藏的设置面板 */
-      .settings-hidden { display: none; }
-
-      /* 健康检查指示器 */
-      .health-indicator {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        font-size: 11px;
-        color: var(--text-muted);
+        from {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
       }
     </style>
   </head>
   <body>
     <div class="app">
-      <div class="header">
-        <div class="header-left">
-          <div class="logo">Dashi<span class="accent">Taskboard</span> Launcher</div>
-        </div>
-        <div class="header-right">
+      <!-- ============ Header ============ -->
+      <header class="header">
+        <div class="logo">Dashi Taskboard Launcher</div>
+        <div class="header-actions">
           <button class="header-btn" id="btn-settings" onclick="toggleSettings()">设置</button>
-          <button class="header-btn" id="btn-skill" onclick="toggleSkill()">Codex Skill</button>
+          <button class="header-btn" id="btn-skill" onclick="showSkill()">Skill</button>
+          <button class="header-btn" id="btn-theme" onclick="toggleTheme()">
+            <span id="theme-label">系统</span>
+          </button>
         </div>
-      </div>
+      </header>
 
-      <div class="main">
-        <!-- 主操作区 -->
+      <!-- ============ Main View ============ -->
+      <main class="main-view" id="main-view">
+        <!-- Action Bar -->
         <div class="action-bar">
           <button class="btn btn-primary btn-large" id="btn-start-all" onclick="startAll()">
             一键启动
@@ -452,105 +623,172 @@
           </button>
         </div>
 
-        <!-- 状态卡片 -->
-        <div class="status-section">
-          <div class="section-title">服务状态</div>
-          <div class="status-grid">
-            <div class="status-card">
-              <div class="status-card-header">
-                <div class="status-card-title">Taskboard 服务</div>
-                <div class="status-badge stopped" id="badge-taskboard">
-                  <span class="dot"></span>
-                  <span>已停止</span>
-                </div>
-              </div>
-              <div class="status-message" id="msg-taskboard">未启动</div>
-              <div class="status-actions">
-                <button class="btn btn-secondary" id="btn-start-tb" onclick="startTaskboard()">启动</button>
-                <button class="btn btn-secondary" id="btn-stop-tb" onclick="stopTaskboard()" disabled>停止</button>
-                <button class="btn btn-secondary" id="btn-open-tb" onclick="openTaskboard()" disabled>打开</button>
+        <!-- Status Grid -->
+        <div class="section-title">服务状态</div>
+        <div class="status-grid">
+          <!-- Taskboard Card -->
+          <div class="status-card">
+            <div class="status-card-header">
+              <div class="status-card-title">Taskboard 服务</div>
+              <div class="status-badge stopped" id="badge-taskboard">
+                <span class="dot"></span>
+                <span id="badge-taskboard-text">已停止</span>
               </div>
             </div>
-
-            <div class="status-card">
-              <div class="status-card-header">
-                <div class="status-card-title">Codex 注入器</div>
-                <div class="status-badge stopped" id="badge-injector">
-                  <span class="dot"></span>
-                  <span>已停止</span>
-                </div>
-              </div>
-              <div class="status-message" id="msg-injector">未启动</div>
-              <div class="status-actions">
-                <button class="btn btn-secondary" id="btn-start-inj" onclick="startInjector()">启动</button>
-                <button class="btn btn-secondary" id="btn-stop-inj" onclick="stopInjector()" disabled>停止</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 设置面板 -->
-        <div class="config-panel settings-hidden" id="settings-panel">
-          <div class="section-title">配置</div>
-
-          <div class="config-row">
-            <div class="config-label">Taskboard 路径</div>
-            <input type="text" class="config-input path-input" id="cfg-path" placeholder="/path/to/dashi-taskboard" oninput="onConfigChange()" />
-            <button class="config-browse" onclick="browsePath()">浏览</button>
-            <span class="config-validate" id="validate-path"></span>
-          </div>
-
-          <div class="config-row">
-            <div class="config-label">Node.js 路径</div>
-            <input type="text" class="config-input path-input" id="cfg-node" placeholder="留空则使用 PATH 中的 node" oninput="onConfigChange()" />
-            <button class="config-browse" onclick="browseNode()">浏览</button>
-            <span class="config-validate" id="validate-node"></span>
-          </div>
-
-          <div class="config-row">
-            <div class="config-label">Codex 应用路径</div>
-            <input type="text" class="config-input path-input" id="cfg-codex" placeholder="/Applications/ChatGPT.app" oninput="onConfigChange()" />
-            <button class="config-browse" onclick="browseCodex()">浏览</button>
-            <span class="config-validate" id="validate-codex"></span>
-          </div>
-
-          <div class="config-row">
-            <div class="config-label">Taskboard 端口</div>
-            <input type="number" class="config-input" id="cfg-port" value="47823" oninput="onConfigChange()" style="max-width: 120px;" />
-          </div>
-
-          <div class="config-row">
-            <div class="config-label">CDP 调试端口</div>
-            <input type="number" class="config-input" id="cfg-cdp" value="9231" oninput="onConfigChange()" style="max-width: 120px;" />
-          </div>
-
-          <div class="config-row">
-            <div class="config-label">启动模式</div>
-            <div class="config-toggle">
-              <div class="toggle-switch active" id="toggle-mode" onclick="toggleMode()"></div>
-              <span class="toggle-label" id="toggle-mode-label">独立窗口模式（不重启 Codex）</span>
+            <div class="status-message mono" id="msg-taskboard">未启动</div>
+            <div class="status-actions">
+              <button class="btn btn-secondary btn-sm" id="btn-start-tb" onclick="startTaskboard()">启动</button>
+              <button class="btn btn-secondary btn-sm" id="btn-stop-tb" onclick="stopTaskboard()" disabled>停止</button>
+              <button class="btn btn-secondary btn-sm" id="btn-open-tb" onclick="openTaskboard()" disabled>打开</button>
             </div>
           </div>
 
-          <div style="margin-top: 16px;">
-            <button class="btn btn-primary" onclick="saveConfig()">保存配置</button>
+          <!-- Injector Card -->
+          <div class="status-card">
+            <div class="status-card-header">
+              <div class="status-card-title">Codex 注入器</div>
+              <div class="status-badge stopped" id="badge-injector">
+                <span class="dot"></span>
+                <span id="badge-injector-text">已停止</span>
+              </div>
+            </div>
+            <div class="status-message mono" id="msg-injector">未启动</div>
+            <div class="status-actions">
+              <button class="btn btn-secondary btn-sm" id="btn-start-inj" onclick="startInjector()">启动</button>
+              <button class="btn btn-secondary btn-sm" id="btn-stop-inj" onclick="stopInjector()" disabled>停止</button>
+            </div>
           </div>
         </div>
+      </main>
 
-        <!-- Skill 安装面板 -->
-        <div class="skill-section settings-hidden" id="skill-panel">
-          <div class="skill-header">
-            <div class="skill-title">Codex Skill 安装</div>
+      <!-- ============ Settings View ============ -->
+      <main class="settings-view hidden" id="settings-view">
+        <!-- Sidebar -->
+        <nav class="settings-sidebar">
+          <button class="nav-item active" id="nav-general" onclick="switchSection('general')">通用</button>
+          <button class="nav-item" id="nav-network" onclick="switchSection('network')">网络</button>
+          <button class="nav-item" id="nav-mode" onclick="switchSection('mode')">模式</button>
+          <button class="nav-item" id="nav-about" onclick="switchSection('about')">关于</button>
+        </nav>
+
+        <!-- Content -->
+        <div class="settings-content">
+          <!-- General Section -->
+          <section class="settings-section" id="section-general">
+            <h2 class="section-heading">通用</h2>
+
+            <div class="config-row">
+              <label class="config-label" for="cfg-path">Taskboard 路径</label>
+              <div class="config-input-group">
+                <input type="text" class="config-input mono" id="cfg-path" placeholder="/path/to/dashi-taskboard" oninput="onConfigChange()" />
+                <button class="btn btn-secondary btn-sm" onclick="browsePath()">浏览</button>
+                <button class="btn btn-secondary btn-sm" id="btn-use-bundled" onclick="useBundledTaskboard()">使用内置</button>
+                <span class="config-validate" id="validate-path"></span>
+              </div>
+            </div>
+
+            <div class="config-row">
+              <label class="config-label" for="cfg-node">Node.js 路径</label>
+              <div class="config-input-group">
+                <input type="text" class="config-input mono" id="cfg-node" placeholder="留空则使用 PATH 中的 node" oninput="onConfigChange()" />
+                <button class="btn btn-secondary btn-sm" onclick="browseNode()">浏览</button>
+                <span class="config-validate" id="validate-node"></span>
+              </div>
+            </div>
+
+            <div class="config-row">
+              <label class="config-label" for="cfg-codex">Codex 应用路径</label>
+              <div class="config-input-group">
+                <input type="text" class="config-input mono" id="cfg-codex" placeholder="/Applications/ChatGPT.app" oninput="onConfigChange()" />
+                <button class="btn btn-secondary btn-sm" onclick="browseCodex()">浏览</button>
+                <span class="config-validate" id="validate-codex"></span>
+              </div>
+            </div>
+          </section>
+
+          <!-- Network Section -->
+          <section class="settings-section hidden" id="section-network">
+            <h2 class="section-heading">网络</h2>
+
+            <div class="config-row">
+              <label class="config-label" for="cfg-host">Taskboard 主机地址</label>
+              <input type="text" class="config-input mono" id="cfg-host" value="127.0.0.1" oninput="onConfigChange()" />
+            </div>
+
+            <div class="config-row">
+              <label class="config-label" for="cfg-port">Taskboard 端口</label>
+              <input type="number" class="config-input mono" id="cfg-port" value="47823" oninput="onConfigChange()" style="max-width: 200px;" />
+            </div>
+
+            <div class="config-row">
+              <label class="config-label" for="cfg-cdp">CDP 调试端口</label>
+              <input type="number" class="config-input mono" id="cfg-cdp" value="9231" oninput="onConfigChange()" style="max-width: 200px;" />
+            </div>
+          </section>
+
+          <!-- Mode Section -->
+          <section class="settings-section hidden" id="section-mode">
+            <h2 class="section-heading">模式</h2>
+
+            <div class="config-row">
+              <label class="config-label">启动模式</label>
+              <div class="config-toggle">
+                <div class="toggle-switch active" id="toggle-mode" onclick="toggleMode()"></div>
+                <span class="toggle-label" id="toggle-mode-label">独立窗口模式（不重启 Codex）</span>
+              </div>
+            </div>
+
+            <div class="config-row">
+              <label class="config-label">自动打开浏览器</label>
+              <div class="config-toggle">
+                <div class="toggle-switch active" id="toggle-auto-open" onclick="toggleAutoOpen()"></div>
+                <span class="toggle-label" id="toggle-auto-open-label">启动时自动打开浏览器</span>
+              </div>
+            </div>
+
+            <div class="config-row">
+              <label class="config-label">Codex Skill 安装</label>
+              <div class="skill-install-area">
+                <button class="btn btn-primary btn-sm" id="btn-install-skill" onclick="installSkill()">安装 Skill</button>
+                <div class="skill-result mono" id="skill-result"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- About Section -->
+          <section class="settings-section hidden" id="section-about">
+            <h2 class="section-heading">关于</h2>
+
+            <div class="about-row">
+              <span class="about-label">应用版本</span>
+              <span class="about-value mono" id="about-version">-</span>
+            </div>
+
+            <div class="about-row">
+              <span class="about-label">更新源状态</span>
+              <span class="about-value" id="updater-health">检查中...</span>
+            </div>
+
+            <div class="about-row">
+              <span class="about-label"></span>
+              <button class="btn btn-secondary btn-sm" id="btn-check-update" onclick="checkUpdate()">检查更新</button>
+            </div>
+
+            <div class="about-row">
+              <span class="about-label">GitHub</span>
+              <a class="about-link" id="link-github" onclick="openGithub(); return false;">在浏览器中打开</a>
+            </div>
+          </section>
+
+          <!-- Save Footer -->
+          <div class="settings-footer" id="settings-footer">
+            <button class="btn btn-primary" id="btn-save-config" onclick="saveConfig()">保存配置</button>
           </div>
-          <div class="skill-desc">
-            将 manage-taskboard Skill 安装到 ~/.codex/skills/ 目录，让 Codex Agent 能自动管理看板任务。
-          </div>
-          <button class="btn btn-primary" onclick="installSkill()">安装 Skill</button>
-          <div id="skill-result" style="margin-top: 8px; font-size: 12px; color: var(--text-secondary);"></div>
         </div>
-      </div>
+      </main>
     </div>
 
+    <!-- Toast Container -->
     <div class="toast-container" id="toast-container"></div>
 
     <script type="module" src="/src/main.ts"></script>
