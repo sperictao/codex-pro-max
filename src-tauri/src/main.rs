@@ -158,12 +158,11 @@ async fn get_status(state: State<'_, AppState>) -> Result<Vec<ProcessInfo>, Stri
     Ok(state.pm.get_all_status().await)
 }
 
-/// 一键启动：先启动 taskboard 服务，再启动 codex 注入器
-#[tauri::command]
-async fn start_all(
-    state: State<'_, AppState>,
-    app: tauri::AppHandle,
-    config: LauncherConfig,
+/// 一键启动的共享实现：Tauri 命令与托盘菜单共用
+async fn run_start_all(
+    pm: &ProcessManager,
+    app: &tauri::AppHandle,
+    config: &LauncherConfig,
 ) -> Result<(), String> {
     // 验证路径
     if config.taskboard_path.is_empty() {
@@ -180,7 +179,7 @@ async fn start_all(
         "message": "正在启动 Taskboard 服务..."
     })).ok();
 
-    state.pm.start_taskboard(
+    pm.start_taskboard(
         &config.taskboard_path,
         &config.node_path,
         &config.taskboard_host,
@@ -203,7 +202,7 @@ async fn start_all(
         "message": "正在启动 Codex 注入器..."
     })).ok();
 
-    state.pm.start_injector(
+    pm.start_injector(
         &config.taskboard_path,
         &config.node_path,
         config.cdp_port,
@@ -221,19 +220,15 @@ async fn start_all(
     Ok(())
 }
 
-/// 停止所有服务
-#[tauri::command]
-async fn stop_all(
-    state: State<'_, AppState>,
-    app: tauri::AppHandle,
-) -> Result<(), String> {
+/// 全部停止的共享实现：Tauri 命令与托盘菜单共用
+async fn run_stop_all(pm: &ProcessManager, app: &tauri::AppHandle) -> Result<(), String> {
     app.emit("status-update", &serde_json::json!({
         "name": "codex-injector",
         "status": "stopping",
         "message": "正在停止注入器..."
     })).ok();
 
-    state.pm.stop_injector().await?;
+    pm.stop_injector().await?;
 
     app.emit("status-update", &serde_json::json!({
         "name": "codex-injector",
@@ -247,7 +242,7 @@ async fn stop_all(
         "message": "正在停止 Taskboard 服务..."
     })).ok();
 
-    state.pm.stop_taskboard().await?;
+    pm.stop_taskboard().await?;
 
     app.emit("status-update", &serde_json::json!({
         "name": "taskboard-server",
@@ -256,6 +251,25 @@ async fn stop_all(
     })).ok();
 
     Ok(())
+}
+
+/// 一键启动：先启动 taskboard 服务，再启动 codex 注入器
+#[tauri::command]
+async fn start_all(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    config: LauncherConfig,
+) -> Result<(), String> {
+    run_start_all(&state.pm, &app, &config).await
+}
+
+/// 停止所有服务
+#[tauri::command]
+async fn stop_all(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    run_stop_all(&state.pm, &app).await
 }
 
 /// 单独启动 taskboard 服务
@@ -333,6 +347,69 @@ async fn open_taskboard(config: LauncherConfig) -> Result<(), String> {
         cmd.spawn().map_err(|e| format!("无法打开浏览器: {}", e))?;
     }
     Ok(())
+}
+
+/// Skill 安装状态
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SkillStatus {
+    /// installed | not-installed | mismatch
+    state: String,
+    detail: String,
+    target_path: String,
+}
+
+/// 检测 manage-taskboard Skill 的安装状态
+#[tauri::command]
+async fn check_skill_status(taskboard_path: String) -> Result<SkillStatus, String> {
+    let home = home_dir()?;
+    let target = std::path::Path::new(&home).join(".codex/skills/manage-taskboard");
+    let source = std::path::Path::new(&taskboard_path).join("skills/manage-taskboard");
+    let target_path = target.display().to_string();
+
+    let meta = match std::fs::symlink_metadata(&target) {
+        Ok(m) => m,
+        Err(_) => {
+            return Ok(SkillStatus {
+                state: "not-installed".to_string(),
+                detail: "未安装".to_string(),
+                target_path,
+            })
+        }
+    };
+
+    if meta.file_type().is_symlink() {
+        let link = std::fs::read_link(&target)
+            .map_err(|e| format!("读取符号链接失败: {}", e))?;
+        // read_link 可能返回相对路径，统一与 source 比较前先做字典序归一
+        let link_norm = link.canonicalize().unwrap_or(link);
+        let source_norm = source.canonicalize().unwrap_or(source);
+        if link_norm == source_norm {
+            Ok(SkillStatus {
+                state: "installed".to_string(),
+                detail: "已安装，指向当前 Taskboard 仓库".to_string(),
+                target_path,
+            })
+        } else {
+            Ok(SkillStatus {
+                state: "mismatch".to_string(),
+                detail: format!("符号链接指向 {}，与当前 Taskboard 路径不一致", link_norm.display()),
+                target_path,
+            })
+        }
+    } else if target.join("SKILL.md").exists() {
+        Ok(SkillStatus {
+            state: "installed".to_string(),
+            detail: "已安装（实体目录）".to_string(),
+            target_path,
+        })
+    } else {
+        Ok(SkillStatus {
+            state: "mismatch".to_string(),
+            detail: "目标路径已存在但不是有效的 Skill".to_string(),
+            target_path,
+        })
+    }
 }
 
 /// 安装 Codex Skill（创建符号链接）
@@ -445,6 +522,102 @@ fn get_updater_config_health(app: tauri::AppHandle) -> UpdaterConfigHealth {
     }
 }
 
+/// 显示并聚焦主窗口（托盘点击 / 菜单）
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        #[cfg(target_os = "macos")]
+        let _ = app.show();
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+/// 隐藏主窗口到托盘
+fn hide_main_window_to_tray(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+    }
+    // macOS 上连 Dock 图标一起隐去，驻留托盘才完整
+    #[cfg(target_os = "macos")]
+    let _ = app.hide();
+}
+
+/// 创建系统托盘（图标 + 菜单 + 事件）
+fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    use tauri::menu::{MenuBuilder, MenuItemBuilder};
+    use tauri::tray::TrayIconBuilder;
+
+    let show = MenuItemBuilder::with_id("show", "显示主窗口").build(app)?;
+    let start = MenuItemBuilder::with_id("start-all", "一键启动").build(app)?;
+    let stop = MenuItemBuilder::with_id("stop-all", "全部停止").build(app)?;
+    let quit = MenuItemBuilder::with_id("quit", "退出").build(app)?;
+    let menu = MenuBuilder::new(app)
+        .item(&show)
+        .separator()
+        .item(&start)
+        .item(&stop)
+        .separator()
+        .item(&quit)
+        .build()?;
+
+    let mut tray = TrayIconBuilder::new()
+        .menu(&menu)
+        .tooltip("Dashi Taskboard Launcher")
+        .show_menu_on_left_click(false);
+    // ponytail: 直接用应用图标；macOS 菜单栏想更精致可换 template 图标
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+    tray.on_menu_event(|app, event| match event.id().as_ref() {
+        "show" => show_main_window(app),
+        "start-all" => {
+            let app_handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let pm = app_handle.state::<AppState>().pm.clone();
+                match config::load_config() {
+                    Ok(cfg) => {
+                        if let Err(e) = run_start_all(&pm, &app_handle, &cfg).await {
+                            log::error!("托盘一键启动失败: {}", e);
+                        }
+                    }
+                    Err(e) => log::error!("托盘一键启动读取配置失败: {}", e),
+                }
+            });
+        }
+        "stop-all" => {
+            let app_handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let pm = app_handle.state::<AppState>().pm.clone();
+                if let Err(e) = run_stop_all(&pm, &app_handle).await {
+                    log::error!("托盘全部停止失败: {}", e);
+                }
+            });
+        }
+        "quit" => {
+            let app_handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let pm = app_handle.state::<AppState>().pm.clone();
+                let _ = pm.stop_all().await;
+                app_handle.exit(0);
+            });
+        }
+        _ => {}
+    })
+    .on_tray_icon_event(|tray, event| {
+        if let tauri::tray::TrayIconEvent::Click {
+            button: tauri::tray::MouseButton::Left,
+            button_state: tauri::tray::MouseButtonState::Up,
+            ..
+        } = event
+        {
+            show_main_window(tray.app_handle());
+        }
+    })
+    .build(app)?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -456,19 +629,31 @@ pub fn run() {
         .manage(AppState {
             pm: Arc::new(ProcessManager::new()),
         })
-        .setup(|_app| {
+        .setup(|app| {
             log::info!("Dashi Taskboard Launcher 启动中...");
+            if let Err(e) = setup_tray(app) {
+                log::error!("初始化系统托盘失败: {}", e);
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
-                // 窗口关闭时尝试停止所有子进程
-                let app = window.app_handle();
-                let pm = app.state::<AppState>();
-                let pm_clone = pm.pm.clone();
-                tauri::async_runtime::spawn(async move {
-                    let _ = pm_clone.stop_all().await;
-                });
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let minimize_to_tray = config::load_config()
+                    .map(|c| c.minimize_to_tray_on_close)
+                    .unwrap_or(false);
+                if minimize_to_tray {
+                    // 阻止关闭，窗口隐入托盘，子进程继续运行
+                    api.prevent_close();
+                    hide_main_window_to_tray(window.app_handle());
+                } else {
+                    // 窗口关闭时尝试停止所有子进程
+                    let app = window.app_handle();
+                    let pm = app.state::<AppState>();
+                    let pm_clone = pm.pm.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = pm_clone.stop_all().await;
+                    });
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -488,6 +673,7 @@ pub fn run() {
             stop_injector,
             open_taskboard,
             install_skill,
+            check_skill_status,
             run_taskctl,
             get_updater_config_health,
         ])

@@ -35,6 +35,10 @@ pub struct LauncherConfig {
     /// 是否使用独立窗口模式（true）或重启模式（false）
     #[serde(default = "default_true")]
     pub separate_window_mode: bool,
+
+    /// 关闭窗口时是否最小化到系统托盘（false 则退出应用）
+    #[serde(default)]
+    pub minimize_to_tray_on_close: bool,
 }
 
 fn default_codex_path() -> String {
@@ -80,6 +84,7 @@ impl Default for LauncherConfig {
             cdp_port: default_cdp_port(),
             auto_open: true,
             separate_window_mode: true,
+            minimize_to_tray_on_close: false,
         }
     }
 }
