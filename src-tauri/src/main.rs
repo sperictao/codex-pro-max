@@ -14,16 +14,35 @@ pub struct AppState {
     pub pm: Arc<ProcessManager>,
 }
 
-/// 获取内置 taskboard 路径（打包后在 resource_dir/vendor/dashi-taskboard）
+/// 获取内置 taskboard 路径
+/// 打包后：resource_dir/vendor/dashi-taskboard
+/// 开发模式：项目根目录/vendor/dashi-taskboard（通过 CARGO_MANIFEST_DIR 回退）
 #[tauri::command]
 fn get_bundled_taskboard_path(app: tauri::AppHandle) -> Option<String> {
-    let resource_path = app.path().resource_dir().ok()?;
-    let bundled = resource_path.join("vendor").join("dashi-taskboard");
-    if bundled.exists() {
-        Some(bundled.to_string_lossy().to_string())
-    } else {
-        None
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+
+    // 1. 打包后的 resource_dir。不同 bundler 版本对 ../vendor 这种项目外
+    //    资源的落点不一致（带不带 vendor/ 前缀），两种都探测
+    if let Ok(resource_path) = app.path().resource_dir() {
+        candidates.push(resource_path.join("vendor").join("dashi-taskboard"));
+        candidates.push(resource_path.join("dashi-taskboard"));
     }
+
+    // 2. 开发模式回退：通过 CARGO_MANIFEST_DIR 定位项目根目录
+    // src-tauri/Cargo.toml 编译时 CARGO_MANIFEST_DIR = .../src-tauri
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    candidates.push(
+        std::path::Path::new(manifest_dir)
+            .join("..")
+            .join("vendor")
+            .join("dashi-taskboard"),
+    );
+
+    // ponytail: 用 server/index.mjs 代替裸 exists()，与 validate_taskboard_path 一致
+    candidates
+        .into_iter()
+        .find(|p| p.join("server/index.mjs").exists())
+        .map(|p| p.to_string_lossy().to_string())
 }
 
 /// 加载配置
@@ -56,9 +75,16 @@ async fn check_node_version(node_path: String) -> Result<String, String> {
     } else {
         node_path
     };
-    let output = std::process::Command::new(&node)
-        .arg("--version")
-        .output()
+    let mut cmd = std::process::Command::new(&node);
+    cmd.arg("--version");
+    // Windows 上不弹出终端窗口
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = cmd.output()
         .map_err(|e| format!("无法执行 {}: {}", node, e))?;
     if output.status.success() {
         let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -69,9 +95,50 @@ async fn check_node_version(node_path: String) -> Result<String, String> {
 }
 
 /// 检测 Codex 桌面应用是否存在
+/// 支持检查指定路径 + 搜索常见安装位置
 #[tauri::command]
 async fn check_codex_app(app_path: String) -> Result<bool, String> {
-    Ok(std::path::Path::new(&app_path).exists())
+    // 1. 检查用户指定的路径
+    if !app_path.is_empty() && std::path::Path::new(&app_path).exists() {
+        return Ok(true);
+    }
+
+    // 2. 搜索常见安装位置
+    let candidates: Vec<String> = {
+        #[cfg(target_os = "macos")]
+        {
+            vec![
+                "/Applications/ChatGPT.app".to_string(),
+                "/Applications/Codex.app".to_string(),
+                format!(
+                    "{}/Applications/ChatGPT.app",
+                    std::env::var("HOME")
+                        .or_else(|_| std::env::var("USERPROFILE"))
+                        .unwrap_or_default()
+                ),
+            ]
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
+            vec![
+                format!("{}\\Programs\\ChatGPT\\ChatGPT.exe", local),
+                "C:\\Program Files\\ChatGPT\\ChatGPT.exe".to_string(),
+            ]
+        }
+        #[cfg(target_os = "linux")]
+        {
+            vec!["/usr/bin/chatgpt".to_string(), "/usr/local/bin/chatgpt".to_string()]
+        }
+    };
+
+    for candidate in candidates {
+        if std::path::Path::new(&candidate).exists() {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 /// 获取所有进程状态
@@ -245,10 +312,12 @@ async fn open_taskboard(config: LauncherConfig) -> Result<(), String> {
     }
     #[cfg(windows)]
     {
-        std::process::Command::new("cmd")
-            .args(["/c", "start", "", &url])
-            .spawn()
-            .map_err(|e| format!("无法打开浏览器: {}", e))?;
+        // CREATE_NO_WINDOW：GUI 应用拉起 cmd 不能闪控制台窗口
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let mut cmd = std::process::Command::new("cmd");
+        cmd.args(["/c", "start", "", &url]).creation_flags(CREATE_NO_WINDOW);
+        cmd.spawn().map_err(|e| format!("无法打开浏览器: {}", e))?;
     }
     Ok(())
 }
@@ -317,6 +386,13 @@ async fn run_taskctl(
         cmd.arg(arg);
     }
     cmd.current_dir(&taskboard_path);
+    // Windows 上不弹出终端窗口
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
 
     let output = cmd.output()
         .map_err(|e| format!("执行 taskctl 失败: {}", e))?;

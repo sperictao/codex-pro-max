@@ -38,9 +38,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "../vendor/dashi-taskboard"
-    ],
+    "resources": {
+      "../vendor/dashi-taskboard": "vendor/dashi-taskboard"
+    },
     "macOS": {
       "hardenedRuntime": true,
       "minimumSystemVersion": "10.15"

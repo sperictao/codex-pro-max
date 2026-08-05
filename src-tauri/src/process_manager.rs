@@ -4,6 +4,24 @@ use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 use std::process::Stdio;
 
+/// 为 Command 添加跨平台无窗口设置
+/// Windows: CREATE_NO_WINDOW 防止弹出终端窗口
+/// Unix: 进程组分离
+fn setup_no_window(cmd: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(unix)]
+    {
+        // Unix 上 tokio::process::Command 默认会继承进程组
+        // 设置 process_group(0) 创建新进程组，使子进程独立
+        cmd.process_group(0);
+    }
+}
+
 /// 进程状态
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -102,6 +120,7 @@ impl ProcessManager {
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
         cmd.current_dir(taskboard_path);
+        setup_no_window(&mut cmd);
 
         match cmd.spawn() {
             Ok(child) => {
@@ -140,8 +159,11 @@ impl ProcessManager {
                 }
                 #[cfg(windows)]
                 {
+                    use std::os::windows::process::CommandExt;
+                    const CREATE_NO_WINDOW: u32 = 0x08000000;
                     let _ = std::process::Command::new("taskkill")
                         .args(["/PID", &pid.to_string(), "/T", "/F"])
+                        .creation_flags(CREATE_NO_WINDOW)
                         .output();
                 }
             }
@@ -205,6 +227,7 @@ impl ProcessManager {
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
         cmd.current_dir(taskboard_path);
+        setup_no_window(&mut cmd);
 
         match cmd.spawn() {
             Ok(child) => {
@@ -246,8 +269,11 @@ impl ProcessManager {
                 }
                 #[cfg(windows)]
                 {
+                    use std::os::windows::process::CommandExt;
+                    const CREATE_NO_WINDOW: u32 = 0x08000000;
                     let _ = std::process::Command::new("taskkill")
                         .args(["/PID", &pid.to_string(), "/T", "/F"])
+                        .creation_flags(CREATE_NO_WINDOW)
                         .output();
                 }
             }
