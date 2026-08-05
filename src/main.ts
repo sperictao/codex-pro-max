@@ -34,12 +34,6 @@ type ThemeMode = "light" | "dark" | "system";
 // ============ 全局状态 ============
 let statusPolling: ReturnType<typeof setInterval> | null = null;
 
-const themeLabels: Record<ThemeMode, string> = {
-  light: "亮色",
-  dark: "暗色",
-  system: "系统",
-};
-
 // ============ Toast 通知 ============
 function toast(message: string, type: "success" | "error" | "info" = "info"): void {
   const container = document.getElementById("toast-container")!;
@@ -75,18 +69,17 @@ function applyTheme(mode: ThemeMode): void {
     html.classList.remove("dark");
   }
 
-  const label = document.getElementById("theme-label");
-  if (label) {
-    label.textContent = themeLabels[mode];
+  const select = document.getElementById("cfg-theme") as HTMLSelectElement | null;
+  if (select) {
+    select.value = mode;
   }
 }
 
-function toggleTheme(): void {
-  const current = getStoredTheme();
-  const next: ThemeMode =
-    current === "light" ? "dark" : current === "dark" ? "system" : "light";
-  localStorage.setItem("theme", next);
-  applyTheme(next);
+function setThemeFromUI(): void {
+  const select = document.getElementById("cfg-theme") as HTMLSelectElement;
+  const mode = select.value as ThemeMode;
+  localStorage.setItem("theme", mode);
+  applyTheme(mode);
 }
 
 // ============ 配置管理 ============
@@ -275,6 +268,7 @@ function toggleSettings(): void {
   const mainView = document.getElementById("main-view")!;
   const settingsView = document.getElementById("settings-view")!;
   const btn = document.getElementById("btn-settings")!;
+  const homeBtn = document.getElementById("btn-home")!;
 
   const isHidden = settingsView.classList.contains("hidden");
 
@@ -282,11 +276,17 @@ function toggleSettings(): void {
     mainView.classList.add("hidden");
     settingsView.classList.remove("hidden");
     btn.classList.add("active");
+    homeBtn.classList.remove("active");
   } else {
-    mainView.classList.remove("hidden");
-    settingsView.classList.add("hidden");
-    btn.classList.remove("active");
+    showHome();
   }
+}
+
+function showHome(): void {
+  document.getElementById("main-view")!.classList.remove("hidden");
+  document.getElementById("settings-view")!.classList.add("hidden");
+  document.getElementById("btn-settings")!.classList.remove("active");
+  document.getElementById("btn-home")!.classList.add("active");
 }
 
 function showSkill(): void {
@@ -608,8 +608,9 @@ async function init(): Promise<void> {
 // ============ 暴露到全局 ============
 const w = window as unknown as Record<string, unknown>;
 w.toggleSettings = toggleSettings;
+w.showHome = showHome;
 w.showSkill = showSkill;
-w.toggleTheme = toggleTheme;
+w.setThemeFromUI = setThemeFromUI;
 w.switchSection = switchSection;
 w.browsePath = browsePath;
 w.browseNode = browseNode;
