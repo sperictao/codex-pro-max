@@ -15,6 +15,50 @@ interface LauncherConfig {
   auto_open: boolean;
   separate_window_mode: boolean;
   minimize_to_tray_on_close: boolean;
+  codex_guard: CodexGuardState;
+}
+
+interface GuardParamState {
+  value: unknown | null;
+  applied: boolean;
+  locked: boolean;
+  last_checked?: number | null;
+  last_restored?: number | null;
+}
+
+interface CodexGuardState {
+  enabled: boolean;
+  params: Record<string, GuardParamState>;
+}
+
+interface GuardParamView {
+  id: string;
+  label: string;
+  description: string;
+  applyMode: string;
+  valueType: string;
+  path: string;
+  default: unknown;
+  value: unknown;
+  applied: boolean;
+  locked: boolean;
+  actual: string | null;
+  status: "match" | "drift" | "missing" | "error";
+  error: string | null;
+  lastChecked: number | null;
+  lastRestored: number | null;
+}
+
+interface GuardGroupView {
+  name: string;
+  file: string;
+  error: string | null;
+  params: GuardParamView[];
+}
+
+interface GuardView {
+  enabled: boolean;
+  groups: GuardGroupView[];
 }
 
 interface ProcessInfo {
@@ -56,6 +100,8 @@ type ThemeMode = "light" | "dark" | "system";
 
 // ============ 全局状态 ============
 let statusPolling: ReturnType<typeof setInterval> | null = null;
+let guardState: CodexGuardState = { enabled: false, params: {} };
+let lastGuardJson = "";
 
 // ============ Toast 通知 ============
 function toast(message: string, type: "success" | "error" | "info" = "info"): void {
@@ -128,6 +174,14 @@ function fillConfigUI(cfg: LauncherConfig): void {
   updateAutoOpenLabel();
 
   document.getElementById("toggle-tray")!.classList.toggle("active", cfg.minimize_to_tray_on_close);
+
+  guardState = cfg.codex_guard ?? { enabled: false, params: {} };
+  renderGuardToggle();
+}
+
+function renderGuardToggle(): void {
+  document.getElementById("toggle-guard")!.classList.toggle("active", guardState.enabled);
+  document.getElementById("btn-guard")!.classList.toggle("hidden", !guardState.enabled);
 }
 
 function readConfigFromUI(): LauncherConfig {
@@ -141,6 +195,7 @@ function readConfigFromUI(): LauncherConfig {
     auto_open: document.getElementById("toggle-auto-open")!.classList.contains("active"),
     separate_window_mode: document.getElementById("toggle-mode")!.classList.contains("active"),
     minimize_to_tray_on_close: document.getElementById("toggle-tray")!.classList.contains("active"),
+    codex_guard: guardState,
   };
 }
 
@@ -303,7 +358,9 @@ function toggleSettings(): void {
   if (isHidden) {
     mainView.classList.add("hidden");
     document.getElementById("skill-view")!.classList.add("hidden");
+    document.getElementById("guard-view")!.classList.add("hidden");
     document.getElementById("btn-skill")!.classList.remove("active");
+    document.getElementById("btn-guard")!.classList.remove("active");
     settingsView.classList.remove("hidden");
     btn.classList.add("active");
     homeBtn.classList.remove("active");
@@ -316,8 +373,10 @@ function showHome(): void {
   document.getElementById("main-view")!.classList.remove("hidden");
   document.getElementById("settings-view")!.classList.add("hidden");
   document.getElementById("skill-view")!.classList.add("hidden");
+  document.getElementById("guard-view")!.classList.add("hidden");
   document.getElementById("btn-settings")!.classList.remove("active");
   document.getElementById("btn-skill")!.classList.remove("active");
+  document.getElementById("btn-guard")!.classList.remove("active");
   document.getElementById("btn-home")!.classList.add("active");
 }
 
@@ -325,10 +384,24 @@ function showSkill(): void {
   document.getElementById("main-view")!.classList.add("hidden");
   document.getElementById("settings-view")!.classList.add("hidden");
   document.getElementById("skill-view")!.classList.remove("hidden");
+  document.getElementById("guard-view")!.classList.add("hidden");
   document.getElementById("btn-settings")!.classList.remove("active");
   document.getElementById("btn-home")!.classList.remove("active");
+  document.getElementById("btn-guard")!.classList.remove("active");
   document.getElementById("btn-skill")!.classList.add("active");
   void refreshSkillStatus();
+}
+
+function showGuard(): void {
+  document.getElementById("main-view")!.classList.add("hidden");
+  document.getElementById("settings-view")!.classList.add("hidden");
+  document.getElementById("skill-view")!.classList.add("hidden");
+  document.getElementById("guard-view")!.classList.remove("hidden");
+  document.getElementById("btn-settings")!.classList.remove("active");
+  document.getElementById("btn-home")!.classList.remove("active");
+  document.getElementById("btn-skill")!.classList.remove("active");
+  document.getElementById("btn-guard")!.classList.add("active");
+  void refreshGuardView(true);
 }
 
 function switchSection(section: string): void {
@@ -492,6 +565,162 @@ async function installSkill(): Promise<void> {
     toast(`安装失败: ${e}`, "error");
   }
   await refreshSkillStatus();
+}
+
+// ============ Codex 配置看守 ============
+async function toggleGuard(): Promise<void> {
+  const enabled = !guardState.enabled;
+  try {
+    await invoke("guard_set_enabled", { enabled });
+    guardState.enabled = enabled;
+    renderGuardToggle();
+    toast(enabled ? "配置看守已开启" : "配置看守已关闭", enabled ? "success" : "info");
+  } catch (e) {
+    toast(`切换失败: ${e}`, "error");
+  }
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function fmtTs(ts: number | null): string {
+  if (!ts) return "—";
+  return new Date(ts * 1000).toLocaleString("zh-CN", { hour12: false });
+}
+
+async function refreshGuardView(force = false): Promise<void> {
+  if (document.getElementById("guard-view")!.classList.contains("hidden")) return;
+  try {
+    const view = await invoke<GuardView>("guard_get_view");
+    const json = JSON.stringify(view);
+    if (!force && json === lastGuardJson) return;
+    // 用户正在输入时不重渲染，避免抢走焦点/清空草稿
+    const ae = document.activeElement;
+    if (!force && ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA")
+        && document.getElementById("guard-view")!.contains(ae)) return;
+    lastGuardJson = json;
+    renderGuardView(view);
+  } catch {
+    // 轮询错误忽略
+  }
+}
+
+function renderGuardView(view: GuardView): void {
+  const container = document.getElementById("guard-groups")!;
+  const statusMap: Record<string, { text: string; cls: string }> = {
+    match: { text: "一致", cls: "running" },
+    drift: { text: "不一致", cls: "failed" },
+    missing: { text: "缺失", cls: "starting" },
+    error: { text: "错误", cls: "failed" },
+  };
+  container.innerHTML = view.groups.map((g) => {
+    const params = g.params.map((p) => {
+      const s = statusMap[p.status] ?? statusMap.error;
+      let editor = "";
+      const dis = p.locked ? "disabled" : "";
+      if (p.valueType === "bool") {
+        editor = `<div class="guard-bool-row">
+          <div class="toggle-switch ${p.value === true ? "active" : ""} ${p.locked ? "disabled" : ""}"
+               onclick="guardToggleBool('${p.id}')"></div>
+          <span class="guard-bool-label">${p.value === true ? "true" : "false"}（推荐 ${p.default}）</span>
+        </div>`;
+      } else if (p.valueType === "int" || p.valueType === "string") {
+        const t = p.valueType === "int" ? "number" : "text";
+        editor = `<input type="${t}" class="config-input mono guard-value-input" ${dis}
+               value="${escapeHtml(String(p.value ?? ""))}" data-guard-id="${p.id}"
+               onchange="guardSetValue('${p.id}', this)" />`;
+      } else if (p.valueType === "text") {
+        editor = `<textarea class="guard-textarea" ${dis} data-guard-id="${p.id}"
+               onchange="guardSetValue('${p.id}', this)">${escapeHtml(String(p.value ?? ""))}</textarea>`;
+      } else {
+        editor = `<span class="guard-default-hint">无可编辑值；启用即执行「${p.applyMode === "toml_absent" ? "删除" : "写入"}」</span>`;
+      }
+      const meta = p.locked
+        ? `<div class="guard-param-meta">上次校验 ${fmtTs(p.lastChecked)} ｜ 上次自动恢复 ${fmtTs(p.lastRestored)}</div>`
+        : "";
+      return `<div class="guard-param">
+        <div class="guard-param-head">
+          <span class="guard-param-label">${escapeHtml(p.label)}</span>
+          <span class="status-badge ${s.cls}"><span class="dot"></span><span>${s.text}</span></span>
+        </div>
+        <div class="guard-param-desc">${escapeHtml(p.description)}</div>
+        ${p.path ? `<div class="guard-param-path mono">${escapeHtml(p.path)}</div>` : ""}
+        <div class="guard-param-actual ${p.status === "match" ? "ok" : "bad"}">
+          当前：${escapeHtml(p.actual ?? p.error ?? "未知")}
+        </div>
+        ${editor}
+        <div class="guard-param-controls" style="margin-top: 8px;">
+          <button class="btn btn-primary btn-sm" ${p.locked ? "disabled" : ""}
+                  onclick="guardApply('${p.id}')">启用</button>
+          ${p.locked
+            ? `<button class="btn btn-secondary btn-sm" onclick="guardSetLocked('${p.id}', false)">解锁</button>`
+            : `<button class="btn btn-secondary btn-sm" ${p.applied ? "" : "disabled"}
+                  onclick="guardSetLocked('${p.id}', true)">锁定</button>`}
+        </div>
+        ${meta}
+      </div>`;
+    }).join("");
+    return `<div class="guard-group">
+      <div class="guard-group-name">${escapeHtml(g.name)}</div>
+      <div class="guard-group-file mono">~/.codex/${escapeHtml(g.file)}</div>
+      ${g.error ? `<div class="guard-group-error">${escapeHtml(g.error)}</div>` : ""}
+      ${params}
+    </div>`;
+  }).join("");
+}
+
+async function guardToggleBool(id: string): Promise<void> {
+  const st = guardState.params[id];
+  if (st?.locked) return;
+  try {
+    const view = await invoke<GuardView>("guard_get_view");
+    const p = view.groups.flatMap((g) => g.params).find((x) => x.id === id);
+    if (!p) return;
+    await invoke("guard_set_value", { id, value: p.value !== true });
+    await refreshGuardView(true);
+  } catch (e) {
+    toast(`修改失败: ${e}`, "error");
+  }
+}
+
+async function guardSetValue(id: string, input: HTMLInputElement | HTMLTextAreaElement): Promise<void> {
+  try {
+    const view = await invoke<GuardView>("guard_get_view");
+    const p = view.groups.flatMap((g) => g.params).find((x) => x.id === id);
+    if (!p) return;
+    const value = p.valueType === "int" ? parseInt(input.value, 10) : input.value;
+    if (p.valueType === "int" && Number.isNaN(value)) {
+      toast("请输入整数", "error");
+      await refreshGuardView(true);
+      return;
+    }
+    await invoke("guard_set_value", { id, value });
+    await refreshGuardView(true);
+  } catch (e) {
+    toast(`保存失败: ${e}`, "error");
+    await refreshGuardView(true);
+  }
+}
+
+async function guardApply(id: string): Promise<void> {
+  try {
+    await invoke("guard_apply", { id });
+    toast("已启用", "success");
+  } catch (e) {
+    toast(`启用失败: ${e}`, "error");
+  }
+  await refreshGuardView(true);
+}
+
+async function guardSetLocked(id: string, locked: boolean): Promise<void> {
+  try {
+    await invoke("guard_set_locked", { id, locked });
+    toast(locked ? "已锁定" : "已解锁", locked ? "success" : "info");
+  } catch (e) {
+    toast(`操作失败: ${e}`, "error");
+  }
+  await refreshGuardView(true);
 }
 
 // ============ 更新检查 ============
@@ -758,7 +987,10 @@ async function init(): Promise<void> {
     if (statusPolling !== null) {
       clearInterval(statusPolling);
     }
-    statusPolling = setInterval(refreshStatus, 3000);
+    statusPolling = setInterval(() => {
+      void refreshStatus();
+      void refreshGuardView();
+    }, 3000);
   } catch (e) {
     toast(`初始化失败: ${e}`, "error");
   }
@@ -788,6 +1020,12 @@ w.startInjector = startInjector;
 w.stopInjector = stopInjector;
 w.openTaskboard = openTaskboard;
 w.installSkill = installSkill;
+w.showGuard = showGuard;
+w.toggleGuard = toggleGuard;
+w.guardToggleBool = guardToggleBool;
+w.guardSetValue = guardSetValue;
+w.guardApply = guardApply;
+w.guardSetLocked = guardSetLocked;
 w.checkUpdate = onUpdateButton;
 w.openUpdaterHelp = openUpdaterHelp;
 w.openGithub = openGithub;

@@ -656,6 +656,165 @@
         word-break: break-all;
       }
 
+      /* ============ Guard View ============ */
+      .guard-view {
+        flex: 1;
+        overflow-y: auto;
+        padding: 28px 36px;
+      }
+
+      .guard-hint {
+        font-size: 12px;
+        color: var(--muted-foreground);
+        line-height: 1.7;
+        margin-bottom: 20px;
+        max-width: 720px;
+      }
+
+      .guard-hint code {
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+        background: var(--muted);
+        border-radius: 4px;
+        padding: 1px 5px;
+      }
+
+      .guard-group {
+        max-width: 720px;
+        margin-bottom: 24px;
+      }
+
+      .guard-group-name {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--foreground);
+        margin-bottom: 4px;
+      }
+
+      .guard-group-file {
+        font-size: 11.5px;
+        color: var(--muted-foreground);
+        margin-bottom: 10px;
+      }
+
+      .guard-group-error {
+        font-size: 12px;
+        color: var(--destructive);
+        background: hsl(347 100% 49% / 0.08);
+        border: 1px solid var(--destructive);
+        border-radius: var(--radius-sm);
+        padding: 8px 12px;
+        margin-bottom: 10px;
+      }
+
+      .guard-param {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: 14px 16px;
+        margin-bottom: 10px;
+      }
+
+      .guard-param-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 4px;
+      }
+
+      .guard-param-label {
+        font-size: 13.5px;
+        font-weight: 600;
+      }
+
+      .guard-param-desc {
+        font-size: 12px;
+        color: var(--muted-foreground);
+        line-height: 1.6;
+        margin-bottom: 6px;
+      }
+
+      .guard-param-path {
+        font-size: 11.5px;
+        color: var(--muted-foreground);
+        margin-bottom: 6px;
+      }
+
+      .guard-param-actual {
+        font-size: 12px;
+        margin-bottom: 8px;
+        word-break: break-all;
+      }
+
+      .guard-param-actual.ok {
+        color: var(--success);
+      }
+
+      .guard-param-actual.bad {
+        color: var(--destructive);
+      }
+
+      .guard-param-controls {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .guard-value-input {
+        flex: 1;
+        min-width: 120px;
+      }
+
+      .guard-textarea {
+        width: 100%;
+        min-height: 120px;
+        margin-bottom: 8px;
+        padding: 8px 12px;
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        color: var(--foreground);
+        font-size: 12px;
+        font-family: var(--font-mono);
+        line-height: 1.6;
+        outline: none;
+        resize: vertical;
+        user-select: text;
+      }
+
+      .guard-textarea:focus {
+        border-color: var(--interactive);
+      }
+
+      .guard-bool-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .guard-bool-label {
+        font-size: 12px;
+        color: var(--muted-foreground);
+      }
+
+      .toggle-switch.disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      .guard-param-meta {
+        font-size: 11px;
+        color: var(--muted-foreground);
+        margin-top: 8px;
+      }
+
+      .guard-default-hint {
+        font-size: 11px;
+        color: var(--muted-foreground);
+      }
+
       /* ============ Toast ============ */
       .toast-container {
         position: fixed;
@@ -900,6 +1059,7 @@
         <div class="header-actions">
           <button class="header-btn active" id="btn-home" onclick="showHome()">主页</button>
           <button class="header-btn" id="btn-skill" onclick="showSkill()">Skill</button>
+          <button class="header-btn hidden" id="btn-guard" onclick="showGuard()">看守</button>
           <button class="header-btn" id="btn-settings" onclick="toggleSettings()">设置</button>
         </div>
       </header>
@@ -1011,6 +1171,17 @@
                 <input type="text" class="config-input mono" id="cfg-codex" placeholder="/Applications/ChatGPT.app" oninput="onConfigChange()" />
                 <button class="btn btn-secondary btn-sm" onclick="browseCodex()">浏览</button>
                 <span class="config-validate" id="validate-codex"></span>
+              </div>
+            </div>
+
+            <div class="config-row">
+              <label class="config-label">Codex 配置看守</label>
+              <div class="switch-row" onclick="toggleGuard()">
+                <div class="switch-text">
+                  <span class="switch-label">托管并锁定 ~/.codex 配置参数</span>
+                  <span class="switch-desc">开启后按 schema 检查 config.toml / AGENTS.md 等参数；锁定的参数被改动时自动改回（仅本应用运行期间，间隔 60 秒）。开启后顶部出现「看守」入口。</span>
+                </div>
+                <div class="toggle-switch" id="toggle-guard"></div>
               </div>
             </div>
 
@@ -1194,9 +1365,16 @@
           </div>
         </div>
       </main>
+      <!-- ============ Guard View ============ -->
+      <main class="guard-view hidden" id="guard-view">
+        <h2 class="section-heading">Codex 配置看守</h2>
+        <p class="guard-hint">
+          启用 = 把参数值写入对应文件（写入前自动备份到 <code>~/.codex/dashi-backups/</code>）；
+          锁定 = 每 60 秒校验，漂移自动改回。锁定的参数只读，先解锁再改。
+        </p>
+        <div id="guard-groups"></div>
+      </main>
     </div>
-
-    <!-- Toast Container -->
     <div class="toast-container" id="toast-container"></div>
 
     <script type="module" src="/src/main.ts"></script>

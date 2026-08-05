@@ -39,6 +39,10 @@ pub struct LauncherConfig {
     /// 关闭窗口时是否最小化到系统托盘（false 则退出应用）
     #[serde(default)]
     pub minimize_to_tray_on_close: bool,
+
+    /// Codex 配置看守状态（见 codex_guard.rs）
+    #[serde(default)]
+    pub codex_guard: crate::codex_guard::CodexGuardState,
 }
 
 fn default_codex_path() -> String {
@@ -85,12 +89,13 @@ impl Default for LauncherConfig {
             auto_open: true,
             separate_window_mode: false,
             minimize_to_tray_on_close: false,
+            codex_guard: Default::default(),
         }
     }
 }
 
 /// 跨平台获取用户主目录
-fn home_dir() -> Result<PathBuf, String> {
+pub fn home_dir() -> Result<PathBuf, String> {
     // Unix 使用 HOME，Windows 使用 USERPROFILE
     #[cfg(unix)]
     {

@@ -57,7 +57,18 @@ stopped → starting → running ⇄ stopping → stopped
 
 ### 3.3 main.rs
 
-`#[tauri::command]` 暴露给前端：配置读写、路径/Node 版本/Codex 应用校验、状态查询、进程启停、updater 配置健康检查等。
+`#[tauri::command]` 暴露给前端：配置读写、路径/Node 版本/Codex 应用校验、状态查询、进程启停、codex guard 五命令、updater 配置健康检查等。
+
+### 3.4 codex_guard.rs
+
+Codex 配置看守（词汇与边界见 [../CONTEXT.md](../CONTEXT.md) 与 [adr/0001](adr/0001-codex-config-guard-boundaries.md)）：
+
+- **schema**：内置 `guard_schema.json`（11 条 v1 参数），启动时与 `~/.dashi-taskboard-launcher/codex-guard-schema.json` 合并（同 id 磁盘覆盖内置，磁盘独有保留），UI 完全由合并结果驱动
+- **apply_mode**：`toml_key` / `toml_absent` / `file_overwrite` / `markdown_block`（`<!-- dashi:begin/end id -->` 标记区块）；TOML 读写走 `toml_edit`，保留注释与格式
+- **状态**：`LauncherConfig.codex_guard`（enabled + 每参数 value/applied/locked/last_checked/last_restored）
+- **轮询**：`poll_loop` tokio 任务，60s 固定间隔，仅看守锁定参数；漂移即备份后改回
+- **备份**：任何写入前复制目标文件到 `~/.codex/dashi-backups/`，每文件保留 20 份
+- **命令**：`guard_get_view` / `guard_set_enabled` / `guard_set_value` / `guard_apply` / `guard_set_locked`
 
 ## 4. 前端
 

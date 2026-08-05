@@ -1,6 +1,6 @@
 [package]
 name = "dashi-taskboard-launcher"
-version = "0.4.0"
+version = "0.6.0"
 description = "One-click launcher for dashi-taskboard integrated with Codex"
 authors = ["dashi-taskboard-launcher"]
 edition = "2021"
@@ -18,6 +18,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+toml_edit = "0.22"
 tokio = { version = "1", features = ["full"] }
 log = "0.4"
 

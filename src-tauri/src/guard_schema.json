@@ -1,0 +1,123 @@
+[
+  {
+    "id": "features.multi_agent_v2.enabled",
+    "group": "config.toml",
+    "label": "multi_agent_v2 总开关",
+    "description": "启用 V2 多子代理；为未在模型目录中明确指定协议的模型启用 V2 回退",
+    "file": "config.toml",
+    "apply_mode": "toml_key",
+    "path": "features.multi_agent_v2.enabled",
+    "value_type": "bool",
+    "default": true
+  },
+  {
+    "id": "features.multi_agent_v2.hide_spawn_agent_metadata",
+    "group": "config.toml",
+    "label": "隐藏派生元数据",
+    "description": "隐藏主代理可填写的 agent_type、service_tier、model、reasoning_effort；本文实践不定义多子代理类别，模型无需传类型参（codex 默认 true）",
+    "file": "config.toml",
+    "apply_mode": "toml_key",
+    "path": "features.multi_agent_v2.hide_spawn_agent_metadata",
+    "value_type": "bool",
+    "default": true
+  },
+  {
+    "id": "features.multi_agent_v2.tool_namespace",
+    "group": "config.toml",
+    "label": "工具命名空间",
+    "description": "避开 GPT-5.6 保留的 collaboration 命名空间（codex 官方命名冲突问题）",
+    "file": "config.toml",
+    "apply_mode": "toml_key",
+    "path": "features.multi_agent_v2.tool_namespace",
+    "value_type": "string",
+    "default": "agents"
+  },
+  {
+    "id": "features.multi_agent_v2.max_concurrent_threads_per_session",
+    "group": "config.toml",
+    "label": "最大并发会话数",
+    "description": "活跃进程，包含一个对话的主代理和子代理；7 = 同时允许 6 个子代理并行",
+    "file": "config.toml",
+    "apply_mode": "toml_key",
+    "path": "features.multi_agent_v2.max_concurrent_threads_per_session",
+    "value_type": "int",
+    "default": 7
+  },
+  {
+    "id": "features.multi_agent_v2.min_wait_timeout_ms",
+    "group": "config.toml",
+    "label": "wait 最短等待 (ms)",
+    "description": "wait_agent 可请求的最短等待；codex 默认 10000",
+    "file": "config.toml",
+    "apply_mode": "toml_key",
+    "path": "features.multi_agent_v2.min_wait_timeout_ms",
+    "value_type": "int",
+    "default": 10000
+  },
+  {
+    "id": "features.multi_agent_v2.default_wait_timeout_ms",
+    "group": "config.toml",
+    "label": "wait 默认等待 (ms)",
+    "description": "codex 默认 30000",
+    "file": "config.toml",
+    "apply_mode": "toml_key",
+    "path": "features.multi_agent_v2.default_wait_timeout_ms",
+    "value_type": "int",
+    "default": 30000
+  },
+  {
+    "id": "features.multi_agent_v2.max_wait_timeout_ms",
+    "group": "config.toml",
+    "label": "wait 最长等待 (ms)",
+    "description": "codex 默认 3600000，本文实践压到 120000",
+    "file": "config.toml",
+    "apply_mode": "toml_key",
+    "path": "features.multi_agent_v2.max_wait_timeout_ms",
+    "value_type": "int",
+    "default": 120000
+  },
+  {
+    "id": "features.image_generation",
+    "group": "config.toml",
+    "label": "图像生成开关",
+    "description": "关闭内置 image_generation",
+    "file": "config.toml",
+    "apply_mode": "toml_key",
+    "path": "features.image_generation",
+    "value_type": "bool",
+    "default": false
+  },
+  {
+    "id": "agents-v1-remove",
+    "group": "config.toml",
+    "label": "移除 multi_agent_v1 配置",
+    "description": "v1 的 [agents] 块（max_threads / max_depth / interrupt_message）全部被 v2 取代，且 agents.max_threads 不能与 v2 共存。启用 = 删除整个 [agents] 块；锁定 = 保持其不存在",
+    "file": "config.toml",
+    "apply_mode": "toml_absent",
+    "path": "agents",
+    "value_type": "none",
+    "default": null
+  },
+  {
+    "id": "agents-md-subagent-section",
+    "group": "AGENTS.md",
+    "label": "「子代理使用」段落",
+    "description": "向 ~/.codex/AGENTS.md 注入子代理使用规范（dashi 标记区块，文件其他内容不受影响；已存在同标题段落时请自行去重）",
+    "file": "AGENTS.md",
+    "apply_mode": "markdown_block",
+    "path": "",
+    "value_type": "text",
+    "default": "## 子代理使用\n\n子代理在我们的工作里用于探索，他是你的探子。\n把子代理当成你手边最顺手的、用于「宽而重」读取的工具。工作的任何时候，只要你觉得需要就可以派。只有在它能减少主线程上下文污染、提高并行度或者提供独立核验的时候才使用。\n必须遵守：你需要更激进和更频繁地调用子代理，在任何需要的情况下，而不仅仅只是在对话的开头。我们需要更频繁的子代理调用来避免上下文腐烂，你承担子代理编排者的角色。\n\n### 何时直接处理\n\n直接读取以及处理以下内容，不派子代理：\n\n* 已知位置的小文件、少量代码或者单一事实；\n* 即将修改的具体代码；\n* 派发、等待以及复核的成本不低于自己读取的任务。\n* 奠基性文档，无论多长都自己读：架构文档、设计文档、交接备忘录（在别的工作流里可能是别的名字）等用来让你建立全局视角、充当后续判断地基的文件——它们的价值全在细节与脉络，一经子代理转译即失真，长度不构成外包的理由。\n\n### 何时适合派发\n\n适合交给子代理的：\n\n* 巨型大文件（奠基性文档除外，见上）、跨文件或者跨目录的检索；\n* 相互独立、可以并行的探索或者核验；\n* 长任务当中需要重新确认模块现状的；\n* 会产生大量日志、搜索结果或者外围材料的阅读。\n\n多个独立的任务应当并发派发。\n\n### 委派与验证\n\n给子代理的任务必须是自包含的，说明检索范围、具体问题以及期望的输出。精度重要的时候，要求返回 `file:line`、符号名以及必要的关键原文——这些出处就是你之后廉价复核的抓手。\n\n子代理的结果只是线索，可能遗漏或者出错。但复核不是把它读过的东西重读一遍，那样这次派发就白费了——你买的是「压缩」，重读会把压缩当场退光。复核 = 顺着它给的 `file:line` 以及关键原文来。抽查真的需要主代理亲自阅读的那几小部分，别去重新通读整份材料；既然把「读」外包了出去，就靠它压缩之后的结论来干活，只在结论要紧或者可疑的时候回去点验出处。\n\n唯二需要你亲自完整读原文的是：① 即将修改的确切代码，② 奠基性文档——这两类本就不外包（见「何时直接处理」）。对它们，子代理至多帮你定位，读由你亲自来：定位与阅读是分工，并非重复劳动。\n\n子代理默认只做探索、检索以及核验。代码修改、方案取舍以及最终验证由主代理来负责。\n\n### 派发机制\n\n* 是否派、派几个由主代理自主决定，无需用户明确要求；较重的探索应当拆成多个独立的轻任务来并发派发。\n* 我们系统允许最大并行7个会话进程。所以你最多可以并行分派 6 个子代理；子代理模型的成本较低，无需去顾虑并行派发的成本，只要任务需要就积极使用。\n* 子代理一律使用默认配置：工具支持角色参数的时候显式指定 `agent_role = \"default\"` 或者 `agent_type = \"default\"`；不支持的时候省略角色、由泛型派生加载 `default.toml`。禁用 `explorer`、`worker` 或者其他角色。\n* 派生的时候**必须**显式 `fork_turns = \"none\"`，不复制主代理的历史，让每个探子都保持干净、快、不背主代理正在腐烂的上下文（代价即上文「任务必须自包含」）。\n* 需要多个子代理的时候在同一轮并发派发；派发之后主代理立即 `wait_agent`，停止其余的分析、检索、命令执行以及文件修改，直至全部返回。\n* 收到某个子代理结果之后，如果提供了 `close_agent` 就必须立即关闭；每个子代理只用一轮，不复用、不追派。\n* 特别注意：子代理自派生起累计运行 10 分钟仍未完成：视为异常，主代理必须介入、不得继续盲等；检查代理状态或运行记录，已有可用 MESSAGE 时采用其部分结果，然后停止这个子代理。并自行判断是否需要再派生或拆分更小任务重新分派。"
+  },
+  {
+    "id": "agents-default-toml",
+    "group": "default.toml",
+    "label": "default 子代理定义",
+    "description": "整文件覆写 ~/.codex/agents/default.toml：gpt-5.6-luna / low reasoning 的通用探子角色",
+    "file": "agents/default.toml",
+    "apply_mode": "file_overwrite",
+    "path": "",
+    "value_type": "text",
+    "default": "name = \"default\"\n\ndescription = \"General-purpose subagent locked to gpt-5.6-luna with low reasoning.\"\n\nmodel = \"gpt-5.6-luna\"\n\nmodel_reasoning_effort = \"low\"\n\ndeveloper_instructions = \"\"\"\n你是通用子代理，是主代理派出去的探子。你只做探索、检索、核验：不改动任何东西，不做方案取舍或者最终判断——那些是主代理的事。\n不要派生、调用或者请求新的子代理；任务若是需要进一步拆分，把拆分的建议返回给主代理。\n\n你交回给主代理的东西：\n- 你的产出直接喂给主代理、是它据以行动的数据，并非给人看的。密而不水，不寒暄、不复述过程、不下客套结论。\n- 给证据，不给包装：关键处附上 `file:line`、符号名、必要的逐字原文。主代理会靠这些出处来抽查你、省去重读原文，所以出处必须准、且足以让它核验。\n- 把「看到的事实」以及「你的推断」分开，存疑的明确标注——别把猜测写成事实。\n- 压缩体量，但承重的精确信息（确切的名字、签名、取值、路径）一字不改地留住，别在转述里磨没了。\n\n你怎么工作：\n- 你只有一轮、任务是自包含的：没有追问的机会，别反问；用这一轮把任务范围查到位、尽力答全。\n- 答不全就如实交代「查到了什么、还有什么没覆盖、哪里存疑或者矛盾」。宁可显式报「没查到 / 没覆盖」，也别用含糊的话糊弄过去——你悄悄漏掉的，主代理无从复核。\n\"\"\""
+  }
+]

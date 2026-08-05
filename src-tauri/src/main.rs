@@ -7,6 +7,7 @@ use tauri::{Emitter, Manager, State};
 use serde::Serialize;
 
 mod config;
+mod codex_guard;
 mod process_manager;
 mod updater;
 
@@ -606,6 +607,7 @@ pub fn run() {
             if let Err(e) = setup_tray(app) {
                 log::error!("初始化系统托盘失败: {}", e);
             }
+            tauri::async_runtime::spawn(codex_guard::poll_loop());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -647,6 +649,11 @@ pub fn run() {
             install_skill,
             check_skill_status,
             run_taskctl,
+            codex_guard::guard_get_view,
+            codex_guard::guard_set_enabled,
+            codex_guard::guard_set_value,
+            codex_guard::guard_apply,
+            codex_guard::guard_set_locked,
             updater::get_updater_config_health,
             updater::get_updater_help_paths,
             updater::check_update,
