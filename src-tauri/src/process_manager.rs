@@ -194,6 +194,23 @@ fn cdp_reachable(port: u16) -> bool {
     .is_ok()
 }
 
+/// 端口上已有健康的 Taskboard 服务时直接复用；重复 spawn 只会 EADDRINUSE
+///（上次启动残留的服务进程不会被启动器回收，但服务本身是无状态可共享的）
+async fn taskboard_health_reachable(host: &str, port: u16) -> bool {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let timeout = std::time::Duration::from_millis(800);
+    let Ok(Ok(mut stream)) = tokio::time::timeout(
+        timeout,
+        tokio::net::TcpStream::connect((host, port)),
+    ).await else { return false };
+    let req = format!("GET /health HTTP/1.1\r\nHost: {host}:{port}\r\nConnection: close\r\n\r\n");
+    if stream.write_all(req.as_bytes()).await.is_err() { return false; }
+    let mut buf = [0u8; 1024];
+    let Ok(Ok(n)) = tokio::time::timeout(timeout, stream.read(&mut buf)).await else { return false };
+    let head = String::from_utf8_lossy(&buf[..n]);
+    head.starts_with("HTTP/1.1 200") || head.starts_with("HTTP/1.0 200")
+}
+
 /// 确保有一个带 CDP 调试端口的 Codex 实例，没有就拉起并等端口就绪
 /// new_instance=true（独立窗口模式）：macOS 用 open -n 强制新实例，不动现有窗口
 /// new_instance=false（完整模式）：拉起主实例；若已在运行且无 CDP，
@@ -272,6 +289,15 @@ impl ProcessManager {
         let mut tb = self.taskboard.lock().await;
         if tb.status == ProcessStatus::Running || tb.status == ProcessStatus::Starting {
             return Err("Taskboard 服务已在运行".to_string());
+        }
+
+        // 残留/外部实例健康时直接复用，避免 EADDRINUSE 秒退；
+        // child 置空，停止时不会去杀不属于自己的进程
+        if taskboard_health_reachable(host, port).await {
+            tb.child = None;
+            tb.status = ProcessStatus::Running;
+            tb.message = format!("复用已在运行的 Taskboard 服务 http://{}:{}", host, port);
+            return Ok(());
         }
 
         tb.status = ProcessStatus::Starting;
