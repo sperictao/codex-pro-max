@@ -33,7 +33,7 @@ pub struct LauncherConfig {
     pub auto_open: bool,
 
     /// 是否使用独立窗口模式（true）或重启模式（false）
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub separate_window_mode: bool,
 
     /// 关闭窗口时是否最小化到系统托盘（false 则退出应用）
@@ -83,7 +83,7 @@ impl Default for LauncherConfig {
             taskboard_host: default_taskboard_host(),
             cdp_port: default_cdp_port(),
             auto_open: true,
-            separate_window_mode: true,
+            separate_window_mode: false,
             minimize_to_tray_on_close: false,
         }
     }

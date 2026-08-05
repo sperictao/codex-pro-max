@@ -541,6 +541,48 @@
         text-decoration: underline;
       }
 
+      .update-info {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .update-notes {
+        font-size: 12px;
+        color: var(--muted-foreground);
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .update-progress {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        flex: 1;
+        min-width: 0;
+      }
+
+      .update-progress-track {
+        height: 6px;
+        border-radius: 3px;
+        background: var(--muted);
+        overflow: hidden;
+      }
+
+      .update-progress-bar {
+        height: 100%;
+        width: 0%;
+        border-radius: 3px;
+        background: var(--interactive);
+        transition: width 0.2s ease;
+      }
+
+      .update-progress-text {
+        font-size: 12px;
+        color: var(--muted-foreground);
+      }
+
       .health-status {
         font-size: 12px;
         font-family: var(--font-mono);
@@ -827,6 +869,8 @@
 
       .switch-row .toggle-switch {
         margin-top: 1px;
+        margin-left: auto;
+        flex-shrink: 0;
       }
 
       .switch-text {
@@ -973,11 +1017,11 @@
             <div class="config-row">
               <label class="config-label">系统行为</label>
               <div class="switch-row" onclick="toggleTrayMinimize()">
-                <div class="toggle-switch" id="toggle-tray"></div>
                 <div class="switch-text">
                   <span class="switch-label">关闭窗口时最小化到托盘</span>
                   <span class="switch-desc">启用后点击关闭按钮会隐藏窗口，应用继续驻留系统托盘。</span>
                 </div>
+                <div class="toggle-switch" id="toggle-tray"></div>
               </div>
             </div>
           </section>
@@ -1055,8 +1099,8 @@
             <div class="config-row">
               <label class="config-label">启动模式</label>
               <div class="config-toggle">
-                <div class="toggle-switch active" id="toggle-mode" onclick="toggleMode()"></div>
-                <span class="toggle-label" id="toggle-mode-label">独立窗口模式（不重启 Codex）</span>
+                <div class="toggle-switch" id="toggle-mode" onclick="toggleMode()"></div>
+                <span class="toggle-label" id="toggle-mode-label">完整启动模式（重启 Codex）</span>
               </div>
             </div>
 
@@ -1084,9 +1128,34 @@
               <span class="about-value" id="updater-health">检查中...</span>
             </div>
 
+            <div class="about-row hidden" id="updater-help-row">
+              <span class="about-label">配置帮助</span>
+              <span class="about-value">
+                <a class="about-link" onclick="openUpdaterHelp('docs'); return false;">配置指南</a>
+                ·
+                <a class="about-link" onclick="openUpdaterHelp('template'); return false;">配置模板</a>
+              </span>
+            </div>
+
             <div class="about-row">
               <span class="about-label"></span>
               <button class="btn btn-secondary btn-sm" id="btn-check-update" onclick="checkUpdate()">检查更新</button>
+            </div>
+
+            <div class="about-row hidden" id="update-available-row">
+              <span class="about-label">可用更新</span>
+              <div class="update-info">
+                <span class="about-value mono" id="update-version"></span>
+                <span class="update-notes" id="update-notes"></span>
+              </div>
+            </div>
+
+            <div class="about-row hidden" id="update-progress-row">
+              <span class="about-label">更新进度</span>
+              <div class="update-progress">
+                <div class="update-progress-track"><div class="update-progress-bar" id="update-progress-bar"></div></div>
+                <span class="update-progress-text" id="update-progress-text"></span>
+              </div>
             </div>
 
             <div class="about-row">

@@ -3,7 +3,6 @@ import { listen } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
-import { check } from "@tauri-apps/plugin-updater";
 
 // ============ 类型定义 ============
 interface LauncherConfig {
@@ -28,6 +27,29 @@ interface ProcessInfo {
 interface UpdaterConfigHealth {
   configured: boolean;
   message: string;
+}
+
+interface UpdaterHelpPaths {
+  docsPath: string;
+  templatePath: string;
+}
+
+interface UpdateInfo {
+  currentVersion: string;
+  availableVersion: string | null;
+  hasUpdate: boolean;
+  releaseNotes: string | null;
+  message: string | null;
+}
+
+interface DownloadProgress {
+  stage: string;
+  version: string;
+  downloadedBytes: number;
+  totalBytes: number | null;
+  percent: number | null;
+  attempt: number;
+  maxAttempts: number;
 }
 
 type ThemeMode = "light" | "dark" | "system";
@@ -475,39 +497,129 @@ async function installSkill(): Promise<void> {
 // ============ 更新检查 ============
 async function checkUpdaterHealth(): Promise<void> {
   const el = document.getElementById("updater-health")!;
+  const helpRow = document.getElementById("updater-help-row")!;
   try {
     const health = await invoke<UpdaterConfigHealth>("get_updater_config_health");
     if (health.configured) {
       el.textContent = "已就绪";
       el.className = "health-status ok";
+      helpRow.classList.add("hidden");
     } else {
       el.textContent = health.message;
       el.className = "health-status err";
+      helpRow.classList.remove("hidden");
     }
   } catch (e) {
     el.textContent = `检查失败: ${e}`;
     el.className = "health-status err";
+    helpRow.classList.remove("hidden");
   }
 }
 
-async function checkUpdate(): Promise<void> {
+async function openUpdaterHelp(target: "docs" | "template"): Promise<void> {
+  try {
+    const paths = await invoke<UpdaterHelpPaths>("get_updater_help_paths");
+    await openUrl(target === "docs" ? paths.docsPath : paths.templatePath);
+  } catch (e) {
+    toast(`打开帮助失败: ${e}`, "error");
+  }
+}
+
+let pendingUpdateInfo: UpdateInfo | null = null;
+let updateBusy = false;
+
+function renderUpdateInfo(info: UpdateInfo): void {
+  pendingUpdateInfo = info.hasUpdate ? info : null;
+  const row = document.getElementById("update-available-row")!;
+  const btn = document.getElementById("btn-check-update")! as HTMLButtonElement;
+  if (info.hasUpdate && info.availableVersion) {
+    row.classList.remove("hidden");
+    document.getElementById("update-version")!.textContent = `v${info.availableVersion}`;
+    const notes = document.getElementById("update-notes")!;
+    notes.textContent = info.releaseNotes?.trim() || "";
+    notes.classList.toggle("hidden", !notes.textContent);
+    btn.textContent = "立即更新";
+  } else {
+    row.classList.add("hidden");
+    btn.textContent = "检查更新";
+  }
+}
+
+function renderDownloadProgress(p: DownloadProgress): void {
+  const row = document.getElementById("update-progress-row")!;
+  row.classList.remove("hidden");
+  const bar = document.getElementById("update-progress-bar")!;
+  const text = document.getElementById("update-progress-text")!;
+  if (p.stage === "restarting") {
+    bar.style.width = "100%";
+    text.textContent = "安装完成，正在重启…";
+  } else if (p.stage === "installing") {
+    bar.style.width = "100%";
+    text.textContent = "正在安装…";
+  } else if (p.stage === "retrying") {
+    text.textContent = `下载失败，正在重试（${p.attempt}/${p.maxAttempts}）…`;
+  } else {
+    if (p.percent !== null) {
+      bar.style.width = `${p.percent}%`;
+      text.textContent = `正在下载 v${p.version}：${Math.floor(p.percent)}%`;
+    } else {
+      const mb = (p.downloadedBytes / 1024 / 1024).toFixed(1);
+      text.textContent = `正在下载 v${p.version}：${mb} MB`;
+    }
+  }
+}
+
+async function checkUpdate(silent = false): Promise<void> {
+  if (updateBusy) return;
+  updateBusy = true;
   const btn = document.getElementById("btn-check-update")! as HTMLButtonElement;
   btn.disabled = true;
   btn.textContent = "检查中...";
   try {
-    const update = await check();
-    if (update) {
-      toast(`发现新版本: ${update.version}`, "info");
-      await update.downloadAndInstall();
-      toast("更新已下载，即将重启...", "success");
-    } else {
+    const info = await invoke<UpdateInfo>("check_update");
+    renderUpdateInfo(info);
+    if (info.hasUpdate) {
+      toast(`发现新版本: v${info.availableVersion}`, "info");
+    } else if (info.message) {
+      if (!silent) toast(info.message, "error");
+    } else if (!silent) {
       toast("当前已是最新版本", "info");
     }
   } catch (e) {
-    toast(`检查更新失败: ${e}`, "error");
+    if (!silent) toast(`检查更新失败: ${e}`, "error");
   } finally {
+    updateBusy = false;
     btn.disabled = false;
+    if (!pendingUpdateInfo) btn.textContent = "检查更新";
+  }
+}
+
+async function onUpdateButton(): Promise<void> {
+  if (!pendingUpdateInfo) {
+    await checkUpdate();
+    return;
+  }
+  if (updateBusy) return;
+  updateBusy = true;
+  const btn = document.getElementById("btn-check-update")! as HTMLButtonElement;
+  btn.disabled = true;
+  btn.textContent = "更新中...";
+  try {
+    const msg = await invoke<string>("install_update", {
+      expectedVersion: pendingUpdateInfo.availableVersion,
+    });
+    toast(msg, "success");
+    pendingUpdateInfo = null;
+    document.getElementById("update-available-row")!.classList.add("hidden");
     btn.textContent = "检查更新";
+  } catch (e) {
+    toast(`更新失败: ${e}`, "error");
+    btn.textContent = "立即更新";
+  } finally {
+    updateBusy = false;
+    btn.disabled = false;
+    document.getElementById("update-progress-row")!.classList.add("hidden");
+    document.getElementById("update-progress-bar")!.style.width = "0%";
   }
 }
 
@@ -586,6 +698,9 @@ async function setupEventListener(): Promise<void> {
     };
     updateStatusUI(info);
   });
+  await listen<DownloadProgress>("updater-download-progress", (event) => {
+    renderDownloadProgress(event.payload);
+  });
 }
 
 // ============ 初始化 ============
@@ -630,6 +745,9 @@ async function init(): Promise<void> {
     // 检查更新源健康状态
     await checkUpdaterHealth();
 
+    // 静默检查更新，有新版本时提示
+    void checkUpdate(true);
+
     // 设置事件监听
     await setupEventListener();
 
@@ -670,7 +788,8 @@ w.startInjector = startInjector;
 w.stopInjector = stopInjector;
 w.openTaskboard = openTaskboard;
 w.installSkill = installSkill;
-w.checkUpdate = checkUpdate;
+w.checkUpdate = onUpdateButton;
+w.openUpdaterHelp = openUpdaterHelp;
 w.openGithub = openGithub;
 
 init();

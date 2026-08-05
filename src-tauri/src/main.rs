@@ -5,10 +5,10 @@
 use std::sync::Arc;
 use tauri::{Emitter, Manager, State};
 use serde::Serialize;
-use tauri_plugin_updater::UpdaterExt;
 
 mod config;
 mod process_manager;
+mod updater;
 
 use config::LauncherConfig;
 use process_manager::{ProcessManager, ProcessInfo, resolve_node};
@@ -493,35 +493,6 @@ async fn run_taskctl(
     }
 }
 
-/// Updater 配置健康检查
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct UpdaterConfigHealth {
-    configured: bool,
-    message: String,
-}
-
-#[tauri::command]
-fn get_updater_config_health(app: tauri::AppHandle) -> UpdaterConfigHealth {
-    match app.updater() {
-        Ok(_) => UpdaterConfigHealth {
-            configured: true,
-            message: "updater 配置已就绪".to_string(),
-        },
-        Err(err) => {
-            let message = err.to_string();
-            UpdaterConfigHealth {
-                configured: false,
-                message: if message.is_empty() {
-                    "更新源未配置，请在 tauri.conf.json 中设置 updater 的 endpoints 与 pubkey".to_string()
-                } else {
-                    message
-                },
-            }
-        }
-    }
-}
-
 /// 显示并聚焦主窗口（托盘点击 / 菜单）
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
@@ -629,6 +600,7 @@ pub fn run() {
         .manage(AppState {
             pm: Arc::new(ProcessManager::new()),
         })
+        .manage(updater::PendingUpdateState::default())
         .setup(|app| {
             log::info!("Dashi Taskboard Launcher 启动中...");
             if let Err(e) = setup_tray(app) {
@@ -675,7 +647,10 @@ pub fn run() {
             install_skill,
             check_skill_status,
             run_taskctl,
-            get_updater_config_health,
+            updater::get_updater_config_health,
+            updater::get_updater_help_paths,
+            updater::check_update,
+            updater::install_update,
         ])
         .run(tauri::generate_context!())
         .expect("启动 Dashi Taskboard Launcher 失败");
