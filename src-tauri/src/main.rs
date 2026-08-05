@@ -209,6 +209,7 @@ async fn start_all(
         config.cdp_port,
         &config.codex_app_path,
         config.separate_window_mode,
+        config.taskboard_port,
     ).await?;
 
     app.emit("status-update", &serde_json::json!({
@@ -289,6 +290,7 @@ async fn start_injector(
         config.cdp_port,
         &config.codex_app_path,
         config.separate_window_mode,
+        config.taskboard_port,
     ).await
 }
 

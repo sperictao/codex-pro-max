@@ -48,6 +48,8 @@ pub struct ManagedProcess {
     pub child: Option<Child>,
     pub status: ProcessStatus,
     pub message: String,
+    /// 子进程 stdout/stderr 尾部（环形缓冲），把启动失败原因暴露给 UI
+    pub output_tail: Arc<std::sync::Mutex<String>>,
 }
 
 impl ManagedProcess {
@@ -57,6 +59,7 @@ impl ManagedProcess {
             child: None,
             status: ProcessStatus::Stopped,
             message: String::new(),
+            output_tail: Arc::new(std::sync::Mutex::new(String::new())),
         }
     }
 
@@ -102,6 +105,154 @@ pub fn resolve_node(node_path: &str) -> String {
     "node".to_string()
 }
 
+fn tail_of(buf: &Arc<std::sync::Mutex<String>>) -> String {
+    let Ok(b) = buf.lock() else { return String::new() };
+    let lines: Vec<&str> = b.lines().filter(|l| !l.trim().is_empty()).collect();
+    lines[lines.len().saturating_sub(3)..].join(" | ")
+}
+
+/// 持续排空子进程 stdout/stderr 到尾部缓冲
+/// 必须排空：管道无人读取，写满 64KB 后子进程阻塞（watch 模式注入器持续打日志）
+fn spawn_output_drain<R>(mut reader: R, buf: Arc<std::sync::Mutex<String>>)
+where
+    R: tokio::io::AsyncRead + Unpin + Send + 'static,
+{
+    use tokio::io::AsyncReadExt;
+    tokio::spawn(async move {
+        let mut chunk = [0u8; 4096];
+        loop {
+            match reader.read(&mut chunk).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    let text = String::from_utf8_lossy(&chunk[..n]);
+                    let Ok(mut b) = buf.lock() else { break };
+                    b.push_str(&text);
+                    let excess = b.len().saturating_sub(4000);
+                    if excess > 0 {
+                        let mut idx = excess;
+                        while !b.is_char_boundary(idx) {
+                            idx += 1;
+                        }
+                        b.drain(..idx);
+                    }
+                }
+            }
+        }
+    });
+}
+
+fn drain_child_output(child: &mut Child, buf: &Arc<std::sync::Mutex<String>>) {
+    if let Some(stdout) = child.stdout.take() {
+        spawn_output_drain(stdout, buf.clone());
+    }
+    if let Some(stderr) = child.stderr.take() {
+        spawn_output_drain(stderr, buf.clone());
+    }
+}
+
+/// spawn 成功不代表存活：注入器大量失败路径（CDP 不可达、端口占用、
+/// 脚本报错）都会在 1 秒内退出。宽限检查后把退出码和日志尾部抛给 UI，
+/// 不再让"运行中"掩盖秒退
+async fn fail_if_exited(proc: &mut ManagedProcess) -> Result<(), String> {
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    let Some(child) = proc.child.as_mut() else { return Ok(()) };
+    match child.try_wait() {
+        Ok(Some(status)) => {
+            let tail = tail_of(&proc.output_tail);
+            let detail = if tail.is_empty() { String::new() } else { format!(": {}", tail) };
+            proc.child = None;
+            proc.status = ProcessStatus::Failed;
+            proc.message = format!("启动后立即退出 ({}){}", status, detail);
+            Err(proc.message.clone())
+        }
+        _ => Ok(()),
+    }
+}
+
+/// 轮询时做活性检测：子进程意外退出（哪怕启动很久之后）要翻成 Failed，
+/// 否则 UI 永远停在"运行中"
+fn refresh_liveness(proc: &mut ManagedProcess) {
+    if proc.status != ProcessStatus::Running && proc.status != ProcessStatus::Starting {
+        return;
+    }
+    let Some(child) = proc.child.as_mut() else { return };
+    if let Ok(Some(status)) = child.try_wait() {
+        let tail = tail_of(&proc.output_tail);
+        let detail = if tail.is_empty() { String::new() } else { format!(": {}", tail) };
+        proc.child = None;
+        proc.status = ProcessStatus::Failed;
+        proc.message = format!("进程意外退出 ({}){}", status, detail);
+    }
+}
+
+fn cdp_reachable(port: u16) -> bool {
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
+    TcpStream::connect_timeout(
+        &SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
+        std::time::Duration::from_millis(500),
+    )
+    .is_ok()
+}
+
+/// 确保有一个带 CDP 调试端口的 Codex 实例，没有就拉起并等端口就绪
+/// new_instance=true（独立窗口模式）：macOS 用 open -n 强制新实例，不动现有窗口
+/// new_instance=false（完整模式）：拉起主实例；若已在运行且无 CDP，
+/// 调试参数不会生效，等待超时后提示用户先退出 Codex
+async fn ensure_codex_cdp(app_path: &str, port: u16, new_instance: bool) -> Result<(), String> {
+    if cdp_reachable(port) {
+        return Ok(());
+    }
+    if app_path.is_empty() {
+        return Err(format!(
+            "CDP 端口 {} 无响应，且未配置 Codex 应用路径。请在设置中选择 Codex 应用，或手动以 --remote-debugging-port={} 启动 Codex",
+            port, port
+        ));
+    }
+    let debug_args = [
+        format!("--remote-debugging-port={}", port),
+        format!("--remote-allow-origins=http://127.0.0.1:{}", port),
+    ];
+    #[cfg(target_os = "macos")]
+    {
+        let mut cmd = std::process::Command::new("/usr/bin/open");
+        if new_instance {
+            cmd.arg("-n");
+        }
+        cmd.arg("-a").arg(app_path).arg("--args").args(&debug_args);
+        let out = cmd.output().map_err(|e| format!("无法启动 Codex: {}", e))?;
+        if !out.status.success() {
+            return Err(format!(
+                "启动 Codex 失败: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        // Windows/Linux 直接带参数拉起 exe（GUI 应用，无控制台窗口问题）
+        let _ = new_instance;
+        std::process::Command::new(app_path)
+            .args(&debug_args)
+            .spawn()
+            .map_err(|e| format!("无法启动 Codex ({}): {}", app_path, e))?;
+    }
+    // 等窗口和 CDP 就绪，最多 15 秒
+    for _ in 0..30 {
+        if cdp_reachable(port) {
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    Err(if new_instance {
+        format!("等待 Codex CDP 端口 {} 就绪超时", port)
+    } else {
+        format!(
+            "等待 Codex CDP 端口 {} 就绪超时。若 Codex 已在运行，请先完全退出再使用完整启动模式",
+            port
+        )
+    })
+}
+
 impl ProcessManager {
     pub fn new() -> Self {
         Self {
@@ -140,8 +291,10 @@ impl ProcessManager {
         setup_no_window(&mut cmd);
 
         match cmd.spawn() {
-            Ok(child) => {
+            Ok(mut child) => {
+                drain_child_output(&mut child, &tb.output_tail);
                 tb.child = Some(child);
+                fail_if_exited(&mut tb).await?;
                 tb.status = ProcessStatus::Running;
                 tb.message = format!("Taskboard 运行在 http://{}:{}", host, port);
                 Ok(())
@@ -205,6 +358,9 @@ impl ProcessManager {
     }
 
     /// 启动 codex 注入器
+    /// 两种模式统一走跨平台的 --watch：由启动器负责拉起带 CDP 端口的
+    /// Codex 实例（ensure_codex_cdp），不再用注入器的 --launch
+    /// （其内部 open/pgrep/ps 仅支持 macOS，Windows 上必然失败）
     pub async fn start_injector(
         &self,
         taskboard_path: &str,
@@ -212,6 +368,7 @@ impl ProcessManager {
         cdp_port: u16,
         codex_app_path: &str,
         separate_window: bool,
+        taskboard_port: u16,
     ) -> Result<(), String> {
         let mut inj = self.injector.lock().await;
         if inj.status == ProcessStatus::Running || inj.status == ProcessStatus::Starting {
@@ -219,6 +376,14 @@ impl ProcessManager {
         }
 
         inj.status = ProcessStatus::Starting;
+        inj.message = "正在等待 Codex 调试端口...".to_string();
+
+        if let Err(e) = ensure_codex_cdp(codex_app_path, cdp_port, separate_window).await {
+            inj.status = ProcessStatus::Failed;
+            inj.message = e.clone();
+            return Err(e);
+        }
+
         inj.message = "正在启动 Codex 注入器...".to_string();
 
         let node = resolve_node(node_path);
@@ -226,20 +391,15 @@ impl ProcessManager {
 
         let mut cmd = Command::new(&node);
         cmd.arg(&injector_script);
+        cmd.arg("--watch");
+        cmd.arg("--open");
+        cmd.arg("--port").arg(cdp_port.to_string());
 
-        if separate_window {
-            // 独立窗口模式：仅注入，不启动 Codex
-            cmd.arg("--watch");
-            cmd.arg("--port").arg(cdp_port.to_string());
-        } else {
-            // 完整启动模式：启动 Codex + 注入 + 监控
-            cmd.arg("--launch");
-            cmd.arg("--watch");
-            cmd.arg("--open");
-        }
-
+        // 注入器按 CODEX_TASKBOARD_PORT 推导 taskboard 地址（resolvePort），
+        // 不传则退回默认 47823，与启动器实际端口不一致时 iframe 永远加载失败。
+        // 注意：注入器不读 CODEX_TASKBOARD_APP_PATH，app 路径只用于上面的拉起
         cmd.env("CODEX_TASKBOARD_HOST", "127.0.0.1");
-        cmd.env("CODEX_TASKBOARD_APP_PATH", codex_app_path);
+        cmd.env("CODEX_TASKBOARD_PORT", taskboard_port.to_string());
         cmd.stdin(Stdio::null());
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
@@ -247,13 +407,15 @@ impl ProcessManager {
         setup_no_window(&mut cmd);
 
         match cmd.spawn() {
-            Ok(child) => {
+            Ok(mut child) => {
+                drain_child_output(&mut child, &inj.output_tail);
                 inj.child = Some(child);
+                fail_if_exited(&mut inj).await?;
                 inj.status = ProcessStatus::Running;
                 if separate_window {
-                    inj.message = format!("注入器运行中 (CDP 端口 {})", cdp_port);
+                    inj.message = format!("注入器运行中 (独立窗口, CDP 端口 {})", cdp_port);
                 } else {
-                    inj.message = "注入器运行中 (完整启动模式)".to_string();
+                    inj.message = format!("注入器运行中 (完整启动, CDP 端口 {})", cdp_port);
                 }
                 Ok(())
             }
@@ -313,10 +475,12 @@ impl ProcessManager {
         Ok(())
     }
 
-    /// 获取所有进程信息
+    /// 获取所有进程信息（顺带做活性检测，把秒退/意外退出翻成 Failed）
     pub async fn get_all_status(&self) -> Vec<ProcessInfo> {
-        let tb = self.taskboard.lock().await;
-        let inj = self.injector.lock().await;
+        let mut tb = self.taskboard.lock().await;
+        let mut inj = self.injector.lock().await;
+        refresh_liveness(&mut tb);
+        refresh_liveness(&mut inj);
         vec![tb.info(), inj.info()]
     }
 
