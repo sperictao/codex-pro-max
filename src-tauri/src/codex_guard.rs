@@ -174,7 +174,7 @@ fn backup(rel_file: &str, target: &Path) -> Result<(), String> {
         .filter(|p| {
             p.file_name()
                 .and_then(|n| n.to_str())
-                .map_or(false, |n| n.starts_with(&format!("{}.", flat)) && n.ends_with(".bak"))
+                .is_some_and(|n| n.starts_with(&format!("{}.", flat)) && n.ends_with(".bak"))
         })
         .collect();
     olds.sort();
@@ -470,8 +470,8 @@ pub fn build_view() -> Result<GuardView, String> {
             path: p.path.clone(),
             default: p.default.clone(),
             value: expected,
-            applied: state.map_or(false, |s| s.applied),
-            locked: state.map_or(false, |s| s.locked),
+            applied: state.is_some_and(|s| s.applied),
+            locked: state.is_some_and(|s| s.locked),
             actual: c.actual,
             status: c.status,
             error: c.error,
@@ -521,7 +521,7 @@ fn poll_once() -> Result<(), String> {
             .codex_guard
             .params
             .get(&p.id)
-            .map_or(false, |s| s.locked);
+            .is_some_and(|s| s.locked);
         if !locked {
             continue;
         }
