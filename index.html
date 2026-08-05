@@ -336,7 +336,9 @@
       }
 
       .nav-item {
-        display: block;
+        display: flex;
+        align-items: center;
+        gap: 9px;
         width: 100%;
         padding: 10px 20px;
         border: none;
@@ -348,6 +350,10 @@
         text-align: left;
         cursor: pointer;
         transition: all 150ms var(--ease-geist);
+      }
+
+      .nav-item svg {
+        flex-shrink: 0;
       }
 
       .nav-item:hover {
@@ -481,7 +487,12 @@
       .skill-install-area {
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        align-items: flex-start;
+        gap: 10px;
+      }
+
+      .skill-result {
+        width: 100%;
       }
 
       .skill-result {
@@ -552,6 +563,57 @@
         justify-content: flex-end;
       }
 
+      /* ============ Skill View ============ */
+      .skill-view {
+        flex: 1;
+        overflow-y: auto;
+        padding: 28px 36px;
+      }
+
+      .skill-card {
+        max-width: 560px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: 20px;
+        box-shadow: var(--shadow-sm);
+      }
+
+      .skill-desc {
+        font-size: 13px;
+        color: var(--muted-foreground);
+        line-height: 1.7;
+        margin-bottom: 18px;
+      }
+
+      .skill-desc code {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        background: var(--muted);
+        border-radius: 4px;
+        padding: 1px 5px;
+      }
+
+      .skill-status-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 6px;
+      }
+
+      .skill-target {
+        font-size: 11.5px;
+        color: var(--muted-foreground);
+      }
+
+      .skill-status-detail {
+        font-size: 12px;
+        color: var(--muted-foreground);
+        margin-bottom: 16px;
+        min-height: 15px;
+        word-break: break-all;
+      }
+
       /* ============ Toast ============ */
       .toast-container {
         position: fixed;
@@ -594,6 +656,195 @@
           transform: translateX(0);
           opacity: 1;
         }
+      }
+      /* ============ Theme Cards（外观） ============ */
+      .theme-cards {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+      }
+
+      .theme-card {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 12px 10px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        cursor: pointer;
+        color: var(--foreground);
+        font-family: var(--font-sans);
+        transition: border-color 150ms var(--ease-geist), background 150ms var(--ease-geist),
+          box-shadow 150ms var(--ease-geist);
+      }
+
+      .theme-card:hover {
+        background: var(--muted);
+      }
+
+      .theme-card.selected {
+        border-color: var(--interactive);
+        background: hsl(215 100% 50% / 0.06);
+        box-shadow: var(--shadow-sm);
+      }
+
+      .theme-check {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--interactive);
+        color: #ffffff;
+        display: none;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .theme-card.selected .theme-check {
+        display: flex;
+      }
+
+      /* 主题微缩预览：纯 CSS 绘制的迷你窗口 */
+      .theme-preview {
+        display: flex;
+        width: 100%;
+        height: 64px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        overflow: hidden;
+        pointer-events: none;
+        user-select: none;
+      }
+
+      .tp-window {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      .tp-window + .tp-window {
+        border-left: 1px solid var(--border);
+      }
+
+      .tp-light {
+        background: #f4f4f5;
+      }
+
+      .tp-dark {
+        background: #17171a;
+      }
+
+      .tp-title {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        padding: 4px 5px;
+      }
+
+      .tp-light .tp-title {
+        background: #ffffff;
+        border-bottom: 1px solid #e4e4e7;
+      }
+
+      .tp-dark .tp-title {
+        background: #202023;
+        border-bottom: 1px solid #2e2e33;
+      }
+
+      .tp-title i {
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+      }
+
+      .tp-title i:nth-child(1) { background: #ee6a5f; }
+      .tp-title i:nth-child(2) { background: #f5bd4f; }
+      .tp-title i:nth-child(3) { background: #61c454; }
+
+      .tp-body {
+        flex: 1;
+        display: flex;
+        gap: 5px;
+        padding: 5px;
+      }
+
+      .tp-side {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        width: 14px;
+      }
+
+      .tp-main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        padding-top: 1px;
+      }
+
+      .tp-side i,
+      .tp-main i {
+        display: block;
+        height: 3px;
+        border-radius: 2px;
+      }
+
+      .tp-main i:nth-child(2) { width: 75%; }
+      .tp-main i:nth-child(3) { width: 55%; }
+
+      .tp-light .tp-side i { background: #d4d4d8; }
+      .tp-light .tp-main i { background: #e4e4e7; }
+      .tp-dark .tp-side i { background: #333338; }
+      .tp-dark .tp-main i { background: #2b2b30; }
+
+      .theme-name {
+        font-size: 12.5px;
+        font-weight: 600;
+      }
+
+      .appearance-desc {
+        margin-top: 14px;
+        font-size: 12px;
+        color: var(--muted-foreground);
+        line-height: 1.6;
+      }
+
+      /* ============ Switch Row（带描述的开关行） ============ */
+      .switch-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        cursor: pointer;
+        padding: 4px 0;
+      }
+
+      .switch-row .toggle-switch {
+        margin-top: 1px;
+      }
+
+      .switch-text {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .switch-label {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--foreground);
+      }
+
+      .switch-desc {
+        font-size: 12px;
+        color: var(--muted-foreground);
+        line-height: 1.5;
       }
     </style>
   </head>
@@ -663,10 +914,26 @@
       <main class="settings-view hidden" id="settings-view">
         <!-- Sidebar -->
         <nav class="settings-sidebar">
-          <button class="nav-item active" id="nav-general" onclick="switchSection('general')">通用</button>
-          <button class="nav-item" id="nav-network" onclick="switchSection('network')">网络</button>
-          <button class="nav-item" id="nav-mode" onclick="switchSection('mode')">模式</button>
-          <button class="nav-item" id="nav-about" onclick="switchSection('about')">关于</button>
+          <button class="nav-item active" id="nav-general" onclick="switchSection('general')">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+            通用
+          </button>
+          <button class="nav-item" id="nav-appearance" onclick="switchSection('appearance')">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
+            外观
+          </button>
+          <button class="nav-item" id="nav-network" onclick="switchSection('network')">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+            网络
+          </button>
+          <button class="nav-item" id="nav-mode" onclick="switchSection('mode')">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg>
+            模式
+          </button>
+          <button class="nav-item" id="nav-about" onclick="switchSection('about')">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+            关于
+          </button>
         </nav>
 
         <!-- Content -->
@@ -674,17 +941,6 @@
           <!-- General Section -->
           <section class="settings-section" id="section-general">
             <h2 class="section-heading">通用</h2>
-
-            <div class="config-row">
-              <label class="config-label" for="cfg-theme">主题</label>
-              <div class="config-input-group">
-                <select class="config-input" id="cfg-theme" onchange="setThemeFromUI()">
-                  <option value="system">跟随系统</option>
-                  <option value="light">亮色</option>
-                  <option value="dark">暗色</option>
-                </select>
-              </div>
-            </div>
 
             <div class="config-row">
               <label class="config-label" for="cfg-path">Taskboard 路径</label>
@@ -713,6 +969,63 @@
                 <span class="config-validate" id="validate-codex"></span>
               </div>
             </div>
+
+            <div class="config-row">
+              <label class="config-label">系统行为</label>
+              <div class="switch-row" onclick="toggleTrayMinimize()">
+                <div class="toggle-switch" id="toggle-tray"></div>
+                <div class="switch-text">
+                  <span class="switch-label">关闭窗口时最小化到托盘</span>
+                  <span class="switch-desc">启用后点击关闭按钮会隐藏窗口，应用继续驻留系统托盘。</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Appearance Section -->
+          <section class="settings-section hidden" id="section-appearance">
+            <h2 class="section-heading">外观</h2>
+
+            <div class="theme-cards">
+              <button type="button" class="theme-card" id="theme-card-system" onclick="setTheme('system')">
+                <span class="theme-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+                <span class="theme-preview">
+                  <span class="tp-window tp-light">
+                    <span class="tp-title"><i></i><i></i><i></i></span>
+                    <span class="tp-body"><span class="tp-side"><i></i><i></i><i></i></span><span class="tp-main"><i></i><i></i><i></i></span></span>
+                  </span>
+                  <span class="tp-window tp-dark">
+                    <span class="tp-title"><i></i><i></i><i></i></span>
+                    <span class="tp-body"><span class="tp-side"><i></i><i></i><i></i></span><span class="tp-main"><i></i><i></i><i></i></span></span>
+                  </span>
+                </span>
+                <span class="theme-name">跟随系统</span>
+              </button>
+
+              <button type="button" class="theme-card" id="theme-card-light" onclick="setTheme('light')">
+                <span class="theme-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+                <span class="theme-preview">
+                  <span class="tp-window tp-light">
+                    <span class="tp-title"><i></i><i></i><i></i></span>
+                    <span class="tp-body"><span class="tp-side"><i></i><i></i><i></i></span><span class="tp-main"><i></i><i></i><i></i></span></span>
+                  </span>
+                </span>
+                <span class="theme-name">亮色</span>
+              </button>
+
+              <button type="button" class="theme-card" id="theme-card-dark" onclick="setTheme('dark')">
+                <span class="theme-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+                <span class="theme-preview">
+                  <span class="tp-window tp-dark">
+                    <span class="tp-title"><i></i><i></i><i></i></span>
+                    <span class="tp-body"><span class="tp-side"><i></i><i></i><i></i></span><span class="tp-main"><i></i><i></i><i></i></span></span>
+                  </span>
+                </span>
+                <span class="theme-name">暗色</span>
+              </button>
+            </div>
+
+            <p class="appearance-desc">主题切换立即生效；选择“跟随系统”时会随系统外观自动切换。</p>
           </section>
 
           <!-- Network Section -->
@@ -755,13 +1068,6 @@
               </div>
             </div>
 
-            <div class="config-row">
-              <label class="config-label">Codex Skill 安装</label>
-              <div class="skill-install-area">
-                <button class="btn btn-primary btn-sm" id="btn-install-skill" onclick="installSkill()">安装 Skill</button>
-                <div class="skill-result mono" id="skill-result"></div>
-              </div>
-            </div>
           </section>
 
           <!-- About Section -->
@@ -792,6 +1098,30 @@
           <!-- Save Footer -->
           <div class="settings-footer" id="settings-footer">
             <button class="btn btn-primary" id="btn-save-config" onclick="saveConfig()">保存配置</button>
+          </div>
+        </div>
+      </main>
+
+      <!-- ============ Skill View ============ -->
+      <main class="skill-view hidden" id="skill-view">
+        <h2 class="section-heading">Codex Skill</h2>
+        <div class="skill-card">
+          <div class="skill-status-row">
+            <span class="status-badge stopped" id="skill-status-badge">
+              <span class="dot"></span>
+              <span id="skill-status-text">检测中…</span>
+            </span>
+            <span class="skill-target mono">~/.codex/skills/manage-taskboard</span>
+          </div>
+          <p class="skill-status-detail" id="skill-status-detail"></p>
+          <p class="skill-desc">
+            将 <code>manage-taskboard</code> Skill 安装到 Codex，安装后可在 Codex 中直接创建、查看和管理
+            Taskboard 任务。安装动作会在 <code>~/.codex/skills/manage-taskboard</code>
+            创建指向 Taskboard 仓库的符号链接，Taskboard 更新后 Skill 自动同步。
+          </p>
+          <div class="skill-install-area">
+            <button class="btn btn-primary" id="btn-install-skill" onclick="installSkill()">安装 Skill</button>
+            <div class="skill-result mono" id="skill-result"></div>
           </div>
         </div>
       </main>

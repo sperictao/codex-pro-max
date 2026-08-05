@@ -15,6 +15,7 @@ interface LauncherConfig {
   cdp_port: number;
   auto_open: boolean;
   separate_window_mode: boolean;
+  minimize_to_tray_on_close: boolean;
 }
 
 interface ProcessInfo {
@@ -69,15 +70,12 @@ function applyTheme(mode: ThemeMode): void {
     html.classList.remove("dark");
   }
 
-  const select = document.getElementById("cfg-theme") as HTMLSelectElement | null;
-  if (select) {
-    select.value = mode;
+  for (const m of ["light", "dark", "system"] as ThemeMode[]) {
+    document.getElementById(`theme-card-${m}`)?.classList.toggle("selected", m === mode);
   }
 }
 
-function setThemeFromUI(): void {
-  const select = document.getElementById("cfg-theme") as HTMLSelectElement;
-  const mode = select.value as ThemeMode;
+function setTheme(mode: ThemeMode): void {
   localStorage.setItem("theme", mode);
   applyTheme(mode);
 }
@@ -106,6 +104,8 @@ function fillConfigUI(cfg: LauncherConfig): void {
     autoOpenToggle.classList.remove("active");
   }
   updateAutoOpenLabel();
+
+  document.getElementById("toggle-tray")!.classList.toggle("active", cfg.minimize_to_tray_on_close);
 }
 
 function readConfigFromUI(): LauncherConfig {
@@ -118,7 +118,13 @@ function readConfigFromUI(): LauncherConfig {
     cdp_port: parseInt((document.getElementById("cfg-cdp") as HTMLInputElement).value) || 9231,
     auto_open: document.getElementById("toggle-auto-open")!.classList.contains("active"),
     separate_window_mode: document.getElementById("toggle-mode")!.classList.contains("active"),
+    minimize_to_tray_on_close: document.getElementById("toggle-tray")!.classList.contains("active"),
   };
+}
+
+function toggleTrayMinimize(): void {
+  document.getElementById("toggle-tray")!.classList.toggle("active");
+  onConfigChange();
 }
 
 function onConfigChange(): void {
@@ -274,6 +280,8 @@ function toggleSettings(): void {
 
   if (isHidden) {
     mainView.classList.add("hidden");
+    document.getElementById("skill-view")!.classList.add("hidden");
+    document.getElementById("btn-skill")!.classList.remove("active");
     settingsView.classList.remove("hidden");
     btn.classList.add("active");
     homeBtn.classList.remove("active");
@@ -285,16 +293,20 @@ function toggleSettings(): void {
 function showHome(): void {
   document.getElementById("main-view")!.classList.remove("hidden");
   document.getElementById("settings-view")!.classList.add("hidden");
+  document.getElementById("skill-view")!.classList.add("hidden");
   document.getElementById("btn-settings")!.classList.remove("active");
+  document.getElementById("btn-skill")!.classList.remove("active");
   document.getElementById("btn-home")!.classList.add("active");
 }
 
 function showSkill(): void {
-  const settingsView = document.getElementById("settings-view")!;
-  if (settingsView.classList.contains("hidden")) {
-    toggleSettings();
-  }
-  switchSection("mode");
+  document.getElementById("main-view")!.classList.add("hidden");
+  document.getElementById("settings-view")!.classList.add("hidden");
+  document.getElementById("skill-view")!.classList.remove("hidden");
+  document.getElementById("btn-settings")!.classList.remove("active");
+  document.getElementById("btn-home")!.classList.remove("active");
+  document.getElementById("btn-skill")!.classList.add("active");
+  void refreshSkillStatus();
 }
 
 function switchSection(section: string): void {
@@ -309,7 +321,7 @@ function switchSection(section: string): void {
   document.getElementById(`nav-${section}`)!.classList.add("active");
 
   const footer = document.getElementById("settings-footer")!;
-  if (section === "about") {
+  if (section === "about" || section === "appearance") {
     footer.classList.add("hidden");
   } else {
     footer.classList.remove("hidden");
@@ -415,6 +427,34 @@ async function openTaskboard(): Promise<void> {
 }
 
 // ============ Skill 安装 ============
+interface SkillStatus {
+  state: "installed" | "not-installed" | "mismatch";
+  detail: string;
+  targetPath: string;
+}
+
+async function refreshSkillStatus(): Promise<void> {
+  const badge = document.getElementById("skill-status-badge")!;
+  const text = document.getElementById("skill-status-text")!;
+  const detail = document.getElementById("skill-status-detail")!;
+  try {
+    const cfg = readConfigFromUI();
+    const status = await invoke<SkillStatus>("check_skill_status", {
+      taskboardPath: cfg.taskboard_path,
+    });
+    badge.className = `status-badge ${
+      status.state === "installed" ? "running" : status.state === "mismatch" ? "starting" : "stopped"
+    }`;
+    text.textContent =
+      status.state === "installed" ? "已安装" : status.state === "mismatch" ? "安装异常" : "未安装";
+    detail.textContent = status.detail;
+  } catch (e) {
+    badge.className = "status-badge failed";
+    text.textContent = "检测失败";
+    detail.textContent = String(e);
+  }
+}
+
 async function installSkill(): Promise<void> {
   const cfg = readConfigFromUI();
   if (!cfg.taskboard_path) {
@@ -429,6 +469,7 @@ async function installSkill(): Promise<void> {
     document.getElementById("skill-result")!.textContent = `失败: ${e}`;
     toast(`安装失败: ${e}`, "error");
   }
+  await refreshSkillStatus();
 }
 
 // ============ 更新检查 ============
@@ -610,7 +651,8 @@ const w = window as unknown as Record<string, unknown>;
 w.toggleSettings = toggleSettings;
 w.showHome = showHome;
 w.showSkill = showSkill;
-w.setThemeFromUI = setThemeFromUI;
+w.setTheme = setTheme;
+w.toggleTrayMinimize = toggleTrayMinimize;
 w.switchSection = switchSection;
 w.browsePath = browsePath;
 w.browseNode = browseNode;
