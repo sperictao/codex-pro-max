@@ -1,3 +1,7 @@
+// 发布版按 Windows GUI 子系统链接，否则双击 exe 会附带一个控制台窗口，
+// 关掉控制台会把整个进程树（含软件窗体）一起杀掉
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use std::sync::Arc;
 use tauri::{Emitter, Manager, State};
 use serde::Serialize;
@@ -42,7 +46,7 @@ fn get_bundled_taskboard_path(app: tauri::AppHandle) -> Option<String> {
     candidates
         .into_iter()
         .find(|p| p.join("server/index.mjs").exists())
-        .map(|p| p.to_string_lossy().to_string())
+        .map(|p| config::strip_unc(&p.to_string_lossy()))
 }
 
 /// 加载配置
@@ -94,6 +98,45 @@ async fn check_node_version(node_path: String) -> Result<String, String> {
     }
 }
 
+/// Codex/ChatGPT 桌面端常见安装位置，按优先级排序
+fn codex_app_candidates() -> Vec<String> {
+    #[cfg(target_os = "macos")]
+    let v = vec![
+        "/Applications/ChatGPT.app".to_string(),
+        "/Applications/Codex.app".to_string(),
+        format!(
+            "{}/Applications/ChatGPT.app",
+            std::env::var("HOME").unwrap_or_default()
+        ),
+    ];
+    #[cfg(target_os = "windows")]
+    let v = {
+        let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
+        let pf = std::env::var("ProgramFiles")
+            .unwrap_or_else(|_| "C:\\Program Files".to_string());
+        vec![
+            // 直装版（NSIS 每用户 / 机器级）
+            format!("{}\\Programs\\ChatGPT\\ChatGPT.exe", local),
+            format!("{}\\Programs\\Codex\\Codex.exe", local),
+            format!("{}\\ChatGPT\\ChatGPT.exe", pf),
+            // 微软商店版的应用执行别名（reparse point，可直接启动）
+            format!("{}\\Microsoft\\WindowsApps\\ChatGPT.exe", local),
+            format!("{}\\Microsoft\\WindowsApps\\chatgpt.exe", local),
+        ]
+    };
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let v = vec!["/usr/bin/chatgpt".to_string(), "/usr/local/bin/chatgpt".to_string()];
+    v
+}
+
+/// 自动探测 Codex 桌面应用，返回第一个真实存在的路径
+#[tauri::command]
+fn detect_codex_app() -> Option<String> {
+    codex_app_candidates()
+        .into_iter()
+        .find(|p| std::path::Path::new(p).exists())
+}
+
 /// 检测 Codex 桌面应用是否存在
 /// 支持检查指定路径 + 搜索常见安装位置
 #[tauri::command]
@@ -104,35 +147,7 @@ async fn check_codex_app(app_path: String) -> Result<bool, String> {
     }
 
     // 2. 搜索常见安装位置
-    let candidates: Vec<String> = {
-        #[cfg(target_os = "macos")]
-        {
-            vec![
-                "/Applications/ChatGPT.app".to_string(),
-                "/Applications/Codex.app".to_string(),
-                format!(
-                    "{}/Applications/ChatGPT.app",
-                    std::env::var("HOME")
-                        .or_else(|_| std::env::var("USERPROFILE"))
-                        .unwrap_or_default()
-                ),
-            ]
-        }
-        #[cfg(target_os = "windows")]
-        {
-            let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
-            vec![
-                format!("{}\\Programs\\ChatGPT\\ChatGPT.exe", local),
-                "C:\\Program Files\\ChatGPT\\ChatGPT.exe".to_string(),
-            ]
-        }
-        #[cfg(target_os = "linux")]
-        {
-            vec!["/usr/bin/chatgpt".to_string(), "/usr/local/bin/chatgpt".to_string()]
-        }
-    };
-
-    for candidate in candidates {
+    for candidate in codex_app_candidates() {
         if std::path::Path::new(&candidate).exists() {
             return Ok(true);
         }
@@ -468,6 +483,7 @@ pub fn run() {
             save_config,
             validate_taskboard_path,
             check_node_version,
+            detect_codex_app,
             check_codex_app,
             get_status,
             start_all,

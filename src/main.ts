@@ -563,6 +563,19 @@ async function init(): Promise<void> {
     // 加载配置并填充 UI
     const cfg = await invoke<LauncherConfig>("load_config");
     fillConfigUI(cfg);
+
+    // codex 路径为空或已失效时，自动探测真实安装位置并回填
+    const codexInput = document.getElementById("cfg-codex") as HTMLInputElement;
+    const currentValid = codexInput.value
+      && await invoke<boolean>("check_codex_app", { appPath: codexInput.value });
+    if (!currentValid) {
+      const found = await invoke<string | null>("detect_codex_app");
+      if (found) {
+        codexInput.value = found;
+        await invoke("save_config", { config: readConfigFromUI() });
+      }
+    }
+
     await validatePaths();
 
     // 获取应用版本

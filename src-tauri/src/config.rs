@@ -44,9 +44,8 @@ fn default_codex_path() -> String {
     }
     #[cfg(target_os = "windows")]
     {
-        // Windows 上 Codex 桌面应用常见安装路径
-        let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
-        format!("{}\\Programs\\ChatGPT\\ChatGPT.exe", local_app_data)
+        // 不预填猜测路径，由 detect_codex_app 探测真实安装位置
+        String::new()
     }
     #[cfg(target_os = "linux")]
     {
@@ -108,6 +107,22 @@ pub fn config_file_path() -> Result<PathBuf, String> {
     Ok(home.join(".dashi-launcher").join("config.json"))
 }
 
+/// 剥掉 Windows `\\?\` 扩展路径前缀。
+/// Tauri resource_dir 内部 canonicalize 的副作用；CreateProcess 的工作目录参数
+/// 不认这个前缀，Node 拿到也别扭，统一剥成普通路径
+pub fn strip_unc(s: &str) -> String {
+    #[cfg(windows)]
+    {
+        if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+            return format!(r"\\{}", rest);
+        }
+        if let Some(rest) = s.strip_prefix(r"\\?\") {
+            return rest.to_string();
+        }
+    }
+    s.to_string()
+}
+
 /// 加载配置文件，不存在则返回默认值
 pub fn load_config() -> Result<LauncherConfig, String> {
     let path = config_file_path()?;
@@ -116,8 +131,11 @@ pub fn load_config() -> Result<LauncherConfig, String> {
     }
     let content = std::fs::read_to_string(&path)
         .map_err(|e| format!("读取配置文件失败: {}", e))?;
-    serde_json::from_str(&content)
-        .map_err(|e| format!("解析配置文件失败: {}", e))
+    let mut config: LauncherConfig = serde_json::from_str(&content)
+        .map_err(|e| format!("解析配置文件失败: {}", e))?;
+    // 兼容旧配置里已存的 \\?\ 前缀路径
+    config.taskboard_path = strip_unc(&config.taskboard_path);
+    Ok(config)
 }
 
 /// 保存配置文件
