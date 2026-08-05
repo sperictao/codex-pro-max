@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// 启动器配置，持久化到 ~/.dashi-launcher/config.json
+/// 启动器配置，持久化到 ~/.dashi-taskboard-launcher/config.json
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LauncherConfig {
     /// dashi-taskboard 仓库的本地路径
@@ -104,7 +104,7 @@ fn home_dir() -> Result<PathBuf, String> {
 /// 获取配置文件路径
 pub fn config_file_path() -> Result<PathBuf, String> {
     let home = home_dir()?;
-    Ok(home.join(".dashi-launcher").join("config.json"))
+    Ok(home.join(".dashi-taskboard-launcher").join("config.json"))
 }
 
 /// 剥掉 Windows `\\?\` 扩展路径前缀。

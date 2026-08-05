@@ -76,20 +76,37 @@ pub struct ProcessManager {
     pub injector: Arc<Mutex<ManagedProcess>>,
 }
 
+/// 解析 node 可执行文件路径
+/// ponytail: GUI 应用（Finder 启动）PATH 只有 /usr/bin:/bin，裸 "node" 会 ENOENT；
+/// 空配置时先探测常见安装位置，探测不到再退回 PATH 查找
+pub fn resolve_node(node_path: &str) -> String {
+    if !node_path.is_empty() {
+        return node_path.to_string();
+    }
+    #[cfg(unix)]
+    {
+        let mut candidates = vec![
+            "/opt/homebrew/bin/node".to_string(),
+            "/usr/local/bin/node".to_string(),
+        ];
+        if let Ok(home) = std::env::var("HOME") {
+            candidates.push(format!("{}/.local/bin/node", home));
+        }
+        candidates.push("/usr/bin/node".to_string());
+        for c in candidates {
+            if std::path::Path::new(&c).exists() {
+                return c;
+            }
+        }
+    }
+    "node".to_string()
+}
+
 impl ProcessManager {
     pub fn new() -> Self {
         Self {
             taskboard: Arc::new(Mutex::new(ManagedProcess::new("taskboard-server"))),
             injector: Arc::new(Mutex::new(ManagedProcess::new("codex-injector"))),
-        }
-    }
-
-    /// 解析 node 可执行文件路径
-    fn resolve_node(node_path: &str) -> String {
-        if node_path.is_empty() {
-            "node".to_string()
-        } else {
-            node_path.to_string()
         }
     }
 
@@ -109,7 +126,7 @@ impl ProcessManager {
         tb.status = ProcessStatus::Starting;
         tb.message = "正在启动 Taskboard 服务...".to_string();
 
-        let node = Self::resolve_node(node_path);
+        let node = resolve_node(node_path);
         let server_script = format!("{}/server/index.mjs", taskboard_path);
 
         let mut cmd = Command::new(&node);
@@ -204,7 +221,7 @@ impl ProcessManager {
         inj.status = ProcessStatus::Starting;
         inj.message = "正在启动 Codex 注入器...".to_string();
 
-        let node = Self::resolve_node(node_path);
+        let node = resolve_node(node_path);
         let injector_script = format!("{}/scripts/codex-injector.mjs", taskboard_path);
 
         let mut cmd = Command::new(&node);
@@ -308,5 +325,21 @@ impl ProcessManager {
         self.stop_injector().await?;
         self.stop_taskboard().await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_node;
+
+    #[test]
+    fn resolves_existing_node() {
+        // 显式路径原样返回
+        assert_eq!(resolve_node("/custom/node"), "/custom/node");
+        // 空配置：探测到的路径必须真实存在（或退回 PATH 查找）
+        let node = resolve_node("");
+        if node != "node" {
+            assert!(std::path::Path::new(&node).exists(), "探测结果不存在: {}", node);
+        }
     }
 }

@@ -11,7 +11,7 @@ mod config;
 mod process_manager;
 
 use config::LauncherConfig;
-use process_manager::{ProcessManager, ProcessInfo};
+use process_manager::{ProcessManager, ProcessInfo, resolve_node};
 
 /// 应用共享状态
 pub struct AppState {
@@ -74,11 +74,7 @@ async fn validate_taskboard_path(path: String) -> Result<bool, String> {
 /// 检测 Node.js 是否可用并返回版本
 #[tauri::command]
 async fn check_node_version(node_path: String) -> Result<String, String> {
-    let node = if node_path.is_empty() {
-        "node".to_string()
-    } else {
-        node_path
-    };
+    let node = resolve_node(&node_path);
     let mut cmd = std::process::Command::new(&node);
     cmd.arg("--version");
     // Windows 上不弹出终端窗口
@@ -388,11 +384,7 @@ async fn run_taskctl(
     node_path: String,
     args: Vec<String>,
 ) -> Result<String, String> {
-    let node = if node_path.is_empty() {
-        "node".to_string()
-    } else {
-        node_path
-    };
+    let node = resolve_node(&node_path);
     let taskctl_script = format!("{}/cli/taskctl.mjs", taskboard_path);
 
     let mut cmd = std::process::Command::new(&node);
