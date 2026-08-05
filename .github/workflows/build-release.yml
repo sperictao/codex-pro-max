@@ -183,14 +183,14 @@ jobs:
             cp "${matches[0]}" "$destination_dir/$(basename "${matches[0]}")"
           }
 
-          copy_single_as ./artifacts/bundles-macos-aarch64 '*.app.tar.gz' "./updater-assets/DashiTaskboardLauncher_${version}_aarch64.app.tar.gz"
-          copy_single_as ./artifacts/bundles-macos-aarch64 '*.app.tar.gz.sig' "./updater-assets/DashiTaskboardLauncher_${version}_aarch64.app.tar.gz.sig"
-          copy_single_as ./artifacts/bundles-macos-x86_64 '*.app.tar.gz' "./updater-assets/DashiTaskboardLauncher_${version}_x64.app.tar.gz"
-          copy_single_as ./artifacts/bundles-macos-x86_64 '*.app.tar.gz.sig' "./updater-assets/DashiTaskboardLauncher_${version}_x64.app.tar.gz.sig"
-          copy_single ./artifacts/bundles-windows '*-setup.exe' ./updater-assets
-          copy_single ./artifacts/bundles-windows '*-setup.exe.sig' ./updater-assets
-          copy_single ./artifacts/bundles-linux '*.AppImage' ./updater-assets
-          copy_single ./artifacts/bundles-linux '*.AppImage.sig' ./updater-assets
+          copy_single_as ./artifacts/bundles-macos-aarch64 '*.app.tar.gz' "./updater-assets/dashi-taskboard-launcher_${version}_aarch64.app.tar.gz"
+          copy_single_as ./artifacts/bundles-macos-aarch64 '*.app.tar.gz.sig' "./updater-assets/dashi-taskboard-launcher_${version}_aarch64.app.tar.gz.sig"
+          copy_single_as ./artifacts/bundles-macos-x86_64 '*.app.tar.gz' "./updater-assets/dashi-taskboard-launcher_${version}_x64.app.tar.gz"
+          copy_single_as ./artifacts/bundles-macos-x86_64 '*.app.tar.gz.sig' "./updater-assets/dashi-taskboard-launcher_${version}_x64.app.tar.gz.sig"
+          copy_single_as ./artifacts/bundles-windows '*-setup.exe' "./updater-assets/dashi-taskboard-launcher_${version}_x64-setup.exe"
+          copy_single_as ./artifacts/bundles-windows '*-setup.exe.sig' "./updater-assets/dashi-taskboard-launcher_${version}_x64-setup.exe.sig"
+          copy_single_as ./artifacts/bundles-linux '*.AppImage' "./updater-assets/dashi-taskboard-launcher_${version}_amd64.AppImage"
+          copy_single_as ./artifacts/bundles-linux '*.AppImage.sig' "./updater-assets/dashi-taskboard-launcher_${version}_amd64.AppImage.sig"
 
           file_count="$(find ./updater-assets -type f | wc -l | tr -d ' ')"
           if [ "$file_count" -eq 0 ]; then
@@ -223,6 +223,20 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir -p ./release-assets
+          version="${GITHUB_REF_NAME#v}"
+
+          copy_single_as() {
+            local source_dir="$1"
+            local pattern="$2"
+            local destination_path="$3"
+            mapfile -d '' matches < <(find "$source_dir" -type f -name "$pattern" -print0)
+            if [ "${#matches[@]}" -ne 1 ]; then
+              echo "Expected exactly one match for $pattern in $source_dir, found ${#matches[@]}"
+              printf '%s\n' "${matches[@]}"
+              exit 1
+            fi
+            cp "${matches[0]}" "$destination_path"
+          }
 
           copy_single() {
             local source_dir="$1"
@@ -240,12 +254,12 @@ jobs:
           copy_single ./updater-assets latest.json ./release-assets
           copy_single ./updater-assets '*aarch64.app.tar.gz' ./release-assets
           copy_single ./updater-assets '*x64.app.tar.gz' ./release-assets
-          copy_single ./artifacts/bundles-macos-aarch64 '*aarch64*.dmg' ./release-assets
-          copy_single ./artifacts/bundles-macos-x86_64 '*x64*.dmg' ./release-assets
-          copy_single ./artifacts/bundles-macos-universal '*universal*.dmg' ./release-assets
+          copy_single_as ./artifacts/bundles-macos-aarch64 '*aarch64*.dmg' "./release-assets/dashi-taskboard-launcher_${version}_aarch64.dmg"
+          copy_single_as ./artifacts/bundles-macos-x86_64 '*x64*.dmg' "./release-assets/dashi-taskboard-launcher_${version}_x64.dmg"
+          copy_single_as ./artifacts/bundles-macos-universal '*universal*.dmg' "./release-assets/dashi-taskboard-launcher_${version}_universal.dmg"
           copy_single ./updater-assets '*-setup.exe' ./release-assets
           copy_single ./updater-assets '*.AppImage' ./release-assets
-          copy_single ./artifacts/bundles-linux '*.deb' ./release-assets
+          copy_single_as ./artifacts/bundles-linux '*.deb' "./release-assets/dashi-taskboard-launcher_${version}_amd64.deb"
 
           file_count="$(find ./release-assets -type f | wc -l | tr -d ' ')"
           if [ "$file_count" -eq 0 ]; then

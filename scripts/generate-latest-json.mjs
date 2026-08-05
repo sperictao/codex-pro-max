@@ -44,6 +44,10 @@ function readSignature(dir, assetName) {
   return readFileSync(sigPath, "utf8").trim();
 }
 
+// GitHub 上传 release 资产时会把空格等不安全字符替换成 "."，
+// latest.json 里的 URL 必须用净化后的资产名，否则下载 404。
+const ghAssetName = (name) => name.replace(/[^a-zA-Z0-9._-]/g, ".");
+
 function main() {
   const args = parseArgs();
   const inputDir = resolve(args.input);
@@ -66,7 +70,7 @@ function main() {
     const sig = readSignature(inputDir, macArmTar);
     manifest.platforms["darwin-aarch64"] = {
       signature: sig || "",
-      url: `${args.baseUrl}/${macArmTar}`,
+      url: `${args.baseUrl}/${ghAssetName(macArmTar)}`,
     };
   }
 
@@ -76,7 +80,7 @@ function main() {
     const sig = readSignature(inputDir, macX64Tar);
     manifest.platforms["darwin-x86_64"] = {
       signature: sig || "",
-      url: `${args.baseUrl}/${macX64Tar}`,
+      url: `${args.baseUrl}/${ghAssetName(macX64Tar)}`,
     };
   }
 
@@ -86,7 +90,7 @@ function main() {
     const sig = readSignature(inputDir, winExe);
     manifest.platforms["windows-x86_64"] = {
       signature: sig || "",
-      url: `${args.baseUrl}/${winExe}`,
+      url: `${args.baseUrl}/${ghAssetName(winExe)}`,
     };
   }
 
@@ -96,7 +100,7 @@ function main() {
     const sig = readSignature(inputDir, linuxAppImage);
     manifest.platforms["linux-x86_64"] = {
       signature: sig || "",
-      url: `${args.baseUrl}/${linuxAppImage}`,
+      url: `${args.baseUrl}/${ghAssetName(linuxAppImage)}`,
     };
   }
 
