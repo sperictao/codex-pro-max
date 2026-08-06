@@ -246,8 +246,19 @@ async fn ensure_codex_cdp(app_path: &str, port: u16, new_instance: bool) -> Resu
     }
     #[cfg(not(target_os = "macos"))]
     {
-        // Windows/Linux 直接带参数拉起 exe（GUI 应用，无控制台窗口问题）
         let _ = new_instance;
+        // 商店版（msix: 哨兵）：COM 激活并把调试参数透传到应用命令行
+        #[cfg(target_os = "windows")]
+        if let Some(amid) = app_path.strip_prefix("msix:") {
+            crate::launch_store_app(amid, &debug_args.join(" "))?;
+        } else {
+            std::process::Command::new(app_path)
+                .args(&debug_args)
+                .spawn()
+                .map_err(|e| format!("无法启动 Codex ({}): {}", app_path, e))?;
+        }
+        // Linux 直接带参数拉起 exe
+        #[cfg(not(target_os = "windows"))]
         std::process::Command::new(app_path)
             .args(&debug_args)
             .spawn()

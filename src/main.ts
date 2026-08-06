@@ -304,7 +304,13 @@ async function browseNode(): Promise<void> {
 }
 
 async function browseCodex(): Promise<void> {
-  const selected = await openDialog({ directory: true, multiple: false });
+  // macOS 选 .app 包（目录）；Windows 选 .exe 文件，目录选择器选不到 exe
+  const isWindows = navigator.userAgent.includes("Windows");
+  const selected = await openDialog(
+    isWindows
+      ? { directory: false, multiple: false, filters: [{ name: "Codex", extensions: ["exe"] }] }
+      : { directory: true, multiple: false }
+  );
   if (selected) {
     (document.getElementById("cfg-codex") as HTMLInputElement).value = selected as string;
     onConfigChange();

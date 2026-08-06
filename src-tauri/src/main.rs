@@ -111,27 +111,142 @@ fn codex_app_candidates() -> Vec<String> {
         let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
         let pf = std::env::var("ProgramFiles")
             .unwrap_or_else(|_| "C:\\Program Files".to_string());
-        vec![
+        let mut v = vec![
+            // Codex 直装版真实安装位置（参考 CodexPlusPlus）
+            format!("{}\\OpenAI\\Codex\\bin\\Codex.exe", local),
+            format!("{}\\OpenAI\\Codex\\Codex.exe", local),
+            format!("{}\\Programs\\OpenAI\\Codex\\Codex.exe", local),
             // 直装版（NSIS 每用户 / 机器级）
             format!("{}\\Programs\\ChatGPT\\ChatGPT.exe", local),
             format!("{}\\Programs\\Codex\\Codex.exe", local),
             format!("{}\\ChatGPT\\ChatGPT.exe", pf),
+            format!("{}\\Codex\\Codex.exe", pf),
             // 微软商店版的应用执行别名（reparse point，可直接启动）
             format!("{}\\Microsoft\\WindowsApps\\ChatGPT.exe", local),
             format!("{}\\Microsoft\\WindowsApps\\chatgpt.exe", local),
-        ]
+        ];
+        // ponytail: 安装目录/exe 名随版本有大小写与命名差异，扫 Programs 与 Program Files 下
+        // 名字含 chatgpt/codex 的文件夹兜底；注册表卸载键更全但重，不够再升级
+        let is_target = |name: &str| name.contains("chatgpt") || name.contains("codex");
+        for root in [format!("{}\\Programs", local), pf] {
+            if let Ok(entries) = std::fs::read_dir(&root) {
+                for dir in entries.flatten() {
+                    if !is_target(&dir.file_name().to_string_lossy().to_lowercase()) {
+                        continue;
+                    }
+                    if let Ok(files) = std::fs::read_dir(dir.path()) {
+                        for f in files.flatten() {
+                            let name = f.file_name().to_string_lossy().to_lowercase();
+                            if name.ends_with(".exe") && is_target(&name) {
+                                v.push(f.path().to_string_lossy().into_owned());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // 商店版（MSIX）：C:\Program Files\WindowsApps 对普通用户锁死，不可枚举也不可
+        // 直接拉起；走每用户别名目录，别名将 --remote-debugging-port 透传给应用
+        if let Ok(aliases) = std::fs::read_dir(format!("{}\\Microsoft\\WindowsApps", local)) {
+            for f in aliases.flatten() {
+                let name = f.file_name().to_string_lossy().to_lowercase();
+                if name.ends_with(".exe") && is_target(&name) {
+                    v.push(f.path().to_string_lossy().into_owned());
+                }
+            }
+        }
+        v
     };
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let v = vec!["/usr/bin/chatgpt".to_string(), "/usr/local/bin/chatgpt".to_string()];
     v
 }
 
+/// OpenAI 商店版包族名（2p2nqsd0c76g0 为 OpenAI 签名发布者哈希），
+/// 参考 CodexPlusPlus；AMID 即 <包族名>!App，无需解析包全名
+#[cfg(target_os = "windows")]
+const STORE_PACKAGE_FAMILIES: &[&str] = &[
+    "OpenAI.Codex_2p2nqsd0c76g0",
+    "OpenAI.CodexBeta_2p2nqsd0c76g0",
+    "OpenAI.ChatGPT-Desktop_2p2nqsd0c76g0",
+];
+
+/// appmodel API 查包族是否已安装，任意进程可调、无权限要求（不枚举 WindowsApps）
+/// ponytail: 发布者哈希变更会漏检，别名目录扫描仍作兜底；出现时再补哈希
+#[cfg(target_os = "windows")]
+fn package_installed(family_name: &str) -> bool {
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::{ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS};
+    use windows::Win32::Storage::Packaging::Appx::GetPackagesByPackageFamily;
+    let family: Vec<u16> = family_name.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut count = 0u32;
+    let mut buf_len = 0u32;
+    let status = unsafe {
+        GetPackagesByPackageFamily(
+            PCWSTR(family.as_ptr()),
+            &mut count,
+            None,
+            &mut buf_len,
+            None,
+        )
+    };
+    status == ERROR_INSUFFICIENT_BUFFER || (status == ERROR_SUCCESS && count > 0)
+}
+
+/// 商店版（MSIX）应用的 AMID 列表，如 OpenAI.Codex_2p2nqsd0c76g0!App
+/// 无应用别名时，这是唯一能把 --remote-debugging-port 传到应用命令行的入口
+#[cfg(target_os = "windows")]
+pub(crate) fn store_app_amids() -> Vec<String> {
+    STORE_PACKAGE_FAMILIES
+        .iter()
+        .filter(|f| package_installed(f))
+        .map(|f| format!("{}!App", f))
+        .collect()
+}
+
+/// 通过 IApplicationActivationManager 激活商店版应用，args 追加到其命令行
+/// （CodexPlusPlus 已验证激活参数可达 Electron argv；COM 初始化配对其加固模式）
+#[cfg(target_os = "windows")]
+pub(crate) fn launch_store_app(amid: &str, args: &str) -> Result<(), String> {
+    use windows::core::HSTRING;
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_LOCAL_SERVER,
+        COINIT_APARTMENTTHREADED,
+    };
+    use windows::Win32::UI::Shell::{
+        ApplicationActivationManager, IApplicationActivationManager, ACTIVATEOPTIONS,
+    };
+    unsafe {
+        let coinit = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        let should_uninit = coinit.is_ok();
+        const RPC_E_CHANGED_MODE: i32 = -2147417850;
+        coinit
+            .ok()
+            .or_else(|e| if e.code().0 == RPC_E_CHANGED_MODE { Ok(()) } else { Err(e) })
+            .map_err(|e| format!("COM 初始化失败: {}", e))?;
+        let result = (|| -> windows::core::Result<()> {
+            let mgr: IApplicationActivationManager =
+                CoCreateInstance(&ApplicationActivationManager, None, CLSCTX_LOCAL_SERVER)?;
+            mgr.ActivateApplication(&HSTRING::from(amid), &HSTRING::from(args), ACTIVATEOPTIONS(0))?;
+            Ok(())
+        })();
+        if should_uninit {
+            CoUninitialize();
+        }
+        result.map_err(|e| format!("无法启动商店版应用 ({}): {}", amid, e))
+    }
+}
+
 /// 自动探测 Codex 桌面应用，返回第一个真实存在的路径
 #[tauri::command]
 fn detect_codex_app() -> Option<String> {
-    codex_app_candidates()
+    let found = codex_app_candidates()
         .into_iter()
-        .find(|p| std::path::Path::new(p).exists())
+        .find(|p| std::path::Path::new(p).exists());
+    // 商店版无文件路径，返回 msix: 哨兵，ensure_codex_cdp 按此前缀走 COM 激活
+    #[cfg(target_os = "windows")]
+    let found = found.or_else(|| store_app_amids().into_iter().next().map(|a| format!("msix:{}", a)));
+    found
 }
 
 /// 检测 Codex 桌面应用是否存在
@@ -141,6 +256,12 @@ async fn check_codex_app(app_path: String) -> Result<bool, String> {
     // 1. 检查用户指定的路径
     if !app_path.is_empty() && std::path::Path::new(&app_path).exists() {
         return Ok(true);
+    }
+
+    // 商店版哨兵：AMID 仍装在系统上即有效
+    #[cfg(target_os = "windows")]
+    if let Some(amid) = app_path.strip_prefix("msix:") {
+        return Ok(store_app_amids().iter().any(|a| a == amid));
     }
 
     // 2. 搜索常见安装位置

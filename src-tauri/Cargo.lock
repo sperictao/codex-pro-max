@@ -522,6 +522,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tokio",
  "toml_edit 0.22.27",
+ "windows",
 ]
 
 [[package]]
