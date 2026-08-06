@@ -2,7 +2,9 @@
  * Tauri updater 构建脚本。
  * 1. 生成生产 updater 配置
  * 2. 校验 updater 配置
- * 3. 使用该配置作为 overlay 执行 tauri build
+ * 3. 构建 vendored taskboard 的 web UI（dist 被 gitignore，不构建则
+ *    打包资源里没有静态页，注入到 Codex 的面板永远 404）
+ * 4. 使用该配置作为 overlay 执行 tauri build
  *
  * 用法: node scripts/build-updater.mjs [--target <target>]
  */
@@ -46,7 +48,11 @@ function main(argv = process.argv.slice(2)) {
   // Step 2: 校验 updater 配置
   run(process.execPath, ["scripts/validate-updater-config.mjs", updaterConfigPath]);
 
-  // Step 3: 使用 overlay 配置执行 tauri build，透传额外参数
+  // Step 3: 构建 vendored taskboard 的 web UI，产物落进打包资源
+  run("npm", ["--prefix", "vendor/dashi-taskboard", "ci"], { shell: true });
+  run("npm", ["--prefix", "vendor/dashi-taskboard", "run", "build:web"], { shell: true });
+
+  // Step 4: 使用 overlay 配置执行 tauri build，透传额外参数
   // npm run tauri 已经是 tauri CLI 入口，不需要再传 tauri 子命令
   const tauriArgs = [
     "run-script",
