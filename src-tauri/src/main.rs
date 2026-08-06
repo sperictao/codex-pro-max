@@ -95,6 +95,14 @@ async fn check_node_version(node_path: String) -> Result<String, String> {
     }
 }
 
+/// exe 名精确匹配（忽略大小写）：OpenAI 直装版/别名固定为 Codex.exe/ChatGPT.exe
+/// ponytail: 模糊匹配（含 codex 即收）会把 Codex++ 之类第三方工具认成目标，
+/// 抢在商店版 MSIX 回退之前返回，拉起错误的应用（Windows 实机踩坑）
+#[cfg(target_os = "windows")]
+fn is_codex_exe(name: &str) -> bool {
+    matches!(name.to_lowercase().as_str(), "codex.exe" | "chatgpt.exe")
+}
+
 /// Codex/ChatGPT 桌面端常见安装位置，按优先级排序
 fn codex_app_candidates() -> Vec<String> {
     #[cfg(target_os = "macos")]
@@ -125,8 +133,9 @@ fn codex_app_candidates() -> Vec<String> {
             format!("{}\\Microsoft\\WindowsApps\\ChatGPT.exe", local),
             format!("{}\\Microsoft\\WindowsApps\\chatgpt.exe", local),
         ];
-        // ponytail: 安装目录/exe 名随版本有大小写与命名差异，扫 Programs 与 Program Files 下
-        // 名字含 chatgpt/codex 的文件夹兜底；注册表卸载键更全但重，不够再升级
+        // ponytail: 安装目录随版本有差异，扫 Programs 与 Program Files 下名字含
+        // chatgpt/codex 的文件夹预筛；目录名模糊匹配仅作预筛，exe 必须精确名匹配
+        // （见 is_codex_exe），注册表卸载键更全但重，不够再升级
         let is_target = |name: &str| name.contains("chatgpt") || name.contains("codex");
         for root in [format!("{}\\Programs", local), pf] {
             if let Ok(entries) = std::fs::read_dir(&root) {
@@ -136,8 +145,7 @@ fn codex_app_candidates() -> Vec<String> {
                     }
                     if let Ok(files) = std::fs::read_dir(dir.path()) {
                         for f in files.flatten() {
-                            let name = f.file_name().to_string_lossy().to_lowercase();
-                            if name.ends_with(".exe") && is_target(&name) {
+                            if is_codex_exe(&f.file_name().to_string_lossy()) {
                                 v.push(f.path().to_string_lossy().into_owned());
                             }
                         }
@@ -149,8 +157,7 @@ fn codex_app_candidates() -> Vec<String> {
         // 直接拉起；走每用户别名目录，别名将 --remote-debugging-port 透传给应用
         if let Ok(aliases) = std::fs::read_dir(format!("{}\\Microsoft\\WindowsApps", local)) {
             for f in aliases.flatten() {
-                let name = f.file_name().to_string_lossy().to_lowercase();
-                if name.ends_with(".exe") && is_target(&name) {
+                if is_codex_exe(&f.file_name().to_string_lossy()) {
                     v.push(f.path().to_string_lossy().into_owned());
                 }
             }
@@ -786,4 +793,24 @@ pub fn run() {
 
 fn main() {
     run();
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod tests {
+    use super::is_codex_exe;
+
+    #[test]
+    fn codex_exe_requires_exact_name() {
+        // OpenAI 直装版/商店别名的固定命名（大小写不敏感）
+        assert!(is_codex_exe("Codex.exe"));
+        assert!(is_codex_exe("chatgpt.exe"));
+        assert!(is_codex_exe("CHATGPT.EXE"));
+        // 名字带 codex 的第三方工具不得命中（Codex++ 实机误检回归）
+        assert!(!is_codex_exe("codex-plus-plus.exe"));
+        assert!(!is_codex_exe("codex-plus-plus-manager.exe"));
+        // 其它形似项
+        assert!(!is_codex_exe("uninstall.exe"));
+        assert!(!is_codex_exe("codex.exe.bak"));
+        assert!(!is_codex_exe("codex"));
+    }
 }
