@@ -9,6 +9,7 @@
  * 用法: node scripts/build-updater.mjs [--target <target>]
  */
 import { spawnSync } from "node:child_process";
+import { rmSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const rootDir = process.cwd();
@@ -51,6 +52,10 @@ function main(argv = process.argv.slice(2)) {
   // Step 3: 构建 vendored taskboard 的 web UI，产物落进打包资源
   run("npm", ["--prefix", "vendor/dashi-taskboard", "ci"], { shell: true });
   run("npm", ["--prefix", "vendor/dashi-taskboard", "run", "build:web"], { shell: true });
+  // ponytail: node_modules 只是构建 dist 的中间产物，必须删掉——vendor 目录会被
+  // resources 原样打包，带着它 RPM/deb 体积爆炸（CI 实测打包 14 分钟），
+  // linuxdeploy 遍历 AppDir 逐文件跑 ldd，踩到 .bin 悬空符号链接直接失败
+  rmSync("vendor/dashi-taskboard/node_modules", { recursive: true, force: true });
 
   // Step 4: 使用 overlay 配置执行 tauri build，透传额外参数
   // npm run tauri 已经是 tauri CLI 入口，不需要再传 tauri 子命令
