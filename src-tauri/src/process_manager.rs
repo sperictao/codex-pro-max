@@ -10,7 +10,7 @@ use std::process::Stdio;
 fn setup_no_window(cmd: &mut Command) {
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
+        // tokio::process::Command 自带同名 inherent 方法，无需导入 std 的 CommandExt
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
@@ -279,6 +279,12 @@ async fn ensure_codex_cdp(app_path: &str, port: u16, new_instance: bool) -> Resu
             port
         )
     })
+}
+
+impl Default for ProcessManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ProcessManager {
