@@ -3,6 +3,8 @@ import { listen } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
 import { open as openDialog, ask } from "@tauri-apps/plugin-dialog";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
+import { initI18n, applyDomTranslations, applyLanguage, currentLanguage, t } from "./i18n";
+import type { ResolvedLanguage } from "./i18n";
 
 // ============ 类型定义 ============
 interface LauncherConfig {
@@ -15,6 +17,7 @@ interface LauncherConfig {
   auto_open: boolean;
   separate_window_mode: boolean;
   minimize_to_tray_on_close: boolean;
+  language: string;
   codex_guard: CodexGuardState;
 }
 
@@ -128,6 +131,8 @@ let guardState: CodexGuardState = { enabled: false, params: {} };
 let lastGuardJson = "";
 let fastctxState: FastctxStatus = { installed: false, version: null, integrated: false };
 let fastctxBusy = false;
+// 语言设置（"system" | "en" | "zh-CN"），fillConfigUI 灌入、语言卡片改写
+let languageSetting = "system";
 
 // ============ Toast 通知 ============
 function toast(message: string, type: "success" | "error" | "info" = "info"): void {
@@ -174,6 +179,44 @@ function setTheme(mode: ThemeMode): void {
   applyTheme(mode);
 }
 
+// ============ 语言管理 ============
+// 设置项三选一（system/en/zh-CN）持久化在 LauncherConfig.language；
+// Rust 侧经 set_language 重解析并重建托盘，前端经 applyLanguage 重渲染
+function renderLanguageCards(): void {
+  for (const m of ["system", "en", "zh-CN"]) {
+    document.getElementById(`lang-card-${m}`)?.classList.toggle("selected", m === languageSetting);
+  }
+}
+
+async function setLanguage(setting: string): Promise<void> {
+  languageSetting = setting;
+  renderLanguageCards();
+  try {
+    await invoke("update_settings", { config: readConfigFromUI() });
+    await invoke("set_language", { setting });
+    const resolved = (await invoke<string>("get_resolved_language")) as ResolvedLanguage;
+    await applyLanguage(resolved);
+    rerenderDynamicText();
+  } catch (e) {
+    toast(t("Save failed: {{error}}", { error: String(e) }), "error");
+  }
+}
+
+// 语言切换后重渲染所有动态文本（静态文本由 applyLanguage 扫描 data-i18n）
+function rerenderDynamicText(): void {
+  updateModeLabel();
+  updateAutoOpenLabel();
+  renderFastctx();
+  renderGuardFiles();
+  renderUpdateInfo(pendingUpdateInfo ?? {
+    currentVersion: "", availableVersion: null, hasUpdate: false, releaseNotes: null, message: null,
+  });
+  void refreshStatus();
+  void refreshGuardView(true);
+  void validatePaths();
+  void refreshSkillStatus();
+}
+
 // ============ 配置管理 ============
 function fillConfigUI(cfg: LauncherConfig): void {
   (document.getElementById("cfg-path") as HTMLInputElement).value = cfg.taskboard_path;
@@ -203,6 +246,9 @@ function fillConfigUI(cfg: LauncherConfig): void {
 
   guardState = cfg.codex_guard ?? { enabled: false, params: {} };
   renderGuardToggle();
+
+  languageSetting = cfg.language || "system";
+  renderLanguageCards();
 }
 
 function renderGuardToggle(): void {
@@ -231,6 +277,7 @@ function readConfigFromUI(): LauncherConfig {
     auto_open: document.getElementById("toggle-auto-open")!.classList.contains("active"),
     separate_window_mode: document.getElementById("toggle-mode")!.classList.contains("active"),
     minimize_to_tray_on_close: document.getElementById("toggle-tray")!.classList.contains("active"),
+    language: languageSetting,
     codex_guard: guardState,
   };
 }
@@ -253,9 +300,9 @@ async function saveConfig(): Promise<void> {
     // 保存后同步后端最新的完整配置到前端 guardState，保持一致
     const latest = await invoke<LauncherConfig>("load_config");
     guardState = latest.codex_guard;
-    toast("配置已保存", "success");
+    toast(t("Settings saved"), "success");
   } catch (e) {
-    toast(`保存失败: ${e}`, "error");
+    toast(t("Save failed: {{error}}", { error: String(e) }), "error");
   }
 }
 
@@ -268,10 +315,10 @@ async function validatePaths(): Promise<void> {
   if (cfg.taskboard_path) {
     try {
       const valid = await invoke<boolean>("validate_taskboard_path", { path: cfg.taskboard_path });
-      pathEl.textContent = valid ? "有效" : "无效";
+      pathEl.textContent = valid ? t("Valid") : t("Invalid");
       pathEl.className = `config-validate ${valid ? "ok" : "err"}`;
     } catch {
-      pathEl.textContent = "检查失败";
+      pathEl.textContent = t("Check failed");
       pathEl.className = "config-validate err";
     }
   } else {
@@ -286,7 +333,7 @@ async function validatePaths(): Promise<void> {
     nodeEl.textContent = version;
     nodeEl.className = "config-validate ok";
   } catch {
-    nodeEl.textContent = "不可用";
+    nodeEl.textContent = t("Unavailable");
     nodeEl.className = "config-validate err";
   }
 
@@ -295,10 +342,10 @@ async function validatePaths(): Promise<void> {
   if (cfg.codex_app_path) {
     try {
       const exists = await invoke<boolean>("check_codex_app", { appPath: cfg.codex_app_path });
-      codexEl.textContent = exists ? "存在" : "不存在";
+      codexEl.textContent = exists ? t("Exists") : t("Not found");
       codexEl.className = `config-validate ${exists ? "ok" : "err"}`;
     } catch {
-      codexEl.textContent = "检查失败";
+      codexEl.textContent = t("Check failed");
       codexEl.className = "config-validate err";
     }
   } else {
@@ -314,12 +361,12 @@ async function useBundledTaskboard(): Promise<void> {
     if (path) {
       (document.getElementById("cfg-path") as HTMLInputElement).value = path;
       onConfigChange();
-      toast("已使用内置 Taskboard 路径", "success");
+      toast(t("Using bundled Taskboard path"), "success");
     } else {
-      toast("未找到内置 Taskboard", "error");
+      toast(t("Bundled Taskboard not found"), "error");
     }
   } catch (e) {
-    toast(`获取内置路径失败: ${e}`, "error");
+    toast(t("Failed to get bundled path: {{error}}", { error: String(e) }), "error");
   }
 }
 
@@ -370,9 +417,9 @@ function updateModeLabel(): void {
   const toggle = document.getElementById("toggle-mode")!;
   const label = document.getElementById("toggle-mode-label")!;
   if (toggle.classList.contains("active")) {
-    label.textContent = "独立窗口模式（不重启 Codex）";
+    label.textContent = t("Separate window mode (does not restart Codex)");
   } else {
-    label.textContent = "完整启动模式（重启 Codex）";
+    label.textContent = t("Full launch mode (restarts Codex)");
   }
 }
 
@@ -387,9 +434,9 @@ function updateAutoOpenLabel(): void {
   const toggle = document.getElementById("toggle-auto-open")!;
   const label = document.getElementById("toggle-auto-open-label")!;
   if (toggle.classList.contains("active")) {
-    label.textContent = "启动时自动打开浏览器";
+    label.textContent = t("Open browser automatically on start");
   } else {
-    label.textContent = "不自动打开浏览器";
+    label.textContent = t("Do not open browser automatically");
   }
 }
 
@@ -483,7 +530,7 @@ function switchSection(section: string): void {
 async function startAll(): Promise<void> {
   const cfg = readConfigFromUI();
   if (!cfg.taskboard_path) {
-    toast("请先在设置中配置 Taskboard 路径", "error");
+    toast(t("Please configure the Taskboard path in Settings first"), "error");
     const settingsView = document.getElementById("settings-view")!;
     if (settingsView.classList.contains("hidden")) {
       toggleSettings();
@@ -494,35 +541,35 @@ async function startAll(): Promise<void> {
 
   const btn = document.getElementById("btn-start-all")! as HTMLButtonElement;
   btn.disabled = true;
-  btn.textContent = "启动中...";
+  btn.textContent = t("Starting...");
 
   try {
     await invoke("update_settings", { config: cfg });
     await invoke("start_all", { config: cfg });
-    toast("所有服务已启动", "success");
+    toast(t("All services started"), "success");
     await refreshStatus();
   } catch (e) {
-    toast(`启动失败: ${e}`, "error");
+    toast(t("Launch failed: {{error}}", { error: String(e) }), "error");
   } finally {
     btn.disabled = false;
-    btn.textContent = "一键启动";
+    btn.textContent = t("Start All");
   }
 }
 
 async function stopAll(): Promise<void> {
   const btn = document.getElementById("btn-stop-all")! as HTMLButtonElement;
   btn.disabled = true;
-  btn.textContent = "停止中...";
+  btn.textContent = t("Stopping...");
 
   try {
     await invoke("stop_all");
-    toast("所有服务已停止", "info");
+    toast(t("All services stopped"), "info");
     await refreshStatus();
   } catch (e) {
-    toast(`停止失败: ${e}`, "error");
+    toast(t("Stop failed: {{error}}", { error: String(e) }), "error");
   } finally {
     btn.disabled = false;
-    btn.textContent = "全部停止";
+    btn.textContent = t("Stop All");
   }
 }
 
@@ -530,20 +577,20 @@ async function startTaskboard(): Promise<void> {
   const cfg = readConfigFromUI();
   try {
     await invoke("start_taskboard", { config: cfg });
-    toast("Taskboard 服务已启动", "success");
+    toast(t("Taskboard server started"), "success");
     await refreshStatus();
   } catch (e) {
-    toast(`启动失败: ${e}`, "error");
+    toast(t("Launch failed: {{error}}", { error: String(e) }), "error");
   }
 }
 
 async function stopTaskboard(): Promise<void> {
   try {
     await invoke("stop_taskboard");
-    toast("Taskboard 服务已停止", "info");
+    toast(t("Taskboard server stopped"), "info");
     await refreshStatus();
   } catch (e) {
-    toast(`停止失败: ${e}`, "error");
+    toast(t("Stop failed: {{error}}", { error: String(e) }), "error");
   }
 }
 
@@ -551,20 +598,20 @@ async function startInjector(): Promise<void> {
   const cfg = readConfigFromUI();
   try {
     await invoke("start_injector", { config: cfg });
-    toast("Codex 注入器已启动", "success");
+    toast(t("Codex injector started"), "success");
     await refreshStatus();
   } catch (e) {
-    toast(`启动失败: ${e}`, "error");
+    toast(t("Launch failed: {{error}}", { error: String(e) }), "error");
   }
 }
 
 async function stopInjector(): Promise<void> {
   try {
     await invoke("stop_injector");
-    toast("Codex 注入器已停止", "info");
+    toast(t("Codex injector stopped"), "info");
     await refreshStatus();
   } catch (e) {
-    toast(`停止失败: ${e}`, "error");
+    toast(t("Stop failed: {{error}}", { error: String(e) }), "error");
   }
 }
 
@@ -573,7 +620,7 @@ async function openTaskboard(): Promise<void> {
   try {
     await invoke("open_taskboard", { config: cfg });
   } catch (e) {
-    toast(`打开失败: ${e}`, "error");
+    toast(t("Open failed: {{error}}", { error: String(e) }), "error");
   }
 }
 
@@ -597,11 +644,11 @@ async function refreshSkillStatus(): Promise<void> {
       status.state === "installed" ? "running" : status.state === "mismatch" ? "starting" : "stopped"
     }`;
     text.textContent =
-      status.state === "installed" ? "已安装" : status.state === "mismatch" ? "安装异常" : "未安装";
+      status.state === "installed" ? t("Installed") : status.state === "mismatch" ? t("Installation mismatch") : t("Not installed");
     detail.textContent = status.detail;
   } catch (e) {
     badge.className = "status-badge failed";
-    text.textContent = "检测失败";
+    text.textContent = t("Detection failed");
     detail.textContent = String(e);
   }
 }
@@ -609,16 +656,16 @@ async function refreshSkillStatus(): Promise<void> {
 async function installSkill(): Promise<void> {
   const cfg = readConfigFromUI();
   if (!cfg.taskboard_path) {
-    toast("请先配置 Taskboard 路径", "error");
+    toast(t("Please configure the Taskboard path first"), "error");
     return;
   }
   try {
     const result = await invoke<string>("install_skill", { taskboardPath: cfg.taskboard_path });
     document.getElementById("skill-result")!.textContent = result;
-    toast("Skill 安装成功", "success");
+    toast(t("Skill installed successfully"), "success");
   } catch (e) {
-    document.getElementById("skill-result")!.textContent = `失败: ${e}`;
-    toast(`安装失败: ${e}`, "error");
+    document.getElementById("skill-result")!.textContent = t("Failed: {{error}}", { error: String(e) });
+    toast(t("Installation failed: {{error}}", { error: String(e) }), "error");
   }
   await refreshSkillStatus();
 }
@@ -630,9 +677,9 @@ async function toggleGuard(): Promise<void> {
     await invoke("guard_set_enabled", { enabled });
     guardState.enabled = enabled;
     renderGuardToggle();
-    toast(enabled ? "配置看守已开启" : "配置看守已关闭", enabled ? "success" : "info");
+    toast(enabled ? t("Config guard enabled") : t("Config guard disabled"), enabled ? "success" : "info");
   } catch (e) {
-    toast(`切换失败: ${e}`, "error");
+    toast(t("Toggle failed: {{error}}", { error: String(e) }), "error");
   }
 }
 
@@ -647,13 +694,15 @@ function renderFastctx(): void {
   const status = document.getElementById("fastctx-status")!;
   const hint = document.getElementById("fastctx-install-hint")!;
   if (fastctxBusy) {
-    status.textContent = "处理中…";
+    status.textContent = t("Working…");
   } else if (!fastctxState.installed) {
-    status.textContent = "未安装";
+    status.textContent = t("Not installed");
   } else if (fastctxState.integrated) {
-    status.textContent = `已接入${fastctxState.version ? ` · ${fastctxState.version}` : ""}`;
+    status.textContent = `${t("Integrated")}${fastctxState.version ? ` · ${fastctxState.version}` : ""}`;
   } else {
-    status.textContent = `已安装${fastctxState.version ? `（${fastctxState.version}）` : ""}，未接入`;
+    status.textContent = t("Installed{{version}}, not integrated", {
+      version: fastctxState.version ? ` (${fastctxState.version})` : "",
+    });
   }
   hint.classList.toggle("hidden", fastctxState.installed);
 }
@@ -662,7 +711,7 @@ async function refreshFastctxStatus(): Promise<void> {
   try {
     fastctxState = await invoke<FastctxStatus>("fastctx_detect");
   } catch (e) {
-    toast(`fastctx 检测失败: ${e}`, "error");
+    toast(t("fastctx detection failed: {{error}}", { error: String(e) }), "error");
   }
   renderFastctx();
 }
@@ -670,13 +719,13 @@ async function refreshFastctxStatus(): Promise<void> {
 async function toggleFastctx(): Promise<void> {
   if (fastctxBusy) return;
   if (!fastctxState.installed) {
-    toast("未检测到 fastctx，请先运行 npm install --global fastctx", "error");
+    toast(t("fastctx not detected; please run npm install --global fastctx first"), "error");
     return;
   }
   if (fastctxState.integrated) {
     const ok = await ask(
-      "摘除将停止 fastctx 进程并删除 ~/.fastctx 受管数据（npm 包保留，可随时重新接入）。已写入的 Codex 配置会被移除。\n\n确定摘除？",
-      { title: "摘除 fastctx", kind: "warning" },
+      t("Unapply will stop fastctx processes and delete ~/.fastctx managed data (the npm package stays and can be re-integrated anytime). Codex configuration written by fastctx will be removed.\n\nProceed with unapply?"),
+      { title: t("Unapply fastctx"), kind: "warning" },
     );
     if (!ok) return;
   }
@@ -685,17 +734,17 @@ async function toggleFastctx(): Promise<void> {
   try {
     if (fastctxState.integrated) {
       await invoke("fastctx_unapply");
-      toast("fastctx 已摘除，重启 Codex 会话后完全生效", "info");
+      toast(t("fastctx unapplied; restart Codex sessions to take full effect"), "info");
     } else {
       const res = await invoke<FastctxApplyResult>("fastctx_apply");
-      toast("fastctx 已接入，请重启 Codex 会话使其生效", "success");
+      toast(t("fastctx integrated; restart Codex sessions to activate"), "success");
       if (!res.selfCheckPassed) {
         const line = res.selfCheckOutput.split("\n").find((l) => l.includes("[FAIL]")) ?? res.selfCheckOutput.split("\n")[0] ?? "";
-        toast(`fastctx 自检未通过：${line}（可打开控制台排查）`, "error");
+        toast(t("fastctx self-check failed: {{line}} (open the console to troubleshoot)", { line }), "error");
       }
     }
   } catch (e) {
-    toast(`fastctx 操作失败: ${e}`, "error");
+    toast(t("fastctx operation failed: {{error}}", { error: String(e) }), "error");
   } finally {
     fastctxBusy = false;
     await refreshFastctxStatus();
@@ -704,19 +753,19 @@ async function toggleFastctx(): Promise<void> {
 
 async function openFastctxConsole(): Promise<void> {
   if (!fastctxState.installed) {
-    toast("未检测到 fastctx，请先运行 npm install --global fastctx", "error");
+    toast(t("fastctx not detected; please run npm install --global fastctx first"), "error");
     return;
   }
   try {
     await invoke("fastctx_open_console");
   } catch (e) {
-    toast(`打开控制台失败: ${e}`, "error");
+    toast(t("Failed to open console: {{error}}", { error: String(e) }), "error");
   }
 }
 
 function fmtTs(ts: number | null): string {
   if (!ts) return "—";
-  return new Date(ts * 1000).toLocaleString("zh-CN", { hour12: false });
+  return new Date(ts * 1000).toLocaleString(currentLanguage() === "zh-CN" ? "zh-CN" : "en-US", { hour12: false });
 }
 
 async function refreshGuardView(force = false): Promise<void> {
@@ -741,10 +790,10 @@ async function refreshGuardView(force = false): Promise<void> {
 function renderGuardView(view: GuardView): void {
   const container = document.getElementById("guard-groups")!;
   const statusMap: Record<string, { text: string; cls: string }> = {
-    match: { text: "一致", cls: "running" },
-    drift: { text: "不一致", cls: "failed" },
-    missing: { text: "缺失", cls: "starting" },
-    error: { text: "错误", cls: "failed" },
+    match: { text: t("Match"), cls: "running" },
+    drift: { text: t("Drift"), cls: "failed" },
+    missing: { text: t("Missing"), cls: "starting" },
+    error: { text: t("Error"), cls: "failed" },
   };
   container.innerHTML = view.groups.map((g) => {
     const params = g.params.map((p) => {
@@ -755,7 +804,7 @@ function renderGuardView(view: GuardView): void {
         editor = `<div class="guard-bool-row">
           <div class="toggle-switch ${p.value === true ? "active" : ""} ${p.locked ? "disabled" : ""}"
                onclick="guardToggleBool('${p.id}')"></div>
-          <span class="guard-bool-label">${p.value === true ? "true" : "false"}（推荐 ${p.default}）</span>
+          <span class="guard-bool-label">${p.value === true ? "true" : "false"} ${t("(recommended {{default}})", { default: String(p.default) })}</span>
         </div>`;
       } else if (p.valueType === "int" || p.valueType === "string") {
         const t = p.valueType === "int" ? "number" : "text";
@@ -766,38 +815,38 @@ function renderGuardView(view: GuardView): void {
         editor = `<textarea class="guard-textarea" ${dis} data-guard-id="${p.id}"
                onchange="guardSetValue('${p.id}', this)">${escapeHtml(String(p.value ?? ""))}</textarea>`;
       } else {
-        editor = `<span class="guard-default-hint">无可编辑值；启用即执行「${p.applyMode === "toml_absent" ? "删除" : "写入"}」</span>`;
+        editor = `<span class="guard-default-hint">${t("No editable value; applying performs \"{{action}}\"", { action: t(p.applyMode === "toml_absent" ? "delete" : "write") })}</span>`;
       }
       const meta = p.locked
-        ? `<div class="guard-param-meta">上次校验 ${fmtTs(p.lastChecked)} ｜ 上次自动恢复 ${fmtTs(p.lastRestored)}</div>`
+        ? `<div class="guard-param-meta">${t("Last checked {{checked}} | Last auto-restored {{restored}}", { checked: fmtTs(p.lastChecked), restored: fmtTs(p.lastRestored) })}</div>`
         : "";
       return `<div class="guard-param">
         <div class="guard-param-head">
           <span class="guard-param-label">${escapeHtml(p.label)}</span>
           <span style="display:flex;align-items:center;gap:8px;">
-            ${p.custom ? `<button class="guard-param-delete" onclick="guardRemoveCustom('${p.id}')" title="删除自定义参数">删除</button>` : ""}
+            ${p.custom ? `<button class="guard-param-delete" onclick="guardRemoveCustom('${p.id}')" title="${t("Delete custom parameter")}">${t("Delete")}</button>` : ""}
             <span class="status-badge ${s.cls}"><span class="dot"></span><span>${s.text}</span></span>
           </span>
         </div>
         <div class="guard-param-desc">${escapeHtml(p.description)}</div>
         ${p.path ? `<div class="guard-param-path mono">${escapeHtml(p.path)}</div>` : ""}
         <div class="guard-param-actual ${p.status === "match" ? "ok" : "bad"}">
-          当前：${escapeHtml(p.actual ?? p.error ?? "未知")}
+          ${t("Current: ")}${escapeHtml(p.actual ?? p.error ?? t("Unknown"))}
         </div>
         ${editor}
         <div class="guard-param-controls" style="margin-top: 8px;">
           <button class="btn btn-primary btn-sm" ${p.locked ? "disabled" : ""}
-                  onclick="guardApply('${p.id}')">启用</button>
+                  onclick="guardApply('${p.id}')">${t("Apply")}</button>
           ${p.locked
-            ? `<button class="btn btn-secondary btn-sm" onclick="guardSetLocked('${p.id}', false)">解锁</button>`
+            ? `<button class="btn btn-secondary btn-sm" onclick="guardSetLocked('${p.id}', false)">${t("Unlock")}</button>`
             : `<button class="btn btn-secondary btn-sm" ${p.applied ? "" : "disabled"}
-                  onclick="guardSetLocked('${p.id}', true)">锁定</button>`}
+                  onclick="guardSetLocked('${p.id}', true)">${t("Lock")}</button>`}
         </div>
         ${meta}
       </div>`;
     }).join("");
     const addBtn = `<div class="guard-group-add">
-      <button onclick="openGuardAddFormFor('${g.id}', '${escapeHtml(g.name)}')">＋ 添加参数</button>
+      <button onclick="openGuardAddFormFor('${g.id}', '${escapeHtml(g.name)}')">${t("+ Add Parameter")}</button>
     </div>`;
     return `<div class="guard-group" data-group-id="${g.id}">
       <div class="guard-group-name">${escapeHtml(g.name)}</div>
@@ -819,7 +868,7 @@ async function guardToggleBool(id: string): Promise<void> {
     await invoke("guard_set_value", { id, value: p.value !== true });
     await refreshGuardView(true);
   } catch (e) {
-    toast(`修改失败: ${e}`, "error");
+    toast(t("Change failed: {{error}}", { error: String(e) }), "error");
   }
 }
 
@@ -830,14 +879,14 @@ async function guardSetValue(id: string, input: HTMLInputElement | HTMLTextAreaE
     if (!p) return;
     const value = p.valueType === "int" ? parseInt(input.value, 10) : input.value;
     if (p.valueType === "int" && Number.isNaN(value)) {
-      toast("请输入整数", "error");
+      toast(t("Please enter an integer"), "error");
       await refreshGuardView(true);
       return;
     }
     await invoke("guard_set_value", { id, value });
     await refreshGuardView(true);
   } catch (e) {
-    toast(`保存失败: ${e}`, "error");
+    toast(t("Save failed: {{error}}", { error: String(e) }), "error");
     await refreshGuardView(true);
   }
 }
@@ -845,9 +894,9 @@ async function guardSetValue(id: string, input: HTMLInputElement | HTMLTextAreaE
 async function guardApply(id: string): Promise<void> {
   try {
     await invoke("guard_apply", { id });
-    toast("已启用", "success");
+    toast(t("Applied"), "success");
   } catch (e) {
-    toast(`启用失败: ${e}`, "error");
+    toast(t("Apply failed: {{error}}", { error: String(e) }), "error");
   }
   await refreshGuardView(true);
 }
@@ -855,9 +904,9 @@ async function guardApply(id: string): Promise<void> {
 async function guardSetLocked(id: string, locked: boolean): Promise<void> {
   try {
     await invoke("guard_set_locked", { id, locked });
-    toast(locked ? "已锁定" : "已解锁", locked ? "success" : "info");
+    toast(locked ? t("Locked") : t("Unlocked"), locked ? "success" : "info");
   } catch (e) {
-    toast(`操作失败: ${e}`, "error");
+    toast(t("Operation failed: {{error}}", { error: String(e) }), "error");
   }
   await refreshGuardView(true);
 }
@@ -900,22 +949,22 @@ function renderGuardFiles(): void {
   const container = document.getElementById("settings-guard-files");
   if (container) {
     if (guardFiles.length === 0) {
-      container.textContent = "暂无文件";
+      container.textContent = t("No files yet");
     } else {
       const html = guardFiles.map((f) => {
         const delBtn = f.builtin
-          ? `<button class="guard-file-btn" disabled style="opacity:0.4;">内置</button>`
-          : `<button class="guard-file-btn danger" onclick="guardRemoveFile('${f.id}')">删除</button>`;
+          ? `<button class="guard-file-btn" disabled style="opacity:0.4;">${t("Built-in")}</button>`
+          : `<button class="guard-file-btn danger" onclick="guardRemoveFile('${f.id}')">${t("Delete")}</button>`;
         const detectBtn = f.builtin
-          ? `<button class="guard-file-btn" onclick="guardDetectFile('${f.id}')">检测</button>`
+          ? `<button class="guard-file-btn" onclick="guardDetectFile('${f.id}')">${t("Detect")}</button>`
           : "";
         const det = f.detection;
         const detText = det
           ? det.path === null
-            ? `检测记录：未找到该文件（${fmtTs(det.at)}）`
+            ? t("Detection: file not found ({{at}})", { at: fmtTs(det.at) })
             : det.path === f.file
-              ? `检测记录：路径一致（${fmtTs(det.at)}）`
-              : `检测记录：实际位于 ${det.path}（${fmtTs(det.at)}）`
+              ? t("Detection: path matches ({{at}})", { at: fmtTs(det.at) })
+              : t("Detection: actually at {{path}} ({{at}})", { path: det.path, at: fmtTs(det.at) })
           : "";
         return `<div class="guard-file-card" data-file-id="${f.id}">
           <div class="guard-file-card-head">
@@ -926,7 +975,7 @@ function renderGuardFiles(): void {
           ${detText ? `<div class="guard-file-detect">${escapeHtml(detText)}</div>` : ""}
           <div class="guard-file-actions">
             ${detectBtn}
-            <button class="guard-file-btn" onclick="guardEditFile('${f.id}')">编辑</button>
+            <button class="guard-file-btn" onclick="guardEditFile('${f.id}')">${t("Edit")}</button>
             ${delBtn}
           </div>
         </div>`;
@@ -945,9 +994,9 @@ function toggleGuardFileForm(): void {
   if (modal) modal.classList.toggle("hidden");
   editingFileId = null;
   const submit = document.getElementById("settings-guard-file-submit");
-  if (submit) submit.textContent = "添加";
+  if (submit) submit.textContent = t("Add");
   const title = document.getElementById("guard-file-modal-title");
-  if (title) title.textContent = "添加看守文件";
+  if (title) title.textContent = t("Add Guard File");
   // 编辑模式下格式不可改（后端 guard_update_file 不收 format），添加时恢复可选
   const formatSel = document.getElementById("settings-guard-file-format") as HTMLSelectElement | null;
   if (formatSel) formatSel.disabled = false;
@@ -962,8 +1011,8 @@ function guardEditFile(id: string): void {
   const formatSel = document.getElementById("settings-guard-file-format") as HTMLSelectElement;
   formatSel.value = f.format;
   formatSel.disabled = true;
-  document.getElementById("settings-guard-file-submit")!.textContent = "保存";
-  document.getElementById("guard-file-modal-title")!.textContent = "编辑看守文件";
+  document.getElementById("settings-guard-file-submit")!.textContent = t("Save");
+  document.getElementById("guard-file-modal-title")!.textContent = t("Edit Guard File");
   document.getElementById("guard-file-modal")!.classList.remove("hidden");
 }
 
@@ -990,15 +1039,15 @@ async function guardSaveFileForm(): Promise<void> {
   const name = (document.getElementById("settings-guard-file-name") as HTMLInputElement).value.trim();
   const file = (document.getElementById("settings-guard-file-path") as HTMLInputElement).value.trim();
   const format = (document.getElementById("settings-guard-file-format") as HTMLSelectElement).value;
-  if (!name) { toast("请填写文件名称", "error"); return; }
-  if (!file) { toast("请填写文件路径", "error"); return; }
+  if (!name) { toast(t("Please enter a file name"), "error"); return; }
+  if (!file) { toast(t("Please enter a file path"), "error"); return; }
   try {
     if (editingFileId) {
       await invoke("guard_update_file", { id: editingFileId, name, file });
-      toast("已更新", "success");
+      toast(t("Updated"), "success");
     } else {
       await invoke("guard_add_file", { name, file, format });
-      toast("已添加文件", "success");
+      toast(t("File added"), "success");
     }
     (document.getElementById("settings-guard-file-name") as HTMLInputElement).value = "";
     (document.getElementById("settings-guard-file-path") as HTMLInputElement).value = "";
@@ -1006,7 +1055,7 @@ async function guardSaveFileForm(): Promise<void> {
     await refreshGuardFiles();
     await refreshGuardView(true);
   } catch (e) {
-    toast(`${editingFileId ? "更新" : "添加"}失败: ${e}`, "error");
+    toast(t(editingFileId ? "Update failed: {{error}}" : "Add failed: {{error}}", { error: String(e) }), "error");
   }
 }
 
@@ -1020,36 +1069,38 @@ async function guardDetectFile(id: string, auto = false): Promise<void> {
     const detected = updated.detection?.path ?? null;
     if (detected && detected !== updated.file) {
       const ok = await ask(
-        `检测到「${updated.name}」实际位于：\n~/.codex/${detected}\n\n与当前配置 ~/.codex/${updated.file} 不同，是否更新为检测到的路径？`,
-        { title: "更新看守路径", kind: "warning" }
+        t("\"{{name}}\" was detected at:\n~/.codex/{{detected}}\n\nIt differs from the configured ~/.codex/{{file}}. Update to the detected path?", {
+          name: updated.name, detected, file: updated.file,
+        }),
+        { title: t("Update Guard Path"), kind: "warning" }
       );
       if (ok) {
         await invoke("guard_update_file", { id, name: updated.name, file: detected });
-        toast("已更新为检测到的路径", "success");
+        toast(t("Updated to the detected path"), "success");
         await refreshGuardFiles();
         await refreshGuardView(true);
       }
     } else if (!auto) {
-      toast(detected ? "检测完成：路径一致" : "未在 ~/.codex 下找到该文件", detected ? "success" : "info");
+      toast(detected ? t("Detection complete: path matches") : t("File not found under ~/.codex"), detected ? "success" : "info");
     }
   } catch (e) {
-    if (!auto) toast(`检测失败: ${e}`, "error");
+    if (!auto) toast(t("Detection failed: {{error}}", { error: String(e) }), "error");
   }
 }
 
 async function guardRemoveFile(id: string): Promise<void> {
   const f = guardFiles.find((x) => x.id === id);
   if (!f) return;
-  if (!(await ask(`确定删除文件「${f.name}」？\n\n该文件下的所有自定义参数会被移除看守，但已写入 ~/.codex/${f.file} 的值不会被回滚。`, { title: "删除看守文件", kind: "warning" }))) {
+  if (!(await ask(t("Delete file \"{{name}}\"?\n\nAll custom parameters under it will be unguarded, but values already written to ~/.codex/{{file}} will not be rolled back.", { name: f.name, file: f.file }), { title: t("Delete Guard File"), kind: "warning" }))) {
     return;
   }
   try {
     await invoke("guard_remove_file", { id });
-    toast("已删除", "success");
+    toast(t("Deleted"), "success");
     await refreshGuardFiles();
     await refreshGuardView(true);
   } catch (e) {
-    toast(`删除失败: ${e}`, "error");
+    toast(t("Delete failed: {{error}}", { error: String(e) }), "error");
   }
 }
 
@@ -1120,7 +1171,7 @@ function parseDefaultValue(value: string, effectiveType: string): unknown {
       return value === "true";
     case "int": {
       const n = parseInt(value, 10);
-      if (Number.isNaN(n)) throw new Error("默认值必须是整数");
+      if (Number.isNaN(n)) throw new Error(t("Default value must be an integer"));
       return n;
     }
     case "string":
@@ -1145,11 +1196,11 @@ async function guardAddCustom(): Promise<void> {
   const defaultEl = document.getElementById("guard-add-default") as HTMLInputElement | HTMLTextAreaElement;
   const defaultRaw = defaultEl.value;
 
-  if (!id) { toast("请填写 ID", "error"); return; }
-  if (!label) { toast("请填写名称", "error"); return; }
-  if (!fileId) { toast("请选择目标文件", "error"); return; }
+  if (!id) { toast(t("Please enter an ID"), "error"); return; }
+  if (!label) { toast(t("Please enter a name"), "error"); return; }
+  if (!fileId) { toast(t("Please select a target file"), "error"); return; }
   if ((mode === "toml_key" || mode === "toml_absent") && !path) {
-    toast("请填写 TOML 路径", "error"); return;
+    toast(t("Please enter a TOML path"), "error"); return;
   }
 
   try {
@@ -1167,7 +1218,7 @@ async function guardAddCustom(): Promise<void> {
       custom: true,
     };
     await invoke("guard_add_custom_param", { param, fileId });
-    toast("已添加自定义参数", "success");
+    toast(t("Custom parameter added"), "success");
     // 清空表单并收起
     (document.getElementById("guard-add-id") as HTMLInputElement).value = "";
     (document.getElementById("guard-add-label") as HTMLInputElement).value = "";
@@ -1178,20 +1229,20 @@ async function guardAddCustom(): Promise<void> {
     toggleGuardAddForm();
     await refreshGuardView(true);
   } catch (e) {
-    toast(`添加失败: ${e}`, "error");
+    toast(t("Add failed: {{error}}", { error: String(e) }), "error");
   }
 }
 
 async function guardRemoveCustom(id: string): Promise<void> {
-  if (!(await ask(`确定删除自定义参数 ${id}？\n\n删除后看守停止，已写入 ~/.codex/ 的值不会被回滚，可从 ~/.codex/dashi-backups/ 手动恢复。`, { title: "删除自定义参数", kind: "warning" }))) {
+  if (!(await ask(t("Delete custom parameter {{id}}?\n\nGuarding stops after deletion. Values already written to ~/.codex/ will not be rolled back; restore manually from ~/.codex/dashi-backups/ if needed.", { id }), { title: t("Delete Custom Parameter"), kind: "warning" }))) {
     return;
   }
   try {
     await invoke("guard_remove_custom_param", { id });
-    toast("已删除", "success");
+    toast(t("Deleted"), "success");
     await refreshGuardView(true);
   } catch (e) {
-    toast(`删除失败: ${e}`, "error");
+    toast(t("Delete failed: {{error}}", { error: String(e) }), "error");
   }
 }
 
@@ -1205,9 +1256,9 @@ async function guardOpenSchemaFile(): Promise<void> {
     try {
       const path = await invoke<string>("guard_get_schema_file_path");
       await navigator.clipboard.writeText(path);
-      toast(`路径已复制到剪贴板: ${path}`, "info");
+      toast(t("Path copied to clipboard: {{path}}", { path }), "info");
     } catch {
-      toast(`打开失败: ${e}`, "error");
+      toast(t("Open failed: {{error}}", { error: String(e) }), "error");
     }
   }
 }
@@ -1219,7 +1270,7 @@ async function checkUpdaterHealth(): Promise<void> {
   try {
     const health = await invoke<UpdaterConfigHealth>("get_updater_config_health");
     if (health.configured) {
-      el.textContent = "已就绪";
+      el.textContent = t("Ready");
       el.className = "health-status ok";
       helpRow.classList.add("hidden");
     } else {
@@ -1228,7 +1279,7 @@ async function checkUpdaterHealth(): Promise<void> {
       helpRow.classList.remove("hidden");
     }
   } catch (e) {
-    el.textContent = `检查失败: ${e}`;
+    el.textContent = t("Check failed: {{error}}", { error: String(e) });
     el.className = "health-status err";
     helpRow.classList.remove("hidden");
   }
@@ -1239,7 +1290,7 @@ async function openUpdaterHelp(target: "docs" | "template"): Promise<void> {
     const paths = await invoke<UpdaterHelpPaths>("get_updater_help_paths");
     await openUrl(target === "docs" ? paths.docsPath : paths.templatePath);
   } catch (e) {
-    toast(`打开帮助失败: ${e}`, "error");
+    toast(t("Failed to open help: {{error}}", { error: String(e) }), "error");
   }
 }
 
@@ -1256,10 +1307,10 @@ function renderUpdateInfo(info: UpdateInfo): void {
     const notes = document.getElementById("update-notes")!;
     notes.textContent = info.releaseNotes?.trim() || "";
     notes.classList.toggle("hidden", !notes.textContent);
-    btn.textContent = "立即更新";
+    btn.textContent = t("Update Now");
   } else {
     row.classList.add("hidden");
-    btn.textContent = "检查更新";
+    btn.textContent = t("Check for Updates");
   }
 }
 
@@ -1270,19 +1321,19 @@ function renderDownloadProgress(p: DownloadProgress): void {
   const text = document.getElementById("update-progress-text")!;
   if (p.stage === "restarting") {
     bar.style.width = "100%";
-    text.textContent = "安装完成，正在重启…";
+    text.textContent = t("Installation complete, restarting…");
   } else if (p.stage === "installing") {
     bar.style.width = "100%";
-    text.textContent = "正在安装…";
+    text.textContent = t("Installing…");
   } else if (p.stage === "retrying") {
-    text.textContent = `下载失败，正在重试（${p.attempt}/${p.maxAttempts}）…`;
+    text.textContent = t("Download failed, retrying ({{attempt}}/{{max}})…", { attempt: p.attempt, max: p.maxAttempts });
   } else {
     if (p.percent !== null) {
       bar.style.width = `${p.percent}%`;
-      text.textContent = `正在下载 v${p.version}：${Math.floor(p.percent)}%`;
+      text.textContent = t("Downloading v{{version}}: {{percent}}%", { version: p.version, percent: Math.floor(p.percent) });
     } else {
       const mb = (p.downloadedBytes / 1024 / 1024).toFixed(1);
-      text.textContent = `正在下载 v${p.version}：${mb} MB`;
+      text.textContent = t("Downloading v{{version}}: {{mb}} MB", { version: p.version, mb });
     }
   }
 }
@@ -1292,23 +1343,23 @@ async function checkUpdate(silent = false): Promise<void> {
   updateBusy = true;
   const btn = document.getElementById("btn-check-update")! as HTMLButtonElement;
   btn.disabled = true;
-  btn.textContent = "检查中...";
+  btn.textContent = t("Checking...");
   try {
     const info = await invoke<UpdateInfo>("check_update");
     renderUpdateInfo(info);
     if (info.hasUpdate) {
-      toast(`发现新版本: v${info.availableVersion}`, "info");
+      toast(t("New version available: v{{version}}", { version: String(info.availableVersion) }), "info");
     } else if (info.message) {
       if (!silent) toast(info.message, "error");
     } else if (!silent) {
-      toast("当前已是最新版本", "info");
+      toast(t("Already up to date"), "info");
     }
   } catch (e) {
-    if (!silent) toast(`检查更新失败: ${e}`, "error");
+    if (!silent) toast(t("Failed to check for updates: {{error}}", { error: String(e) }), "error");
   } finally {
     updateBusy = false;
     btn.disabled = false;
-    if (!pendingUpdateInfo) btn.textContent = "检查更新";
+    if (!pendingUpdateInfo) btn.textContent = t("Check for Updates");
   }
 }
 
@@ -1321,7 +1372,7 @@ async function onUpdateButton(): Promise<void> {
   updateBusy = true;
   const btn = document.getElementById("btn-check-update")! as HTMLButtonElement;
   btn.disabled = true;
-  btn.textContent = "更新中...";
+  btn.textContent = t("Updating...");
   try {
     const msg = await invoke<string>("install_update", {
       expectedVersion: pendingUpdateInfo.availableVersion,
@@ -1329,10 +1380,10 @@ async function onUpdateButton(): Promise<void> {
     toast(msg, "success");
     pendingUpdateInfo = null;
     document.getElementById("update-available-row")!.classList.add("hidden");
-    btn.textContent = "检查更新";
+    btn.textContent = t("Check for Updates");
   } catch (e) {
-    toast(`更新失败: ${e}`, "error");
-    btn.textContent = "立即更新";
+    toast(t("Update failed: {{error}}", { error: String(e) }), "error");
+    btn.textContent = t("Update Now");
   } finally {
     updateBusy = false;
     btn.disabled = false;
@@ -1346,7 +1397,7 @@ async function openGithub(): Promise<void> {
   try {
     await openUrl("https://github.com");
   } catch (e) {
-    toast(`打开链接失败: ${e}`, "error");
+    toast(t("Failed to open link: {{error}}", { error: String(e) }), "error");
   }
 }
 
@@ -1372,11 +1423,11 @@ function updateStatusUI(info: ProcessInfo): void {
   const statusText = document.getElementById(`badge-${prefix}-text`)!;
 
   const statusMap: Record<string, { text: string; cls: string }> = {
-    running: { text: "运行中", cls: "running" },
-    stopped: { text: "已停止", cls: "stopped" },
-    starting: { text: "启动中", cls: "starting" },
-    stopping: { text: "停止中", cls: "stopping" },
-    failed: { text: "失败", cls: "failed" },
+    running: { text: t("Running"), cls: "running" },
+    stopped: { text: t("Stopped"), cls: "stopped" },
+    starting: { text: t("Starting"), cls: "starting" },
+    stopping: { text: t("Stopping"), cls: "stopping" },
+    failed: { text: t("Failed"), cls: "failed" },
   };
 
   const s = statusMap[info.status] || statusMap.stopped;
@@ -1423,6 +1474,16 @@ async function setupEventListener(): Promise<void> {
 
 // ============ 初始化 ============
 async function init(): Promise<void> {
+  // 初始化 i18n（先于一切 UI 渲染）：语言在 Rust 启动时已解析好
+  try {
+    const resolved = await invoke<string>("get_resolved_language");
+    initI18n(resolved === "zh-CN" ? "zh-CN" : "en");
+  } catch {
+    initI18n("en");
+  }
+  document.documentElement.lang = currentLanguage();
+  applyDomTranslations();
+
   // 应用主题
   applyTheme(getStoredTheme());
 
@@ -1481,7 +1542,7 @@ async function init(): Promise<void> {
       void refreshGuardView();
     }, 3000);
   } catch (e) {
-    toast(`初始化失败: ${e}`, "error");
+    toast(t("Initialization failed: {{error}}", { error: String(e) }), "error");
   }
 }
 
@@ -1491,6 +1552,7 @@ w.toggleSettings = toggleSettings;
 w.showHome = showHome;
 w.showSkill = showSkill;
 w.setTheme = setTheme;
+w.setLanguage = setLanguage;
 w.toggleTrayMinimize = toggleTrayMinimize;
 w.switchSection = switchSection;
 w.browsePath = browsePath;

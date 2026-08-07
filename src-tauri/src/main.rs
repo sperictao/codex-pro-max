@@ -9,6 +9,7 @@ use serde::Serialize;
 mod config;
 mod codex_guard;
 mod fastctx;
+mod i18n;
 mod process_manager;
 mod updater;
 
@@ -57,6 +58,24 @@ async fn load_config() -> Result<LauncherConfig, String> {
     config::load_config()
 }
 
+/// 当前解析语言（"en" | "zh-CN"），前端初始化 i18next 时取
+#[tauri::command]
+fn get_resolved_language() -> String {
+    i18n::current().to_string()
+}
+
+/// 语言设置变更：重新解析并用新语言重建托盘菜单
+/// （config 由前端经 update_settings 落盘，这里只切运行时状态）
+#[tauri::command]
+fn set_language(app: tauri::AppHandle, setting: String) -> Result<(), String> {
+    i18n::set_current(i18n::resolve_language(&setting));
+    if let Some(tray) = app.tray_by_id("main") {
+        let menu = build_tray_menu(&app).map_err(|e| e.to_string())?;
+        tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// 保存配置（全量覆盖，仅前端已知字段的场景使用）
 #[tauri::command]
 async fn save_config(config: LauncherConfig) -> Result<(), String> {
@@ -96,12 +115,15 @@ async fn check_node_version(node_path: String) -> Result<String, String> {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
     let output = cmd.output()
-        .map_err(|e| format!("无法执行 {}: {}", node, e))?;
+        .map_err(|e| i18n::trf("Cannot execute {path}: {error}", &[
+            ("path", node.clone()),
+            ("error", e.to_string()),
+        ]))?;
     if output.status.success() {
         let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
         Ok(version)
     } else {
-        Err("Node.js 不可用".to_string())
+        Err(i18n::tr("Node.js is not available"))
     }
 }
 
@@ -240,7 +262,7 @@ pub(crate) fn launch_store_app(amid: &str, args: &str) -> Result<(), String> {
         coinit
             .ok()
             .or_else(|e| if e.code().0 == RPC_E_CHANGED_MODE { Ok(()) } else { Err(e) })
-            .map_err(|e| format!("COM 初始化失败: {}", e))?;
+            .map_err(|e| i18n::trf("COM initialization failed: {error}", &[("error", e.to_string())]))?;
         let result = (|| -> windows::core::Result<()> {
             let mgr: IApplicationActivationManager =
                 CoCreateInstance(&ApplicationActivationManager, None, CLSCTX_LOCAL_SERVER)?;
@@ -250,7 +272,10 @@ pub(crate) fn launch_store_app(amid: &str, args: &str) -> Result<(), String> {
         if should_uninit {
             CoUninitialize();
         }
-        result.map_err(|e| format!("无法启动商店版应用 ({}): {}", amid, e))
+        result.map_err(|e| i18n::trf("Cannot launch Store app ({amid}): {error}", &[
+            ("amid", amid.to_string()),
+            ("error", e.to_string()),
+        ]))
     }
 }
 
@@ -305,17 +330,17 @@ async fn run_start_all(
 ) -> Result<(), String> {
     // 验证路径
     if config.taskboard_path.is_empty() {
-        return Err("请先设置 dashi-taskboard 项目路径".to_string());
+        return Err(i18n::tr("Please set the dashi-taskboard project path first"));
     }
     if !std::path::Path::new(&config.taskboard_path).exists() {
-        return Err(format!("路径不存在: {}", config.taskboard_path));
+        return Err(i18n::trf("Path does not exist: {path}", &[("path", config.taskboard_path.clone())]));
     }
 
     // 启动 taskboard 服务
     app.emit("status-update", &serde_json::json!({
         "name": "taskboard-server",
         "status": "starting",
-        "message": "正在启动 Taskboard 服务..."
+        "message": i18n::tr("Starting Taskboard server...")
     })).ok();
 
     pm.start_taskboard(
@@ -328,7 +353,10 @@ async fn run_start_all(
     app.emit("status-update", &serde_json::json!({
         "name": "taskboard-server",
         "status": "running",
-        "message": format!("Taskboard 运行在 http://{}:{}", config.taskboard_host, config.taskboard_port)
+        "message": i18n::trf("Taskboard running at http://{host}:{port}", &[
+            ("host", config.taskboard_host.clone()),
+            ("port", config.taskboard_port.to_string()),
+        ])
     })).ok();
 
     // 等待服务就绪
@@ -338,7 +366,7 @@ async fn run_start_all(
     app.emit("status-update", &serde_json::json!({
         "name": "codex-injector",
         "status": "starting",
-        "message": "正在启动 Codex 注入器..."
+        "message": i18n::tr("Starting Codex injector...")
     })).ok();
 
     pm.start_injector(
@@ -353,7 +381,7 @@ async fn run_start_all(
     app.emit("status-update", &serde_json::json!({
         "name": "codex-injector",
         "status": "running",
-        "message": "注入器运行中"
+        "message": i18n::tr("Injector running")
     })).ok();
 
     Ok(())
@@ -364,7 +392,7 @@ async fn run_stop_all(pm: &ProcessManager, app: &tauri::AppHandle) -> Result<(),
     app.emit("status-update", &serde_json::json!({
         "name": "codex-injector",
         "status": "stopping",
-        "message": "正在停止注入器..."
+        "message": i18n::tr("Stopping injector...")
     })).ok();
 
     pm.stop_injector().await?;
@@ -372,13 +400,13 @@ async fn run_stop_all(pm: &ProcessManager, app: &tauri::AppHandle) -> Result<(),
     app.emit("status-update", &serde_json::json!({
         "name": "codex-injector",
         "status": "stopped",
-        "message": "已停止"
+        "message": i18n::tr("Stopped")
     })).ok();
 
     app.emit("status-update", &serde_json::json!({
         "name": "taskboard-server",
         "status": "stopping",
-        "message": "正在停止 Taskboard 服务..."
+        "message": i18n::tr("Stopping Taskboard server...")
     })).ok();
 
     pm.stop_taskboard().await?;
@@ -386,7 +414,7 @@ async fn run_stop_all(pm: &ProcessManager, app: &tauri::AppHandle) -> Result<(),
     app.emit("status-update", &serde_json::json!({
         "name": "taskboard-server",
         "status": "stopped",
-        "message": "已停止"
+        "message": i18n::tr("Stopped")
     })).ok();
 
     Ok(())
@@ -457,11 +485,11 @@ async fn stop_injector(state: State<'_, AppState>) -> Result<(), String> {
 fn home_dir() -> Result<String, String> {
     #[cfg(unix)]
     {
-        std::env::var("HOME").map_err(|_| "无法获取 HOME 环境变量".to_string())
+        std::env::var("HOME").map_err(|_| i18n::tr("Cannot get HOME environment variable"))
     }
     #[cfg(windows)]
     {
-        std::env::var("USERPROFILE").map_err(|_| "无法获取 USERPROFILE 环境变量".to_string())
+        std::env::var("USERPROFILE").map_err(|_| i18n::tr("Cannot get USERPROFILE environment variable"))
     }
 }
 
@@ -474,7 +502,7 @@ async fn open_taskboard(config: LauncherConfig) -> Result<(), String> {
         std::process::Command::new("open")
             .arg(&url)
             .spawn()
-            .map_err(|e| format!("无法打开浏览器: {}", e))?;
+            .map_err(|e| i18n::trf("Cannot open browser: {error}", &[("error", e.to_string())]))?;
     }
     #[cfg(windows)]
     {
@@ -483,7 +511,7 @@ async fn open_taskboard(config: LauncherConfig) -> Result<(), String> {
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         let mut cmd = std::process::Command::new("cmd");
         cmd.args(["/c", "start", "", &url]).creation_flags(CREATE_NO_WINDOW);
-        cmd.spawn().map_err(|e| format!("无法打开浏览器: {}", e))?;
+        cmd.spawn().map_err(|e| i18n::trf("Cannot open browser: {error}", &[("error", e.to_string())]))?;
     }
     Ok(())
 }
@@ -511,7 +539,7 @@ async fn check_skill_status(taskboard_path: String) -> Result<SkillStatus, Strin
         Err(_) => {
             return Ok(SkillStatus {
                 state: "not-installed".to_string(),
-                detail: "未安装".to_string(),
+                detail: i18n::tr("Not installed"),
                 target_path,
             })
         }
@@ -519,33 +547,35 @@ async fn check_skill_status(taskboard_path: String) -> Result<SkillStatus, Strin
 
     if meta.file_type().is_symlink() {
         let link = std::fs::read_link(&target)
-            .map_err(|e| format!("读取符号链接失败: {}", e))?;
+            .map_err(|e| i18n::trf("Failed to read symlink: {error}", &[("error", e.to_string())]))?;
         // read_link 可能返回相对路径，统一与 source 比较前先做字典序归一
         let link_norm = link.canonicalize().unwrap_or(link);
         let source_norm = source.canonicalize().unwrap_or(source);
         if link_norm == source_norm {
             Ok(SkillStatus {
                 state: "installed".to_string(),
-                detail: "已安装，指向当前 Taskboard 仓库".to_string(),
+                detail: i18n::tr("Installed, pointing to the current Taskboard repository"),
                 target_path,
             })
         } else {
             Ok(SkillStatus {
                 state: "mismatch".to_string(),
-                detail: format!("符号链接指向 {}，与当前 Taskboard 路径不一致", link_norm.display()),
+                detail: i18n::trf("Symlink points to {path}, which differs from the current Taskboard path", &[
+                    ("path", link_norm.display().to_string()),
+                ]),
                 target_path,
             })
         }
     } else if target.join("SKILL.md").exists() {
         Ok(SkillStatus {
             state: "installed".to_string(),
-            detail: "已安装（实体目录）".to_string(),
+            detail: i18n::tr("Installed (real directory)"),
             target_path,
         })
     } else {
         Ok(SkillStatus {
             state: "mismatch".to_string(),
-            detail: "目标路径已存在但不是有效的 Skill".to_string(),
+            detail: i18n::tr("Target path exists but is not a valid Skill"),
             target_path,
         })
     }
@@ -560,26 +590,28 @@ async fn install_skill(taskboard_path: String) -> Result<String, String> {
 
     // 检查源路径
     if !skill_source.exists() {
-        return Err(format!("Skill 源路径不存在: {}", skill_source.display()));
+        return Err(i18n::trf("Skill source path does not exist: {path}", &[
+            ("path", skill_source.display().to_string()),
+        ]));
     }
 
     // 创建目标目录
     let skills_dir = std::path::Path::new(&home).join(".codex/skills");
     std::fs::create_dir_all(&skills_dir)
-        .map_err(|e| format!("创建 skills 目录失败: {}", e))?;
+        .map_err(|e| i18n::trf("Failed to create skills directory: {error}", &[("error", e.to_string())]))?;
 
     // 如果已存在则先删除
     if skill_target.exists() {
         std::fs::remove_file(&skill_target)
             .or_else(|_| std::fs::remove_dir_all(&skill_target))
-            .map_err(|e| format!("删除旧链接失败: {}", e))?;
+            .map_err(|e| i18n::trf("Failed to remove old link: {error}", &[("error", e.to_string())]))?;
     }
 
     // 创建符号链接（跨平台）
     #[cfg(unix)]
     {
         std::os::unix::fs::symlink(&skill_source, &skill_target)
-            .map_err(|e| format!("创建符号链接失败: {}", e))?;
+            .map_err(|e| i18n::trf("Failed to create symlink: {error}", &[("error", e.to_string())]))?;
     }
     #[cfg(windows)]
     {
@@ -589,10 +621,10 @@ async fn install_skill(taskboard_path: String) -> Result<String, String> {
         } else {
             std::os::windows::fs::symlink_file(&skill_source, &skill_target)
         };
-        result.map_err(|e| format!("创建符号链接失败: {}（可能需要管理员权限或开启开发者模式）", e))?;
+        result.map_err(|e| i18n::trf("Failed to create symlink: {error} (administrator privileges or Developer Mode may be required)", &[("error", e.to_string())]))?;
     }
 
-    Ok(format!("Skill 已安装到 {}", skill_target.display()))
+    Ok(i18n::trf("Skill installed to {path}", &[("path", skill_target.display().to_string())]))
 }
 
 /// 运行 taskctl 命令
@@ -620,7 +652,7 @@ async fn run_taskctl(
     }
 
     let output = cmd.output()
-        .map_err(|e| format!("执行 taskctl 失败: {}", e))?;
+        .map_err(|e| i18n::trf("Failed to execute taskctl: {error}", &[("error", e.to_string())]))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -653,25 +685,33 @@ fn hide_main_window_to_tray(app: &tauri::AppHandle) {
     let _ = app.hide();
 }
 
-/// 创建系统托盘（图标 + 菜单 + 事件）
-fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+/// 按当前解析语言构建托盘菜单（setup 与语言切换重建共用）
+fn build_tray_menu(
+    app: &tauri::AppHandle,
+) -> Result<tauri::menu::Menu<tauri::Wry>, Box<dyn std::error::Error>> {
     use tauri::menu::{MenuBuilder, MenuItemBuilder};
-    use tauri::tray::TrayIconBuilder;
 
-    let show = MenuItemBuilder::with_id("show", "显示主窗口").build(app)?;
-    let start = MenuItemBuilder::with_id("start-all", "一键启动").build(app)?;
-    let stop = MenuItemBuilder::with_id("stop-all", "全部停止").build(app)?;
-    let quit = MenuItemBuilder::with_id("quit", "退出").build(app)?;
-    let menu = MenuBuilder::new(app)
+    let show = MenuItemBuilder::with_id("show", i18n::tr("Show Main Window")).build(app)?;
+    let start = MenuItemBuilder::with_id("start-all", i18n::tr("Start All")).build(app)?;
+    let stop = MenuItemBuilder::with_id("stop-all", i18n::tr("Stop All")).build(app)?;
+    let quit = MenuItemBuilder::with_id("quit", i18n::tr("Quit")).build(app)?;
+    Ok(MenuBuilder::new(app)
         .item(&show)
         .separator()
         .item(&start)
         .item(&stop)
         .separator()
         .item(&quit)
-        .build()?;
+        .build()?)
+}
 
-    let mut tray = TrayIconBuilder::new()
+/// 创建系统托盘（图标 + 菜单 + 事件）
+fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    use tauri::tray::TrayIconBuilder;
+
+    let menu = build_tray_menu(&app.handle())?;
+
+    let mut tray = TrayIconBuilder::with_id("main")
         .menu(&menu)
         .tooltip("Dashi Taskboard Launcher")
         .show_menu_on_left_click(false);
@@ -742,6 +782,11 @@ pub fn run() {
         .manage(updater::PendingUpdateState::default())
         .setup(|app| {
             log::info!("Dashi Taskboard Launcher 启动中...");
+            // 启动即解析界面语言（system → 具体语言），托盘与后续所有产串处都读它
+            let setting = config::load_config()
+                .map(|c| c.language)
+                .unwrap_or_else(|_| "system".to_string());
+            i18n::set_current(i18n::resolve_language(&setting));
             if let Err(e) = setup_tray(app) {
                 log::error!("初始化系统托盘失败: {}", e);
             }
@@ -771,6 +816,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_bundled_taskboard_path,
             load_config,
+            get_resolved_language,
+            set_language,
             save_config,
             update_settings,
             validate_taskboard_path,

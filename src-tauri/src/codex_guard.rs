@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use toml_edit::{DocumentMut, Item, Table};
 
 use crate::config;
+use crate::i18n::{tr, trf};
 
 const BUILTIN_SCHEMA: &str = include_str!("guard_schema.json");
 
@@ -17,8 +18,14 @@ const BUILTIN_SCHEMA: &str = include_str!("guard_schema.json");
 pub struct GuardParam {
     pub id: String,
     pub label: String,
+    /// 英文 label；空 = 无英文资源，落回 label 原文（自定义参数即如此）
+    #[serde(default)]
+    pub label_en: String,
     #[serde(default)]
     pub description: String,
+    /// 英文 description；空 = 落回 description 原文
+    #[serde(default)]
+    pub description_en: String,
     /// 相对 ~/.codex 的路径，如 config.toml / AGENTS.md / agents/default.toml
     pub file: String,
     /// toml_key | toml_absent | file_overwrite | markdown_block
@@ -31,9 +38,32 @@ pub struct GuardParam {
     pub value_type: String,
     #[serde(default)]
     pub default: serde_json::Value,
+    /// 英文 default（写入内容本身双语时用）；Null = 内容不随界面语言变化
+    #[serde(default)]
+    pub default_en: serde_json::Value,
     /// 是否为用户自定义参数（非内置）；自定义参数可删除
     #[serde(default)]
     pub custom: bool,
+}
+
+/// 按界面语言挑文案：en 且有英文资源时用英文，否则用原文（纯函数，便于测试）
+fn pick_i18n<'a>(primary: &'a str, en: &'a str, lang: &str) -> &'a str {
+    if lang == "en" && !en.is_empty() {
+        en
+    } else {
+        primary
+    }
+}
+
+impl GuardParam {
+    /// 当前界面语言下的 label（default 值是写入 codex 的内容，不在翻译范围）
+    pub fn localized_label(&self) -> &str {
+        pick_i18n(&self.label, &self.label_en, crate::i18n::current())
+    }
+
+    pub fn localized_description(&self) -> &str {
+        pick_i18n(&self.description, &self.description_en, crate::i18n::current())
+    }
 }
 
 /// 单个参数的托管状态，持久化在 LauncherConfig.codex_guard.params
@@ -196,14 +226,14 @@ fn normalize_custom_id(id: &str) -> String {
 
 fn validate_file_path(rel: &str) -> Result<(), String> {
     if rel.trim().is_empty() {
-        return Err("文件路径不能为空".to_string());
+        return Err(tr("File path cannot be empty"));
     }
     if rel.starts_with('/') || rel.starts_with('\\') {
-        return Err("文件路径必须是相对 ~/.codex 的路径，不能以 / 开头".to_string());
+        return Err(tr("File path must be relative to ~/.codex and cannot start with /"));
     }
     for seg in rel.split(['/', '\\']) {
         if seg == ".." {
-            return Err("文件路径不能包含 ..，必须在 ~/.codex 目录内".to_string());
+            return Err(tr("File path cannot contain .. and must stay inside ~/.codex"));
         }
     }
     Ok(())
@@ -212,13 +242,13 @@ fn validate_file_path(rel: &str) -> Result<(), String> {
 fn validate_format(format: &str) -> Result<(), String> {
     match format {
         "toml" | "json" | "md" => Ok(()),
-        other => Err(format!("不支持的文件格式: {}", other)),
+        other => Err(trf("Unsupported file format: {format}", &[("format", other.to_string())])),
     }
 }
 
 fn validate_guard_file(f: &GuardFile) -> Result<(), String> {
     if f.name.trim().is_empty() {
-        return Err("文件名称不能为空".to_string());
+        return Err(tr("File name cannot be empty"));
     }
     validate_file_path(&f.file)?;
     validate_format(&f.format)?;
@@ -245,7 +275,9 @@ fn find_file(files: &[GuardFile], id: &str) -> Option<GuardFile> {
     files.iter().find(|f| f.id == id).cloned()
 }
 
-/// 加载 schema：内置覆盖同 id 磁盘条目，磁盘独有条目保留（无 version，见 CONTEXT.md）
+/// 加载 schema：磁盘同 id 覆盖内置（用户定制内置参数），磁盘独有条目保留；
+/// 例外：label_en/description_en/default_en 是随二进制发布的英文资源、不算用户数据，
+/// 始终以内置为准——否则旧版本释放到磁盘的中文副本会永久滞留（i18n 实机踩坑）
 pub fn load_schema() -> Vec<GuardParam> {
     let builtin: Vec<GuardParam> =
         serde_json::from_str(BUILTIN_SCHEMA).expect("内置 guard schema 必须可解析");
@@ -267,10 +299,19 @@ pub fn load_schema() -> Vec<GuardParam> {
         .and_then(|c| serde_json::from_str(&c).ok())
         .unwrap_or_default();
 
+    merge_schema(builtin, disk)
+}
+
+/// 合并内置与磁盘 schema（纯函数，便于测试）
+fn merge_schema(builtin: Vec<GuardParam>, disk: Vec<GuardParam>) -> Vec<GuardParam> {
     let mut merged = builtin;
-    for d in disk {
-        if let Some(slot) = merged.iter_mut().find(|m| m.id == d.id) {
-            *slot = d; // 磁盘同 id 覆盖（用户定制内置参数）
+    for mut d in disk {
+        if let Some(slot) = merged.iter().position(|m| m.id == d.id) {
+            // 英文资源以内置条目为准，其余字段尊重磁盘定制
+            d.label_en = merged[slot].label_en.clone();
+            d.description_en = merged[slot].description_en.clone();
+            d.default_en = merged[slot].default_en.clone();
+            merged[slot] = d;
         } else {
             merged.push(d); // 磁盘独有条目保留
         }
@@ -286,14 +327,14 @@ fn backup(rel_file: &str, target: &Path) -> Result<(), String> {
         return Ok(());
     }
     let dir = codex_home()?.join("dashi-backups");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("创建备份目录失败: {}", e))?;
+    std::fs::create_dir_all(&dir).map_err(|e| trf("Failed to create backup directory: {error}", &[("error", e.to_string())]))?;
     let flat = rel_file.replace(['/', '\\'], "_");
     let dest = dir.join(format!("{}.{}.bak", flat, now_secs()));
-    std::fs::copy(target, &dest).map_err(|e| format!("备份失败: {}", e))?;
+    std::fs::copy(target, &dest).map_err(|e| trf("Backup failed: {error}", &[("error", e.to_string())]))?;
 
     // 只保留 20 份：文件名即时间戳，字典序可排
     let mut olds: Vec<PathBuf> = std::fs::read_dir(&dir)
-        .map_err(|e| format!("读取备份目录失败: {}", e))?
+        .map_err(|e| trf("Failed to read backup directory: {error}", &[("error", e.to_string())]))?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
         .filter(|p| {
@@ -312,9 +353,12 @@ fn backup(rel_file: &str, target: &Path) -> Result<(), String> {
 fn write_with_backup(rel_file: &str, target: &Path, content: &str) -> Result<(), String> {
     backup(rel_file, target)?;
     if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {}", e))?;
+        std::fs::create_dir_all(parent).map_err(|e| trf("Failed to create directory: {error}", &[("error", e.to_string())]))?;
     }
-    std::fs::write(target, content).map_err(|e| format!("写入 {} 失败: {}", target.display(), e))
+    std::fs::write(target, content).map_err(|e| trf("Failed to write {path}: {error}", &[
+        ("path", target.display().to_string()),
+        ("error", e.to_string()),
+    ]))
 }
 
 // ============ TOML 路径读写（toml_edit 保留注释与格式） ============
@@ -332,7 +376,7 @@ fn set_toml_path(doc: &mut DocumentMut, path: &str, val: Item) -> Result<(), Str
     let mut item = doc.as_item_mut();
     for seg in &segs[..segs.len() - 1] {
         if item.as_table_like().is_none() {
-            return Err(format!("路径中间节点 {} 不是表", seg));
+            return Err(trf("Intermediate path node {node} is not a table", &[("node", seg.to_string())]));
         }
         if item.get(seg).is_none() {
             item.as_table_like_mut()
@@ -341,12 +385,12 @@ fn set_toml_path(doc: &mut DocumentMut, path: &str, val: Item) -> Result<(), Str
         }
         item = item.get_mut(seg).unwrap();
         if item.as_table_like().is_none() {
-            return Err(format!("路径中间节点 {} 不是表", seg));
+            return Err(trf("Intermediate path node {node} is not a table", &[("node", seg.to_string())]));
         }
     }
     let last = segs[segs.len() - 1];
     item.as_table_like_mut()
-        .ok_or_else(|| "路径终点不是表".to_string())?
+        .ok_or_else(|| tr("Path endpoint is not a table"))?
         .insert(last, val);
     Ok(())
 }
@@ -371,9 +415,9 @@ fn json_to_toml(v: &serde_json::Value) -> Result<Item, String> {
         serde_json::Value::Number(n) => n
             .as_i64()
             .map(toml_edit::value)
-            .ok_or_else(|| "整数参数不支持小数".to_string()),
+            .ok_or_else(|| tr("Integer parameters do not support decimals")),
         serde_json::Value::String(s) => Ok(toml_edit::value(s.as_str())),
-        _ => Err("不支持的值类型".to_string()),
+        _ => Err(tr("Unsupported value type")),
     }
 }
 
@@ -466,21 +510,21 @@ pub fn check(param: &GuardParam, expected: &serde_json::Value) -> CheckResult {
     let content = match std::fs::read_to_string(&file) {
         Ok(c) => Some(c),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-        Err(e) => return err(format!("读取失败: {}", e)),
+        Err(e) => return err(trf("Read failed: {error}", &[("error", e.to_string())])),
     };
 
     match param.apply_mode.as_str() {
         "toml_key" => {
             let content = match content {
-                None => return ok("missing", Some("(文件不存在)".to_string())),
+                None => return ok("missing", Some(tr("(file does not exist)"))),
                 Some(c) => c,
             };
             let doc = match content.parse::<DocumentMut>() {
                 Ok(d) => d,
-                Err(e) => return err(format!("TOML 解析失败，已暂停该组看守: {}", e)),
+                Err(e) => return err(trf("TOML parse failed; guarding paused for this group: {error}", &[("error", e.to_string())])),
             };
             match get_toml_path(&doc, &param.path) {
-                None => ok("missing", Some("(未设置)".to_string())),
+                None => ok("missing", Some(tr("(not set)"))),
                 Some(item) if toml_matches_json(item, expected) => {
                     ok("match", Some(render_toml_value(item)))
                 }
@@ -489,40 +533,40 @@ pub fn check(param: &GuardParam, expected: &serde_json::Value) -> CheckResult {
         }
         "toml_absent" => {
             let content = match content {
-                None => return ok("match", Some("不存在".to_string())),
+                None => return ok("match", Some(tr("absent"))),
                 Some(c) => c,
             };
             let doc = match content.parse::<DocumentMut>() {
                 Ok(d) => d,
-                Err(e) => return err(format!("TOML 解析失败，已暂停该组看守: {}", e)),
+                Err(e) => return err(trf("TOML parse failed; guarding paused for this group: {error}", &[("error", e.to_string())])),
             };
             if get_toml_path(&doc, &param.path).is_some() {
-                ok("drift", Some("存在".to_string()))
+                ok("drift", Some(tr("present")))
             } else {
-                ok("match", Some("不存在".to_string()))
+                ok("match", Some(tr("absent")))
             }
         }
         "file_overwrite" => match content {
-            None => ok("missing", Some("(文件不存在)".to_string())),
+            None => ok("missing", Some(tr("(file does not exist)"))),
             Some(c) if c.trim() == expected.as_str().unwrap_or("").trim() => {
-                ok("match", Some(format!("{} 字节", c.len())))
+                ok("match", Some(trf("{n} bytes", &[("n", c.len().to_string())])))
             }
-            Some(c) => ok("drift", Some(format!("{} 字节，内容不一致", c.len()))),
+            Some(c) => ok("drift", Some(trf("{n} bytes, content differs", &[("n", c.len().to_string())]))),
         },
         "markdown_block" => {
             let content = match content {
-                None => return ok("missing", Some("(文件不存在)".to_string())),
+                None => return ok("missing", Some(tr("(file does not exist)"))),
                 Some(c) => c,
             };
             match extract_block(&content, &block_begin(param), &block_end(param)) {
-                None => ok("missing", Some("(托管区块不存在)".to_string())),
+                None => ok("missing", Some(tr("(managed block does not exist)"))),
                 Some(b) if b == expected.as_str().unwrap_or("").trim() => {
-                    ok("match", Some("区块一致".to_string()))
+                    ok("match", Some(tr("block matches")))
                 }
-                Some(_) => ok("drift", Some("区块内容不一致".to_string())),
+                Some(_) => ok("drift", Some(tr("block content differs"))),
             }
         }
-        other => err(format!("未知 apply_mode: {}", other)),
+        other => err(trf("Unknown apply_mode: {mode}", &[("mode", other.to_string())])),
     }
 }
 
@@ -534,7 +578,7 @@ pub fn apply(param: &GuardParam, expected: &serde_json::Value) -> Result<(), Str
             let content = std::fs::read_to_string(&file).unwrap_or_default();
             let mut doc = content
                 .parse::<DocumentMut>()
-                .map_err(|e| format!("TOML 解析失败，未写入: {}", e))?;
+                .map_err(|e| trf("TOML parse failed; nothing written: {error}", &[("error", e.to_string())]))?;
             set_toml_path(&mut doc, &param.path, json_to_toml(expected)?)?;
             write_with_backup(&param.file, &file, &doc.to_string())
         }
@@ -542,11 +586,11 @@ pub fn apply(param: &GuardParam, expected: &serde_json::Value) -> Result<(), Str
             let content = match std::fs::read_to_string(&file) {
                 Ok(c) => c,
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-                Err(e) => return Err(format!("读取失败: {}", e)),
+                Err(e) => return Err(trf("Read failed: {error}", &[("error", e.to_string())])),
             };
             let mut doc = content
                 .parse::<DocumentMut>()
-                .map_err(|e| format!("TOML 解析失败，未写入: {}", e))?;
+                .map_err(|e| trf("TOML parse failed; nothing written: {error}", &[("error", e.to_string())]))?;
             remove_toml_path(&mut doc, &param.path);
             write_with_backup(&param.file, &file, &doc.to_string())
         }
@@ -565,14 +609,24 @@ pub fn apply(param: &GuardParam, expected: &serde_json::Value) -> Result<(), Str
             );
             write_with_backup(&param.file, &file, &new_content)
         }
-        other => Err(format!("未知 apply_mode: {}", other)),
+        other => Err(trf("Unknown apply_mode: {mode}", &[("mode", other.to_string())])),
+    }
+}
+
+/// 按界面语言挑 default 值：en 且有英文内容时用英文，否则用原文（纯函数，便于测试）
+fn default_for_lang<'a>(p: &'a GuardParam, lang: &str) -> &'a serde_json::Value {
+    if lang == "en" && !p.default_en.is_null() {
+        &p.default_en
+    } else {
+        &p.default
     }
 }
 
 fn expected_of(param: &GuardParam, state: Option<&GuardParamState>) -> serde_json::Value {
+    // 用户改过的值永远优先；否则期望值随界面语言（带 default_en 的参数）
     state
         .and_then(|s| s.value.clone())
-        .unwrap_or_else(|| param.default.clone())
+        .unwrap_or_else(|| default_for_lang(param, crate::i18n::current()).clone())
 }
 
 // ============ 视图组装 ============
@@ -596,8 +650,8 @@ pub fn build_view() -> Result<GuardView, String> {
             }
             group_params.push(ParamView {
                 id: p.id.clone(),
-                label: p.label.clone(),
-                description: p.description.clone(),
+                label: p.localized_label().to_string(),
+                description: p.localized_description().to_string(),
                 apply_mode: p.apply_mode.clone(),
                 value_type: p.value_type.clone(),
                 path: p.path.clone(),
@@ -690,7 +744,7 @@ fn find_param(schema: &[GuardParam], id: &str) -> Result<GuardParam, String> {
         .iter()
         .find(|p| p.id == id)
         .cloned()
-        .ok_or_else(|| format!("schema 中不存在参数: {}", id))
+        .ok_or_else(|| trf("Parameter not found in schema: {id}", &[("id", id.to_string())]))
 }
 
 #[tauri::command]
@@ -713,15 +767,15 @@ pub fn guard_set_value(id: String, value: serde_json::Value) -> Result<(), Strin
         "bool" => value.is_boolean(),
         "int" => value.as_i64().is_some(),
         "string" | "text" => value.is_string(),
-        other => return Err(format!("参数类型 {} 不可编辑", other)),
+        other => return Err(trf("Parameter type {type} is not editable", &[("type", other.to_string())])),
     };
     if !type_ok {
-        return Err("值类型不匹配".to_string());
+        return Err(tr("Value type mismatch"));
     }
     let mut cfg = config::load_config()?;
     let st = cfg.codex_guard.params.entry(id).or_default();
     if st.locked {
-        return Err("参数已锁定，先解锁再修改".to_string());
+        return Err(tr("Parameter is locked; unlock it before modifying"));
     }
     st.value = Some(value);
     config::save_config(&cfg)
@@ -748,7 +802,7 @@ pub fn guard_set_locked(id: String, locked: bool) -> Result<(), String> {
     {
         let st = cfg.codex_guard.params.entry(id.clone()).or_default();
         if locked && !st.applied {
-            return Err("请先启用该参数再锁定".to_string());
+            return Err(tr("Apply the parameter before locking it"));
         }
         st.locked = locked;
     }
@@ -771,14 +825,14 @@ pub fn guard_set_locked(id: String, locked: bool) -> Result<(), String> {
 fn validate_apply_mode(mode: &str) -> Result<(), String> {
     match mode {
         "toml_key" | "toml_absent" | "file_overwrite" | "markdown_block" => Ok(()),
-        other => Err(format!("不支持的 apply_mode: {}", other)),
+        other => Err(trf("Unsupported apply_mode: {mode}", &[("mode", other.to_string())])),
     }
 }
 
 fn validate_value_type(value_type: &str) -> Result<(), String> {
     match value_type {
         "bool" | "int" | "string" | "text" | "none" => Ok(()),
-        other => Err(format!("不支持的 value_type: {}", other)),
+        other => Err(trf("Unsupported value_type: {type}", &[("type", other.to_string())])),
     }
 }
 
@@ -788,14 +842,14 @@ fn validate_param_fields(p: &GuardParam) -> Result<(), String> {
     validate_value_type(&p.value_type)?;
 
     if p.label.trim().is_empty() {
-        return Err("label 不能为空".to_string());
+        return Err(tr("label cannot be empty"));
     }
 
     if (p.apply_mode == "toml_key" || p.apply_mode == "toml_absent") && p.path.trim().is_empty() {
-        return Err(format!("{} 模式必须指定 path", p.apply_mode));
+        return Err(trf("{mode} mode requires a path", &[("mode", p.apply_mode.clone())]));
     }
     if p.apply_mode == "toml_key" && p.value_type == "none" {
-        return Err("toml_key 模式的 value_type 不能是 none".to_string());
+        return Err(tr("value_type of toml_key mode cannot be none"));
     }
 
     Ok(())
@@ -808,9 +862,9 @@ fn load_disk_schema() -> Result<Vec<GuardParam>, String> {
         return Ok(Vec::new());
     }
     let content = std::fs::read_to_string(&path)
-        .map_err(|e| format!("读取 schema 文件失败: {}", e))?;
+        .map_err(|e| trf("Failed to read schema file: {error}", &[("error", e.to_string())]))?;
     let schema: Vec<GuardParam> = serde_json::from_str(&content)
-        .map_err(|e| format!("解析 schema 文件失败: {}", e))?;
+        .map_err(|e| trf("Failed to parse schema file: {error}", &[("error", e.to_string())]))?;
     Ok(schema)
 }
 
@@ -818,12 +872,12 @@ fn save_disk_schema(schema: &[GuardParam]) -> Result<(), String> {
     let path = schema_file_path()?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
-            .map_err(|e| format!("创建 schema 目录失败: {}", e))?;
+            .map_err(|e| trf("Failed to create schema directory: {error}", &[("error", e.to_string())]))?;
     }
     let content = serde_json::to_string_pretty(schema)
-        .map_err(|e| format!("序列化 schema 失败: {}", e))?;
+        .map_err(|e| trf("Failed to serialize schema: {error}", &[("error", e.to_string())]))?;
     std::fs::write(&path, content)
-        .map_err(|e| format!("写入 schema 文件失败: {}", e))
+        .map_err(|e| trf("Failed to write schema file: {error}", &[("error", e.to_string())]))
 }
 
 #[tauri::command]
@@ -833,7 +887,7 @@ pub fn guard_add_custom_param(
 ) -> Result<(), String> {
     let files = load_files()?;
     let f = find_file(&files, &file_id)
-        .ok_or_else(|| format!("未找到目标文件: {}", file_id))?;
+        .ok_or_else(|| trf("Target file not found: {id}", &[("id", file_id.clone())]))?;
 
     param.id = normalize_custom_id(&param.id);
     param.custom = true;
@@ -857,7 +911,7 @@ pub fn guard_remove_custom_param(id: String) -> Result<(), String> {
     let before = disk.len();
     disk.retain(|p| p.id != normalized);
     if disk.len() == before {
-        return Err(format!("未找到自定义参数: {}", normalized));
+        return Err(trf("Custom parameter not found: {id}", &[("id", normalized.clone())]));
     }
     save_disk_schema(&disk)?;
 
@@ -894,17 +948,17 @@ pub fn guard_add_file(name: String, file: String, format: String) -> Result<Guar
         .trim_matches('-')
         .to_string();
     if slug.is_empty() {
-        return Err("文件名称必须包含至少一个字母或数字".to_string());
+        return Err(tr("File name must contain at least one letter or digit"));
     }
     let id = normalize_custom_id(&slug);
 
     // id 与路径冲突检查（同路径会让参数在两个分组里重复显示）
     if files.iter().any(|f| f.id == id) {
-        return Err(format!("已存在同名文件: {}", name));
+        return Err(trf("A file with the same name already exists: {name}", &[("name", name.clone())]));
     }
     let trimmed_file = file.trim().to_string();
     if files.iter().any(|f| f.file == trimmed_file) {
-        return Err(format!("该路径已在看守列表中: {}", trimmed_file));
+        return Err(trf("Path already in guard list: {path}", &[("path", trimmed_file.clone())]));
     }
 
     let gf = GuardFile {
@@ -929,13 +983,13 @@ pub fn guard_update_file(id: String, name: String, file: String) -> Result<Guard
     let idx = files
         .iter()
         .position(|f| f.id == id)
-        .ok_or_else(|| format!("未找到文件: {}", id))?;
+        .ok_or_else(|| trf("File not found: {id}", &[("id", id.clone())]))?;
 
     let old_file = files[idx].file.clone();
     let new_file = file.trim().to_string();
 
     if old_file != new_file && files.iter().any(|f| f.id != id && f.file == new_file) {
-        return Err(format!("该路径已在看守列表中: {}", new_file));
+        return Err(trf("Path already in guard list: {path}", &[("path", new_file.clone())]));
     }
 
     let f = &mut files[idx];
@@ -973,10 +1027,10 @@ pub fn guard_remove_file(id: String) -> Result<(), String> {
     let idx = files
         .iter()
         .position(|f| f.id == id)
-        .ok_or_else(|| format!("未找到文件: {}", id))?;
+        .ok_or_else(|| trf("File not found: {id}", &[("id", id.clone())]))?;
 
     if files[idx].builtin {
-        return Err("内置文件不可删除".to_string());
+        return Err(tr("Built-in files cannot be removed"));
     }
 
     let target_file = files[idx].file.clone();
@@ -1034,7 +1088,7 @@ pub fn guard_detect_file(id: String) -> Result<GuardFile, String> {
     let idx = files
         .iter()
         .position(|f| f.id == id)
-        .ok_or_else(|| format!("未找到文件: {}", id))?;
+        .ok_or_else(|| trf("File not found: {id}", &[("id", id.clone())]))?;
     let detected = detect_file_path(&files[idx].file);
     let f = &mut files[idx];
     f.detection = Some(DetectRecord {
@@ -1052,7 +1106,7 @@ pub fn guard_relativize_picked_path(abs_path: String) -> Result<String, String> 
     let home = codex_home()?;
     let rel = Path::new(&abs_path)
         .strip_prefix(&home)
-        .map_err(|_| "选择的文件必须位于 ~/.codex 目录内".to_string())?;
+        .map_err(|_| tr("Selected file must be inside ~/.codex"))?;
     let rel = rel.to_string_lossy().replace('\\', "/");
     validate_file_path(&rel)?;
     Ok(rel)
@@ -1068,6 +1122,74 @@ mod tests {
     fn builtin_schema_parses() {
         let v: Vec<GuardParam> = serde_json::from_str(BUILTIN_SCHEMA).unwrap();
         assert_eq!(v.len(), 11);
+    }
+
+    #[test]
+    fn builtin_schema_has_english_labels() {
+        // 内置参数必须带英文资源，否则英文界面落回中文原文
+        let v: Vec<GuardParam> = serde_json::from_str(BUILTIN_SCHEMA).unwrap();
+        for p in &v {
+            assert!(!p.label_en.is_empty(), "{} 缺 label_en", p.id);
+            assert!(!p.description_en.is_empty(), "{} 缺 description_en", p.id);
+        }
+    }
+
+    #[test]
+    fn pick_i18n_selects_by_language() {
+        // en 有英文资源 → 英文；无英文资源（自定义参数）→ 落回原文；zh → 原文
+        assert_eq!(pick_i18n("中文", "English", "en"), "English");
+        assert_eq!(pick_i18n("自定义", "", "en"), "自定义");
+        assert_eq!(pick_i18n("中文", "English", "zh-CN"), "中文");
+    }
+
+    #[test]
+    fn merge_schema_keeps_builtin_english_resources() {
+        // 回归：旧版磁盘副本无 label_en，同 id 覆盖内置时不得盖掉英文资源
+        let json = |id: &str, label: &str, label_en: &str, default_en: serde_json::Value| {
+            serde_json::from_value::<GuardParam>(serde_json::json!({
+                "id": id, "label": label, "label_en": label_en,
+                "file": "config.toml", "apply_mode": "toml_key",
+                "default_en": default_en,
+            }))
+            .unwrap()
+        };
+        let builtin = vec![json("a", "内置中文", "Builtin EN", serde_json::json!("EN content"))];
+        let disk = vec![
+            // 同 id 覆盖：label 尊重磁盘，英文资源（含 default_en）以内置为准
+            json("a", "用户改过的中文", "", serde_json::Value::Null),
+            json("custom.x", "自定义", "", serde_json::Value::Null), // 磁盘独有：保留
+        ];
+        let merged = merge_schema(builtin, disk);
+        assert_eq!(merged.len(), 2);
+        let a = merged.iter().find(|p| p.id == "a").unwrap();
+        assert_eq!(a.label, "用户改过的中文"); // 磁盘定制生效
+        assert_eq!(a.label_en, "Builtin EN"); // 英文资源以内置为准
+        assert_eq!(a.default_en, serde_json::json!("EN content"));
+        assert!(merged.iter().any(|p| p.id == "custom.x"));
+    }
+
+    #[test]
+    fn default_for_lang_selects_content_by_language() {
+        let p = |default_en: serde_json::Value| GuardParam {
+            id: "x".into(),
+            label: "中文".into(),
+            label_en: String::new(),
+            description: String::new(),
+            description_en: String::new(),
+            file: "f".into(),
+            apply_mode: "file_overwrite".into(),
+            path: String::new(),
+            value_type: "text".into(),
+            default: serde_json::json!("中文内容"),
+            default_en,
+            custom: false,
+        };
+        // en + 有英文内容 → 英文；en + 无英文内容 → 原文；zh → 原文
+        let with_en = p(serde_json::json!("English content"));
+        assert_eq!(default_for_lang(&with_en, "en"), &serde_json::json!("English content"));
+        assert_eq!(default_for_lang(&with_en, "zh-CN"), &serde_json::json!("中文内容"));
+        let without_en = p(serde_json::Value::Null);
+        assert_eq!(default_for_lang(&without_en, "en"), &serde_json::json!("中文内容"));
     }
 
     #[test]
@@ -1136,12 +1258,15 @@ mod tests {
         let mut p = GuardParam {
             id: "custom.test".into(),
             label: "测试".into(),
+            label_en: String::new(),
             description: String::new(),
+            description_en: String::new(),
             file: "config.toml".into(),
             apply_mode: "toml_key".into(),
             path: String::new(),
             value_type: "bool".into(),
             default: serde_json::json!(true),
+            default_en: serde_json::Value::Null,
             custom: true,
         };
         // 空 path 应该报错
@@ -1158,12 +1283,15 @@ mod tests {
         let p = GuardParam {
             id: "custom.test".into(),
             label: "测试".into(),
+            label_en: String::new(),
             description: String::new(),
+            description_en: String::new(),
             file: "../evil.toml".into(),
             apply_mode: "file_overwrite".into(),
             path: String::new(),
             value_type: "text".into(),
             default: serde_json::json!("hi"),
+            default_en: serde_json::Value::Null,
             custom: true,
         };
         assert!(validate_param_fields(&p).is_err());

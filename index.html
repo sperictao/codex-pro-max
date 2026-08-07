@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -1318,10 +1318,10 @@
       <header class="header">
         <div class="logo">Dashi Taskboard Launcher</div>
         <div class="header-actions">
-          <button class="header-btn active" id="btn-home" onclick="showHome()">主页</button>
+          <button class="header-btn active" id="btn-home" onclick="showHome()" data-i18n="Home">Home</button>
           <button class="header-btn" id="btn-skill" onclick="showSkill()">Skill</button>
-          <button class="header-btn" id="btn-guard" onclick="showGuard()">看守</button>
-          <button class="header-btn" id="btn-settings" onclick="toggleSettings()">设置</button>
+          <button class="header-btn" id="btn-guard" onclick="showGuard()" data-i18n="Guard">Guard</button>
+          <button class="header-btn" id="btn-settings" onclick="toggleSettings()" data-i18n="Settings">Settings</button>
         </div>
       </header>
 
@@ -1329,47 +1329,47 @@
       <main class="main-view" id="main-view">
         <!-- Action Bar -->
         <div class="action-bar">
-          <button class="btn btn-primary btn-large" id="btn-start-all" onclick="startAll()">
-            一键启动
+          <button class="btn btn-primary btn-large" id="btn-start-all" onclick="startAll()" data-i18n="Start All">
+            Start All
           </button>
-          <button class="btn btn-danger btn-large" id="btn-stop-all" onclick="stopAll()" disabled>
-            全部停止
+          <button class="btn btn-danger btn-large" id="btn-stop-all" onclick="stopAll()" disabled data-i18n="Stop All">
+            Stop All
           </button>
         </div>
 
         <!-- Status Grid -->
-        <div class="section-title">服务状态</div>
+        <div class="section-title" data-i18n="Service Status">Service Status</div>
         <div class="status-grid">
           <!-- Taskboard Card -->
           <div class="status-card">
             <div class="status-card-header">
-              <div class="status-card-title">Taskboard 服务</div>
+              <div class="status-card-title" data-i18n="Taskboard Server">Taskboard Server</div>
               <div class="status-badge stopped" id="badge-taskboard">
                 <span class="dot"></span>
-                <span id="badge-taskboard-text">已停止</span>
+                <span id="badge-taskboard-text" data-i18n="Stopped">Stopped</span>
               </div>
             </div>
-            <div class="status-message mono" id="msg-taskboard">未启动</div>
+            <div class="status-message mono" id="msg-taskboard" data-i18n="Not started">Not started</div>
             <div class="status-actions">
-              <button class="btn btn-secondary btn-sm" id="btn-start-tb" onclick="startTaskboard()">启动</button>
-              <button class="btn btn-secondary btn-sm" id="btn-stop-tb" onclick="stopTaskboard()" disabled>停止</button>
-              <button class="btn btn-secondary btn-sm" id="btn-open-tb" onclick="openTaskboard()" disabled>打开</button>
+              <button class="btn btn-secondary btn-sm" id="btn-start-tb" onclick="startTaskboard()" data-i18n="Start">Start</button>
+              <button class="btn btn-secondary btn-sm" id="btn-stop-tb" onclick="stopTaskboard()" disabled data-i18n="Stop">Stop</button>
+              <button class="btn btn-secondary btn-sm" id="btn-open-tb" onclick="openTaskboard()" disabled data-i18n="Open">Open</button>
             </div>
           </div>
 
           <!-- Injector Card -->
           <div class="status-card">
             <div class="status-card-header">
-              <div class="status-card-title">Codex 注入器</div>
+              <div class="status-card-title" data-i18n="Codex Injector">Codex Injector</div>
               <div class="status-badge stopped" id="badge-injector">
                 <span class="dot"></span>
-                <span id="badge-injector-text">已停止</span>
+                <span id="badge-injector-text" data-i18n="Stopped">Stopped</span>
               </div>
             </div>
-            <div class="status-message mono" id="msg-injector">未启动</div>
+            <div class="status-message mono" id="msg-injector" data-i18n="Not started">Not started</div>
             <div class="status-actions">
-              <button class="btn btn-secondary btn-sm" id="btn-start-inj" onclick="startInjector()">启动</button>
-              <button class="btn btn-secondary btn-sm" id="btn-stop-inj" onclick="stopInjector()" disabled>停止</button>
+              <button class="btn btn-secondary btn-sm" id="btn-start-inj" onclick="startInjector()" data-i18n="Start">Start</button>
+              <button class="btn btn-secondary btn-sm" id="btn-stop-inj" onclick="stopInjector()" disabled data-i18n="Stop">Stop</button>
             </div>
           </div>
         </div>
@@ -1381,31 +1381,31 @@
         <nav class="settings-sidebar">
           <button class="nav-item active" id="nav-general" onclick="switchSection('general')">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
-            通用
+            <span data-i18n="General">General</span>
           </button>
           <button class="nav-item" id="nav-appearance" onclick="switchSection('appearance')">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
-            外观
+            <span data-i18n="Appearance">Appearance</span>
           </button>
           <button class="nav-item" id="nav-network" onclick="switchSection('network')">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
-            网络
+            <span data-i18n="Network">Network</span>
           </button>
           <button class="nav-item" id="nav-mode" onclick="switchSection('mode')">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg>
-            模式
+            <span data-i18n="Mode">Mode</span>
           </button>
           <button class="nav-item" id="nav-guard" onclick="switchSection('guard')">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
-            看守
+            <span data-i18n="Guard">Guard</span>
           </button>
           <button class="nav-item" id="nav-integration" onclick="switchSection('integration')">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            集成
+            <span data-i18n="Integrations">Integrations</span>
           </button>
           <button class="nav-item" id="nav-about" onclick="switchSection('about')">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-            关于
+            <span data-i18n="About">About</span>
           </button>
         </nav>
 
@@ -1413,51 +1413,70 @@
         <div class="settings-content">
           <!-- General Section -->
           <section class="settings-section" id="section-general">
-            <h2 class="section-heading">通用</h2>
+            <h2 class="section-heading" data-i18n="General">General</h2>
 
             <div class="config-row">
-              <label class="config-label" for="cfg-path">Taskboard 路径</label>
+              <label class="config-label" data-i18n="Language">Language</label>
+              <div class="theme-cards" style="flex:1;">
+                <button type="button" class="theme-card" id="lang-card-system" onclick="setLanguage('system')">
+                  <span class="theme-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+                  <span class="theme-name" data-i18n="Follow System">Follow System</span>
+                </button>
+                <button type="button" class="theme-card" id="lang-card-en" onclick="setLanguage('en')">
+                  <span class="theme-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+                  <span class="theme-name" data-i18n="English">English</span>
+                </button>
+                <button type="button" class="theme-card" id="lang-card-zh-CN" onclick="setLanguage('zh-CN')">
+                  <span class="theme-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+                  <span class="theme-name" data-i18n="中文">中文</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="config-row">
+              <label class="config-label" for="cfg-path" data-i18n="Taskboard Path">Taskboard Path</label>
               <div class="config-input-group">
                 <input type="text" class="config-input mono" id="cfg-path" placeholder="/path/to/dashi-taskboard" oninput="onConfigChange()" />
-                <button class="btn btn-secondary btn-sm" onclick="browsePath()">浏览</button>
-                <button class="btn btn-secondary btn-sm" id="btn-use-bundled" onclick="useBundledTaskboard()">使用内置</button>
+                <button class="btn btn-secondary btn-sm" onclick="browsePath()" data-i18n="Browse">Browse</button>
+                <button class="btn btn-secondary btn-sm" id="btn-use-bundled" onclick="useBundledTaskboard()" data-i18n="Use Bundled">Use Bundled</button>
                 <span class="config-validate" id="validate-path"></span>
               </div>
             </div>
 
             <div class="config-row">
-              <label class="config-label" for="cfg-node">Node.js 路径</label>
+              <label class="config-label" for="cfg-node" data-i18n="Node.js Path">Node.js Path</label>
               <div class="config-input-group">
-                <input type="text" class="config-input mono" id="cfg-node" placeholder="留空则使用 PATH 中的 node" oninput="onConfigChange()" />
-                <button class="btn btn-secondary btn-sm" onclick="browseNode()">浏览</button>
+                <input type="text" class="config-input mono" id="cfg-node" placeholder="Leave empty to use node from PATH" data-i18n-placeholder="Leave empty to use node from PATH" oninput="onConfigChange()" />
+                <button class="btn btn-secondary btn-sm" onclick="browseNode()" data-i18n="Browse">Browse</button>
                 <span class="config-validate" id="validate-node"></span>
               </div>
             </div>
 
             <div class="config-row">
-              <label class="config-label" for="cfg-codex">Codex 应用路径</label>
+              <label class="config-label" for="cfg-codex" data-i18n="Codex App Path">Codex App Path</label>
               <div class="config-input-group">
                 <input type="text" class="config-input mono" id="cfg-codex" placeholder="/Applications/ChatGPT.app" oninput="onConfigChange()" />
-                <button class="btn btn-secondary btn-sm" onclick="browseCodex()">浏览</button>
+                <button class="btn btn-secondary btn-sm" onclick="browseCodex()" data-i18n="Browse">Browse</button>
                 <span class="config-validate" id="validate-codex"></span>
               </div>
             </div>
 
             <div class="config-row">
-              <label class="config-label">系统行为</label>
+              <label class="config-label" data-i18n="System Behavior">System Behavior</label>
               <div class="switch-row" onclick="toggleTrayMinimize()">
                 <div class="switch-text">
-                  <span class="switch-label">关闭窗口时最小化到托盘</span>
-                  <span class="switch-desc">启用后点击关闭按钮会隐藏窗口，应用继续驻留系统托盘。</span>
+                  <span class="switch-label" data-i18n="Minimize to tray when closing window">Minimize to tray when closing window</span>
+                  <span class="switch-desc" data-i18n="When enabled, the close button hides the window and the app keeps running in the system tray.">When enabled, the close button hides the window and the app keeps running in the system tray.</span>
                 </div>
                 <div class="toggle-switch" id="toggle-tray"></div>
               </div>
             </div>
+
           </section>
 
           <!-- Appearance Section -->
           <section class="settings-section hidden" id="section-appearance">
-            <h2 class="section-heading">外观</h2>
+            <h2 class="section-heading" data-i18n="Appearance">Appearance</h2>
 
             <div class="theme-cards">
               <button type="button" class="theme-card" id="theme-card-system" onclick="setTheme('system')">
@@ -1472,7 +1491,7 @@
                     <span class="tp-body"><span class="tp-side"><i></i><i></i><i></i></span><span class="tp-main"><i></i><i></i><i></i></span></span>
                   </span>
                 </span>
-                <span class="theme-name">跟随系统</span>
+                <span class="theme-name" data-i18n="Follow System">Follow System</span>
               </button>
 
               <button type="button" class="theme-card" id="theme-card-light" onclick="setTheme('light')">
@@ -1483,7 +1502,7 @@
                     <span class="tp-body"><span class="tp-side"><i></i><i></i><i></i></span><span class="tp-main"><i></i><i></i><i></i></span></span>
                   </span>
                 </span>
-                <span class="theme-name">亮色</span>
+                <span class="theme-name" data-i18n="Light">Light</span>
               </button>
 
               <button type="button" class="theme-card" id="theme-card-dark" onclick="setTheme('dark')">
@@ -1494,50 +1513,50 @@
                     <span class="tp-body"><span class="tp-side"><i></i><i></i><i></i></span><span class="tp-main"><i></i><i></i><i></i></span></span>
                   </span>
                 </span>
-                <span class="theme-name">暗色</span>
+                <span class="theme-name" data-i18n="Dark">Dark</span>
               </button>
             </div>
 
-            <p class="appearance-desc">主题切换立即生效；选择“跟随系统”时会随系统外观自动切换。</p>
+            <p class="appearance-desc" data-i18n="Theme changes apply immediately. With Follow System, the theme switches automatically with the OS appearance.">Theme changes apply immediately. With Follow System, the theme switches automatically with the OS appearance.</p>
           </section>
 
           <!-- Network Section -->
           <section class="settings-section hidden" id="section-network">
-            <h2 class="section-heading">网络</h2>
+            <h2 class="section-heading" data-i18n="Network">Network</h2>
 
             <div class="config-row">
-              <label class="config-label" for="cfg-host">Taskboard 主机地址</label>
+              <label class="config-label" for="cfg-host" data-i18n="Taskboard Host">Taskboard Host</label>
               <input type="text" class="config-input mono" id="cfg-host" value="127.0.0.1" oninput="onConfigChange()" />
             </div>
 
             <div class="config-row">
-              <label class="config-label" for="cfg-port">Taskboard 端口</label>
+              <label class="config-label" for="cfg-port" data-i18n="Taskboard Port">Taskboard Port</label>
               <input type="number" class="config-input mono" id="cfg-port" value="47823" oninput="onConfigChange()" style="max-width: 200px;" />
             </div>
 
             <div class="config-row">
-              <label class="config-label" for="cfg-cdp">CDP 调试端口</label>
+              <label class="config-label" for="cfg-cdp" data-i18n="CDP Debug Port">CDP Debug Port</label>
               <input type="number" class="config-input mono" id="cfg-cdp" value="9231" oninput="onConfigChange()" style="max-width: 200px;" />
             </div>
           </section>
 
           <!-- Mode Section -->
           <section class="settings-section hidden" id="section-mode">
-            <h2 class="section-heading">模式</h2>
+            <h2 class="section-heading" data-i18n="Mode">Mode</h2>
 
             <div class="config-row">
-              <label class="config-label">启动模式</label>
+              <label class="config-label" data-i18n="Launch Mode">Launch Mode</label>
               <div class="config-toggle">
                 <div class="toggle-switch" id="toggle-mode" onclick="toggleMode()"></div>
-                <span class="toggle-label" id="toggle-mode-label">完整启动模式（重启 Codex）</span>
+                <span class="toggle-label" id="toggle-mode-label" data-i18n="Full launch mode (restarts Codex)">Full launch mode (restarts Codex)</span>
               </div>
             </div>
 
             <div class="config-row">
-              <label class="config-label">自动打开浏览器</label>
+              <label class="config-label" data-i18n="Auto-open Browser">Auto-open Browser</label>
               <div class="config-toggle">
                 <div class="toggle-switch active" id="toggle-auto-open" onclick="toggleAutoOpen()"></div>
-                <span class="toggle-label" id="toggle-auto-open-label">启动时自动打开浏览器</span>
+                <span class="toggle-label" id="toggle-auto-open-label" data-i18n="Open browser automatically on start">Open browser automatically on start</span>
               </div>
             </div>
 
@@ -1545,25 +1564,25 @@
 
           <!-- Guard Section -->
           <section class="settings-section hidden" id="section-guard">
-            <h2 class="section-heading">配置看守</h2>
+            <h2 class="section-heading" data-i18n="Config Guard">Config Guard</h2>
 
             <div class="config-row">
-              <label class="config-label">总开关</label>
+              <label class="config-label" data-i18n="Master Switch">Master Switch</label>
               <div class="switch-row" onclick="toggleGuard()">
                 <div class="switch-text">
-                  <span class="switch-label">启用 Codex 配置看守</span>
-                  <span class="switch-desc">托管并锁定 ~/.codex 配置参数；锁定的参数被改动时自动改回（仅本应用运行期间，间隔 60 秒）。</span>
+                  <span class="switch-label" data-i18n="Enable Codex config guard">Enable Codex config guard</span>
+                  <span class="switch-desc" data-i18n="Manage and lock ~/.codex config parameters; locked params are reverted automatically when changed (only while this app is running, every 60 seconds).">Manage and lock ~/.codex config parameters; locked params are reverted automatically when changed (only while this app is running, every 60 seconds).</span>
                 </div>
                 <div class="toggle-switch" id="settings-guard-toggle"></div>
               </div>
             </div>
 
             <div class="config-row">
-              <label class="config-label">配置文件</label>
+              <label class="config-label" data-i18n="Config Files">Config Files</label>
               <div style="flex:1;">
                 <div class="guard-files-header">
-                  <span style="font-size:12px;color:var(--muted-foreground);">看守的目标文件列表（内置文件不可删除）</span>
-                  <div class="guard-files-toggle" onclick="toggleGuardFileForm()">＋ 添加文件</div>
+                  <span style="font-size:12px;color:var(--muted-foreground);" data-i18n="List of guarded files (built-in files cannot be removed)">List of guarded files (built-in files cannot be removed)</span>
+                  <div class="guard-files-toggle" onclick="toggleGuardFileForm()" data-i18n="+ Add File">+ Add File</div>
                 </div>
                 <div class="guard-files-list" id="settings-guard-files"></div>
               </div>
@@ -1572,68 +1591,68 @@
 
           <!-- Integration Section -->
           <section class="settings-section hidden" id="section-integration">
-            <h2 class="section-heading">集成</h2>
+            <h2 class="section-heading" data-i18n="Integrations">Integrations</h2>
 
             <div class="config-row">
               <label class="config-label">FastCtx</label>
               <div class="switch-row" id="fastctx-row" onclick="toggleFastctx()">
                 <div class="switch-text">
-                  <span class="switch-label">接入 fastctx 仓库工具（MCP）</span>
-                  <span class="switch-desc">为 Codex 提供 read/grep/glob/replace/run 等结构化工具。接入 = fastctx apply；摘除 = fastctx unapply（删除 ~/.fastctx 受管数据，npm 包保留，可随时重新接入）。</span>
+                  <span class="switch-label" data-i18n="Integrate fastctx repo tools (MCP)">Integrate fastctx repo tools (MCP)</span>
+                  <span class="switch-desc" data-i18n="Provides structured read/grep/glob/replace/run tools for Codex. Integrate = fastctx apply; unapply = fastctx unapply (removes ~/.fastctx managed data; the npm package stays and can be re-integrated anytime).">Provides structured read/grep/glob/replace/run tools for Codex. Integrate = fastctx apply; unapply = fastctx unapply (removes ~/.fastctx managed data; the npm package stays and can be re-integrated anytime).</span>
                 </div>
                 <div class="toggle-switch" id="toggle-fastctx"></div>
               </div>
             </div>
 
             <div class="config-row">
-              <label class="config-label">状态</label>
+              <label class="config-label" data-i18n="Status">Status</label>
               <div style="flex:1;">
-                <div id="fastctx-status" style="font-size:13px;">检测中…</div>
+                <div id="fastctx-status" style="font-size:13px;" data-i18n="Detecting…">Detecting…</div>
                 <div id="fastctx-install-hint" class="hidden" style="margin-top:6px;font-size:12px;color:var(--muted-foreground);">
-                  未检测到 fastctx。请先运行 <span class="mono">npm install --global fastctx</span>（需 Node.js 18+），安装后回到本页。
+                  <span data-i18n="fastctx not detected. Please run">fastctx not detected. Please run</span> <span class="mono">npm install --global fastctx</span> <span data-i18n="first (requires Node.js 18+), then return to this page.">first (requires Node.js 18+), then return to this page.</span>
                 </div>
               </div>
             </div>
 
             <div class="config-row">
-              <label class="config-label">控制台</label>
+              <label class="config-label" data-i18n="Console">Console</label>
               <div style="flex:1;">
-                <button class="btn btn-secondary btn-sm" id="btn-fastctx-console" onclick="openFastctxConsole()">打开 fastctx 控制台</button>
-                <span style="font-size:12px;color:var(--muted-foreground);margin-left:8px;">输出档位、后台任务、更新均在 fastctx 控制台管理</span>
+                <button class="btn btn-secondary btn-sm" id="btn-fastctx-console" onclick="openFastctxConsole()" data-i18n="Open fastctx Console">Open fastctx Console</button>
+                <span style="font-size:12px;color:var(--muted-foreground);margin-left:8px;" data-i18n="Output tier, background jobs and updates are managed in the fastctx console">Output tier, background jobs and updates are managed in the fastctx console</span>
               </div>
             </div>
           </section>
 
           <!-- About Section -->
           <section class="settings-section hidden" id="section-about">
-            <h2 class="section-heading">关于</h2>
+            <h2 class="section-heading" data-i18n="About">About</h2>
 
             <div class="about-row">
-              <span class="about-label">应用版本</span>
+              <span class="about-label" data-i18n="App Version">App Version</span>
               <span class="about-value mono" id="about-version">-</span>
             </div>
 
             <div class="about-row">
-              <span class="about-label">更新源状态</span>
-              <span class="about-value" id="updater-health">检查中...</span>
+              <span class="about-label" data-i18n="Update Source Status">Update Source Status</span>
+              <span class="about-value" id="updater-health" data-i18n="Checking...">Checking...</span>
             </div>
 
             <div class="about-row hidden" id="updater-help-row">
-              <span class="about-label">配置帮助</span>
+              <span class="about-label" data-i18n="Configuration Help">Configuration Help</span>
               <span class="about-value">
-                <a class="about-link" onclick="openUpdaterHelp('docs'); return false;">配置指南</a>
+                <a class="about-link" onclick="openUpdaterHelp('docs'); return false;" data-i18n="Setup Guide">Setup Guide</a>
                 ·
-                <a class="about-link" onclick="openUpdaterHelp('template'); return false;">配置模板</a>
+                <a class="about-link" onclick="openUpdaterHelp('template'); return false;" data-i18n="Config Template">Config Template</a>
               </span>
             </div>
 
             <div class="about-row">
               <span class="about-label"></span>
-              <button class="btn btn-secondary btn-sm" id="btn-check-update" onclick="checkUpdate()">检查更新</button>
+              <button class="btn btn-secondary btn-sm" id="btn-check-update" onclick="checkUpdate()" data-i18n="Check for Updates">Check for Updates</button>
             </div>
 
             <div class="about-row hidden" id="update-available-row">
-              <span class="about-label">可用更新</span>
+              <span class="about-label" data-i18n="Available Update">Available Update</span>
               <div class="update-info">
                 <span class="about-value mono" id="update-version"></span>
                 <span class="update-notes" id="update-notes"></span>
@@ -1641,7 +1660,7 @@
             </div>
 
             <div class="about-row hidden" id="update-progress-row">
-              <span class="about-label">更新进度</span>
+              <span class="about-label" data-i18n="Update Progress">Update Progress</span>
               <div class="update-progress">
                 <div class="update-progress-track"><div class="update-progress-bar" id="update-progress-bar"></div></div>
                 <span class="update-progress-text" id="update-progress-text"></span>
@@ -1650,13 +1669,13 @@
 
             <div class="about-row">
               <span class="about-label">GitHub</span>
-              <a class="about-link" id="link-github" onclick="openGithub(); return false;">在浏览器中打开</a>
+              <a class="about-link" id="link-github" onclick="openGithub(); return false;" data-i18n="Open in Browser">Open in Browser</a>
             </div>
           </section>
 
           <!-- Save Footer -->
           <div class="settings-footer" id="settings-footer">
-            <button class="btn btn-primary" id="btn-save-config" onclick="saveConfig()">保存配置</button>
+            <button class="btn btn-primary" id="btn-save-config" onclick="saveConfig()" data-i18n="Save Settings">Save Settings</button>
           </div>
         </div>
       </main>
@@ -1668,18 +1687,17 @@
           <div class="skill-status-row">
             <span class="status-badge stopped" id="skill-status-badge">
               <span class="dot"></span>
-              <span id="skill-status-text">检测中…</span>
+              <span id="skill-status-text" data-i18n="Detecting…">Detecting…</span>
             </span>
             <span class="skill-target mono">~/.codex/skills/manage-taskboard</span>
           </div>
           <p class="skill-status-detail" id="skill-status-detail"></p>
           <p class="skill-desc">
-            将 <code>manage-taskboard</code> Skill 安装到 Codex，安装后可在 Codex 中直接创建、查看和管理
-            Taskboard 任务。安装动作会在 <code>~/.codex/skills/manage-taskboard</code>
-            创建指向 Taskboard 仓库的符号链接，Taskboard 更新后 Skill 自动同步。
+            <span data-i18n="Install the">Install the</span> <code>manage-taskboard</code> <span data-i18n="Skill into Codex. Once installed, you can create, view and manage Taskboard tasks directly in Codex. Installation creates a symlink at">Skill into Codex. Once installed, you can create, view and manage Taskboard tasks directly in Codex. Installation creates a symlink at</span> <code>~/.codex/skills/manage-taskboard</code>
+            <span data-i18n="pointing to the Taskboard repository, so the Skill stays in sync with Taskboard updates.">pointing to the Taskboard repository, so the Skill stays in sync with Taskboard updates.</span>
           </p>
           <div class="skill-install-area">
-            <button class="btn btn-primary" id="btn-install-skill" onclick="installSkill()">安装 Skill</button>
+            <button class="btn btn-primary" id="btn-install-skill" onclick="installSkill()" data-i18n="Install Skill">Install Skill</button>
             <div class="skill-result mono" id="skill-result"></div>
           </div>
         </div>
@@ -1687,18 +1705,16 @@
 
       <!-- ============ Guard View ============ -->
       <main class="guard-view hidden" id="guard-view">
-        <h2 class="section-heading">配置看守</h2>
+        <h2 class="section-heading" data-i18n="Config Guard">Config Guard</h2>
         <p class="guard-hint">
-          启用 = 把参数值写入对应文件（写入前自动备份到 <code>~/.codex/dashi-backups/</code>）；
-          锁定 = 每 60 秒校验，漂移自动改回。锁定的参数只读，先解锁再改。
-          总开关与文件管理在「设置 → 看守」中。
+          <span data-i18n="Apply = write the parameter value into its file (auto-backup to">Apply = write the parameter value into its file (auto-backup to</span> <code>~/.codex/dashi-backups/</code> <span data-i18n="before writing); Lock = verify every 60 seconds and revert drift automatically. Locked parameters are read-only; unlock before editing. The master switch and file management are in Settings → Guard.">before writing); Lock = verify every 60 seconds and revert drift automatically. Locked parameters are read-only; unlock before editing. The master switch and file management are in Settings → Guard.</span>
         </p>
 
         <div id="guard-groups"></div>
 
           <div class="guard-add-section">
             <div class="guard-add-toggle" onclick="toggleGuardAddForm()">
-              <span>＋ 添加自定义参数</span>
+              <span data-i18n="+ Add Custom Parameter">+ Add Custom Parameter</span>
               <span id="guard-add-arrow">▾</span>
             </div>
             <div class="guard-add-form hidden" id="guard-add-form">
@@ -1711,58 +1727,58 @@
                   </div>
                 </div>
                 <div>
-                  <label class="guard-form-label">类型</label>
+                  <label class="guard-form-label" data-i18n="Type">Type</label>
                   <select class="guard-form-select" id="guard-add-mode" onchange="onGuardAddModeChange()">
-                    <option value="toml_key">toml_key（TOML 键值）</option>
-                    <option value="toml_absent">toml_absent（确保不存在）</option>
-                    <option value="file_overwrite">file_overwrite（整文件覆写）</option>
-                    <option value="markdown_block">markdown_block（标记区块）</option>
+                    <option value="toml_key" data-i18n="toml_key (TOML key value)">toml_key (TOML key value)</option>
+                    <option value="toml_absent" data-i18n="toml_absent (ensure absent)">toml_absent (ensure absent)</option>
+                    <option value="file_overwrite" data-i18n="file_overwrite (overwrite whole file)">file_overwrite (overwrite whole file)</option>
+                    <option value="markdown_block" data-i18n="markdown_block (marked block)">markdown_block (marked block)</option>
                   </select>
                 </div>
               </div>
               <div class="guard-form-row">
                 <div>
-                  <label class="guard-form-label">名称</label>
-                  <input type="text" class="guard-form-input" id="guard-add-label" placeholder="显示名称" />
+                  <label class="guard-form-label" data-i18n="Name">Name</label>
+                  <input type="text" class="guard-form-input" id="guard-add-label" placeholder="Display name" data-i18n-placeholder="Display name" />
                 </div>
                 <div>
-                  <label class="guard-form-label">归属文件</label>
+                  <label class="guard-form-label" data-i18n="Target File">Target File</label>
                   <select class="guard-form-select" id="guard-add-file-select">
                     <!-- 由 JS 动态填充 -->
                   </select>
                 </div>
               </div>
               <div id="guard-add-path-row">
-                <label class="guard-form-label">TOML 路径</label>
-                <input type="text" class="guard-form-input mono" id="guard-add-path" placeholder="如 features.foo.enabled" />
+                <label class="guard-form-label" data-i18n="TOML Path">TOML Path</label>
+                <input type="text" class="guard-form-input mono" id="guard-add-path" placeholder="e.g. features.foo.enabled" data-i18n-placeholder="e.g. features.foo.enabled" />
               </div>
               <div id="guard-add-value-type-row">
-                <label class="guard-form-label">值类型</label>
+                <label class="guard-form-label" data-i18n="Value Type">Value Type</label>
                 <select class="guard-form-select" id="guard-add-value-type" onchange="onGuardAddValueTypeChange()">
                   <option value="bool">bool</option>
                   <option value="int">int</option>
                   <option value="string">string</option>
-                  <option value="text">text（多行文本）</option>
-                  <option value="none">none（无值，仅 toml_absent）</option>
+                  <option value="text" data-i18n="text (multi-line text)">text (multi-line text)</option>
+                  <option value="none" data-i18n="none (no value, toml_absent only)">none (no value, toml_absent only)</option>
                 </select>
               </div>
               <div id="guard-add-default-row">
-                <label class="guard-form-label">默认值</label>
+                <label class="guard-form-label" data-i18n="Default Value">Default Value</label>
                 <input type="text" class="guard-form-input" id="guard-add-default" />
               </div>
               <div>
-                <label class="guard-form-label">说明（可选）</label>
-                <input type="text" class="guard-form-input" id="guard-add-desc" placeholder="参数用途说明" />
+                <label class="guard-form-label" data-i18n="Description (optional)">Description (optional)</label>
+                <input type="text" class="guard-form-input" id="guard-add-desc" placeholder="What this parameter does" data-i18n-placeholder="What this parameter does" />
               </div>
               <div style="display:flex;justify-content:flex-end;gap:8px;">
-                <button class="btn btn-secondary btn-sm" onclick="toggleGuardAddForm()">取消</button>
-                <button class="btn btn-primary btn-sm" onclick="guardAddCustom()">添加</button>
+                <button class="btn btn-secondary btn-sm" onclick="toggleGuardAddForm()" data-i18n="Cancel">Cancel</button>
+                <button class="btn btn-primary btn-sm" onclick="guardAddCustom()" data-i18n="Add">Add</button>
               </div>
             </div>
           </div>
 
           <div class="guard-advanced-link">
-            <button onclick="guardOpenSchemaFile()">打开 schema 文件（高级用户手动编辑）</button>
+            <button onclick="guardOpenSchemaFile()" data-i18n="Open schema file (manual editing for advanced users)">Open schema file (manual editing for advanced users)</button>
           </div>
         </div>
       </main>
@@ -1772,14 +1788,14 @@
     <!-- ============ 看守文件 添加/编辑弹窗 ============ -->
     <div class="modal-overlay hidden" id="guard-file-modal" onclick="if(event.target===this)toggleGuardFileForm()">
       <div class="modal-card">
-        <h3 class="modal-title" id="guard-file-modal-title">添加看守文件</h3>
+        <h3 class="modal-title" id="guard-file-modal-title" data-i18n="Add Guard File">Add Guard File</h3>
         <div class="guard-form-row">
           <div>
-            <label class="guard-form-label">名称</label>
-            <input type="text" class="guard-form-input" id="settings-guard-file-name" placeholder="如 my-config.toml" />
+            <label class="guard-form-label" data-i18n="Name">Name</label>
+            <input type="text" class="guard-form-input" id="settings-guard-file-name" placeholder="e.g. my-config.toml" data-i18n-placeholder="e.g. my-config.toml" />
           </div>
           <div>
-            <label class="guard-form-label">格式</label>
+            <label class="guard-form-label" data-i18n="Format">Format</label>
             <select class="guard-form-select" id="settings-guard-file-format">
               <option value="toml">TOML</option>
               <option value="json">JSON</option>
@@ -1788,15 +1804,15 @@
           </div>
         </div>
         <div>
-          <label class="guard-form-label">路径（相对 ~/.codex）</label>
+          <label class="guard-form-label" data-i18n="Path (relative to ~/.codex)">Path (relative to ~/.codex)</label>
           <div style="display:flex;gap:8px;">
-            <input type="text" class="guard-form-input mono" id="settings-guard-file-path" placeholder="如 my-config.toml" style="flex:1;" />
-            <button class="btn btn-secondary btn-sm" onclick="guardPickFilePath()">选择…</button>
+            <input type="text" class="guard-form-input mono" id="settings-guard-file-path" placeholder="e.g. my-config.toml" data-i18n-placeholder="e.g. my-config.toml" style="flex:1;" />
+            <button class="btn btn-secondary btn-sm" onclick="guardPickFilePath()" data-i18n="Pick…">Pick…</button>
           </div>
         </div>
         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px;">
-          <button class="btn btn-secondary btn-sm" onclick="toggleGuardFileForm()">取消</button>
-          <button class="btn btn-primary btn-sm" id="settings-guard-file-submit" onclick="guardSaveFileForm()">添加</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleGuardFileForm()" data-i18n="Cancel">Cancel</button>
+          <button class="btn btn-primary btn-sm" id="settings-guard-file-submit" onclick="guardSaveFileForm()" data-i18n="Add">Add</button>
         </div>
       </div>
     </div>

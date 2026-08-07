@@ -4,6 +4,8 @@ use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 use std::process::Stdio;
 
+use crate::i18n::{tr, trf};
+
 /// 为 Command 添加跨平台无窗口设置
 /// Windows: CREATE_NO_WINDOW 防止弹出终端窗口
 /// Unix: 进程组分离
@@ -162,7 +164,10 @@ async fn fail_if_exited(proc: &mut ManagedProcess) -> Result<(), String> {
             let detail = if tail.is_empty() { String::new() } else { format!(": {}", tail) };
             proc.child = None;
             proc.status = ProcessStatus::Failed;
-            proc.message = format!("启动后立即退出 ({}){}", status, detail);
+            proc.message = trf("Exited immediately after start ({status}){detail}", &[
+                ("status", status.to_string()),
+                ("detail", detail),
+            ]);
             Err(proc.message.clone())
         }
         _ => Ok(()),
@@ -181,7 +186,10 @@ fn refresh_liveness(proc: &mut ManagedProcess) {
         let detail = if tail.is_empty() { String::new() } else { format!(": {}", tail) };
         proc.child = None;
         proc.status = ProcessStatus::Failed;
-        proc.message = format!("进程意外退出 ({}){}", status, detail);
+        proc.message = trf("Process exited unexpectedly ({status}){detail}", &[
+            ("status", status.to_string()),
+            ("detail", detail),
+        ]);
     }
 }
 
@@ -220,9 +228,9 @@ async fn ensure_codex_cdp(app_path: &str, port: u16, new_instance: bool) -> Resu
         return Ok(());
     }
     if app_path.is_empty() {
-        return Err(format!(
-            "CDP 端口 {} 无响应，且未配置 Codex 应用路径。请在设置中选择 Codex 应用，或手动以 --remote-debugging-port={} 启动 Codex",
-            port, port
+        return Err(trf(
+            "CDP port {port} is not responding and no Codex app path is configured. Select the Codex app in Settings, or start Codex manually with --remote-debugging-port={port}",
+            &[("port", port.to_string())],
         ));
     }
     let debug_args = [
@@ -236,11 +244,11 @@ async fn ensure_codex_cdp(app_path: &str, port: u16, new_instance: bool) -> Resu
             cmd.arg("-n");
         }
         cmd.arg("-a").arg(app_path).arg("--args").args(&debug_args);
-        let out = cmd.output().map_err(|e| format!("无法启动 Codex: {}", e))?;
+        let out = cmd.output().map_err(|e| trf("Cannot launch Codex: {error}", &[("error", e.to_string())]))?;
         if !out.status.success() {
-            return Err(format!(
-                "启动 Codex 失败: {}",
-                String::from_utf8_lossy(&out.stderr).trim()
+            return Err(trf(
+                "Failed to launch Codex: {error}",
+                &[("error", String::from_utf8_lossy(&out.stderr).trim().to_string())],
             ));
         }
     }
@@ -255,14 +263,20 @@ async fn ensure_codex_cdp(app_path: &str, port: u16, new_instance: bool) -> Resu
             std::process::Command::new(app_path)
                 .args(&debug_args)
                 .spawn()
-                .map_err(|e| format!("无法启动 Codex ({}): {}", app_path, e))?;
+                .map_err(|e| trf("Cannot launch Codex ({path}): {error}", &[
+                    ("path", app_path.to_string()),
+                    ("error", e.to_string()),
+                ]))?;
         }
         // Linux 直接带参数拉起 exe
         #[cfg(not(target_os = "windows"))]
         std::process::Command::new(app_path)
             .args(&debug_args)
             .spawn()
-            .map_err(|e| format!("无法启动 Codex ({}): {}", app_path, e))?;
+            .map_err(|e| trf("Cannot launch Codex ({path}): {error}", &[
+                ("path", app_path.to_string()),
+                ("error", e.to_string()),
+            ]))?;
     }
     // 等窗口和 CDP 就绪，最多 15 秒
     for _ in 0..30 {
@@ -272,11 +286,11 @@ async fn ensure_codex_cdp(app_path: &str, port: u16, new_instance: bool) -> Resu
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
     Err(if new_instance {
-        format!("等待 Codex CDP 端口 {} 就绪超时", port)
+        trf("Timed out waiting for Codex CDP port {port} to be ready", &[("port", port.to_string())])
     } else {
-        format!(
-            "等待 Codex CDP 端口 {} 就绪超时。若 Codex 已在运行，请先完全退出再使用完整启动模式",
-            port
+        trf(
+            "Timed out waiting for Codex CDP port {port} to be ready. If Codex is already running, quit it completely before using full launch mode",
+            &[("port", port.to_string())],
         )
     })
 }
@@ -305,7 +319,7 @@ impl ProcessManager {
     ) -> Result<(), String> {
         let mut tb = self.taskboard.lock().await;
         if tb.status == ProcessStatus::Running || tb.status == ProcessStatus::Starting {
-            return Err("Taskboard 服务已在运行".to_string());
+            return Err(tr("Taskboard server is already running"));
         }
 
         // 残留/外部实例健康时直接复用，避免 EADDRINUSE 秒退；
@@ -313,12 +327,15 @@ impl ProcessManager {
         if taskboard_health_reachable(host, port).await {
             tb.child = None;
             tb.status = ProcessStatus::Running;
-            tb.message = format!("复用已在运行的 Taskboard 服务 http://{}:{}", host, port);
+            tb.message = trf("Reusing Taskboard server already running at http://{host}:{port}", &[
+                ("host", host.to_string()),
+                ("port", port.to_string()),
+            ]);
             return Ok(());
         }
 
         tb.status = ProcessStatus::Starting;
-        tb.message = "正在启动 Taskboard 服务...".to_string();
+        tb.message = tr("Starting Taskboard server...");
 
         let node = resolve_node(node_path);
         let server_script = format!("{}/server/index.mjs", taskboard_path);
@@ -339,13 +356,16 @@ impl ProcessManager {
                 tb.child = Some(child);
                 fail_if_exited(&mut tb).await?;
                 tb.status = ProcessStatus::Running;
-                tb.message = format!("Taskboard 运行在 http://{}:{}", host, port);
+                tb.message = trf("Taskboard running at http://{host}:{port}", &[
+                    ("host", host.to_string()),
+                    ("port", port.to_string()),
+                ]);
                 Ok(())
             }
             Err(e) => {
                 tb.status = ProcessStatus::Failed;
-                tb.message = format!("启动失败: {}", e);
-                Err(format!("启动 Taskboard 服务失败: {}", e))
+                tb.message = trf("Launch failed: {error}", &[("error", e.to_string())]);
+                Err(trf("Failed to start Taskboard server: {error}", &[("error", e.to_string())]))
             }
         }
     }
@@ -357,7 +377,7 @@ impl ProcessManager {
             return Ok(());
         }
         tb.status = ProcessStatus::Stopping;
-        tb.message = "正在停止...".to_string();
+        tb.message = tr("Stopping...");
 
         if let Some(child) = tb.child.as_mut() {
             // 先尝试优雅关闭
@@ -396,7 +416,7 @@ impl ProcessManager {
 
         tb.child = None;
         tb.status = ProcessStatus::Stopped;
-        tb.message = "已停止".to_string();
+        tb.message = tr("Stopped");
         Ok(())
     }
 
@@ -415,11 +435,11 @@ impl ProcessManager {
     ) -> Result<(), String> {
         let mut inj = self.injector.lock().await;
         if inj.status == ProcessStatus::Running || inj.status == ProcessStatus::Starting {
-            return Err("Codex 注入器已在运行".to_string());
+            return Err(tr("Codex injector is already running"));
         }
 
         inj.status = ProcessStatus::Starting;
-        inj.message = "正在等待 Codex 调试端口...".to_string();
+        inj.message = tr("Waiting for Codex debug port...");
 
         if let Err(e) = ensure_codex_cdp(codex_app_path, cdp_port, separate_window).await {
             inj.status = ProcessStatus::Failed;
@@ -427,7 +447,7 @@ impl ProcessManager {
             return Err(e);
         }
 
-        inj.message = "正在启动 Codex 注入器...".to_string();
+        inj.message = tr("Starting Codex injector...");
 
         let node = resolve_node(node_path);
         let injector_script = format!("{}/scripts/codex-injector.mjs", taskboard_path);
@@ -456,16 +476,16 @@ impl ProcessManager {
                 fail_if_exited(&mut inj).await?;
                 inj.status = ProcessStatus::Running;
                 if separate_window {
-                    inj.message = format!("注入器运行中 (独立窗口, CDP 端口 {})", cdp_port);
+                    inj.message = trf("Injector running (separate window, CDP port {port})", &[("port", cdp_port.to_string())]);
                 } else {
-                    inj.message = format!("注入器运行中 (完整启动, CDP 端口 {})", cdp_port);
+                    inj.message = trf("Injector running (full launch, CDP port {port})", &[("port", cdp_port.to_string())]);
                 }
                 Ok(())
             }
             Err(e) => {
                 inj.status = ProcessStatus::Failed;
-                inj.message = format!("启动失败: {}", e);
-                Err(format!("启动 Codex 注入器失败: {}", e))
+                inj.message = trf("Launch failed: {error}", &[("error", e.to_string())]);
+                Err(trf("Failed to start Codex injector: {error}", &[("error", e.to_string())]))
             }
         }
     }
@@ -477,7 +497,7 @@ impl ProcessManager {
             return Ok(());
         }
         inj.status = ProcessStatus::Stopping;
-        inj.message = "正在停止...".to_string();
+        inj.message = tr("Stopping...");
 
         if let Some(child) = inj.child.as_mut() {
             let pid = child.id();
@@ -514,7 +534,7 @@ impl ProcessManager {
 
         inj.child = None;
         inj.status = ProcessStatus::Stopped;
-        inj.message = "已停止".to_string();
+        inj.message = tr("Stopped");
         Ok(())
     }
 

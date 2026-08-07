@@ -1,6 +1,6 @@
 [package]
 name = "dashi-taskboard-launcher"
-version = "0.8.1"
+version = "0.9.0"
 description = "One-click launcher for dashi-taskboard integrated with Codex"
 authors = ["dashi-taskboard-launcher"]
 edition = "2021"
@@ -21,6 +21,7 @@ serde_json = "1"
 toml_edit = "0.22"
 tokio = { version = "1", features = ["full"] }
 log = "0.4"
+sys-locale = "0.3"
 
 # 商店版应用 COM 激活（版本与 tauri 依赖树中的 windows 0.61.3 对齐）
 [target.'cfg(windows)'.dependencies]

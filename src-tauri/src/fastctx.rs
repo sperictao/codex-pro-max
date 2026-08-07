@@ -6,6 +6,7 @@ use serde::Serialize;
 use std::process::Command;
 
 use crate::config;
+use crate::i18n::trf;
 
 /// 安装检测 + 接入状态
 #[derive(Debug, Serialize)]
@@ -54,7 +55,7 @@ fn fastctx_command(args: &[&str]) -> Command {
 fn run_fastctx(args: &[&str]) -> Result<String, String> {
     let output = fastctx_command(args)
         .output()
-        .map_err(|e| format!("无法执行 fastctx: {}（请先 npm install --global fastctx）", e))?;
+        .map_err(|e| trf("Cannot execute fastctx: {error} (please run npm install --global fastctx first)", &[("error", e.to_string())]))?;
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     if output.status.success() {
@@ -68,7 +69,7 @@ fn run_fastctx(args: &[&str]) -> Result<String, String> {
 fn integrated_in(content: &str) -> Result<bool, String> {
     let doc = content
         .parse::<toml_edit::DocumentMut>()
-        .map_err(|e| format!("config.toml 解析失败: {}", e))?;
+        .map_err(|e| trf("Failed to parse config.toml: {error}", &[("error", e.to_string())]))?;
     Ok(doc
         .get("mcp_servers")
         .and_then(|t| t.get("fastctx"))
@@ -138,7 +139,7 @@ pub fn fastctx_open_console() -> Result<(), String> {
             .args(["/c", "start", "", "cmd", "/k", "fastctx"])
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()
-            .map_err(|e| format!("无法打开控制台: {}", e))?;
+            .map_err(|e| trf("Cannot open console: {error}", &[("error", e.to_string())]))?;
     }
     #[cfg(target_os = "macos")]
     {
@@ -150,7 +151,7 @@ pub fn fastctx_open_console() -> Result<(), String> {
                 r#"tell application "Terminal" to do script "fastctx""#,
             ])
             .spawn()
-            .map_err(|e| format!("无法打开控制台: {}", e))?;
+            .map_err(|e| trf("Cannot open console: {error}", &[("error", e.to_string())]))?;
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
@@ -159,7 +160,7 @@ pub fn fastctx_open_console() -> Result<(), String> {
         Command::new("x-terminal-emulator")
             .args(["-e", "fastctx"])
             .spawn()
-            .map_err(|e| format!("无法打开控制台（请自行在终端运行 fastctx）: {}", e))?;
+            .map_err(|e| trf("Cannot open console (please run fastctx in a terminal yourself): {error}", &[("error", e.to_string())]))?;
     }
     Ok(())
 }

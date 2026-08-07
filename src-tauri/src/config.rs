@@ -40,6 +40,10 @@ pub struct LauncherConfig {
     #[serde(default)]
     pub minimize_to_tray_on_close: bool,
 
+    /// 界面语言："system"（跟随系统）/ "en" / "zh-CN"
+    #[serde(default = "default_language")]
+    pub language: String,
+
     /// Codex 配置看守状态（见 codex_guard.rs）
     #[serde(default)]
     pub codex_guard: crate::codex_guard::CodexGuardState,
@@ -77,6 +81,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_language() -> String {
+    "system".to_string()
+}
+
 impl Default for LauncherConfig {
     fn default() -> Self {
         Self {
@@ -89,6 +97,7 @@ impl Default for LauncherConfig {
             auto_open: true,
             separate_window_mode: false,
             minimize_to_tray_on_close: false,
+            language: default_language(),
             codex_guard: Default::default(),
         }
     }
@@ -101,13 +110,13 @@ pub fn home_dir() -> Result<PathBuf, String> {
     {
         std::env::var("HOME")
             .map(PathBuf::from)
-            .map_err(|_| "无法获取 HOME 环境变量".to_string())
+            .map_err(|_| crate::i18n::tr("Cannot get HOME environment variable"))
     }
     #[cfg(windows)]
     {
         std::env::var("USERPROFILE")
             .map(PathBuf::from)
-            .map_err(|_| "无法获取 USERPROFILE 环境变量".to_string())
+            .map_err(|_| crate::i18n::tr("Cannot get USERPROFILE environment variable"))
     }
 }
 
@@ -140,9 +149,9 @@ pub fn load_config() -> Result<LauncherConfig, String> {
         return Ok(LauncherConfig::default());
     }
     let content = std::fs::read_to_string(&path)
-        .map_err(|e| format!("读取配置文件失败: {}", e))?;
+        .map_err(|e| crate::i18n::trf("Failed to read config file: {error}", &[("error", e.to_string())]))?;
     let mut config: LauncherConfig = serde_json::from_str(&content)
-        .map_err(|e| format!("解析配置文件失败: {}", e))?;
+        .map_err(|e| crate::i18n::trf("Failed to parse config file: {error}", &[("error", e.to_string())]))?;
     // 兼容旧配置里已存的 \\?\ 前缀路径
     config.taskboard_path = strip_unc(&config.taskboard_path);
     Ok(config)
@@ -160,6 +169,7 @@ pub fn merge_settings(current: &mut LauncherConfig, settings: &LauncherConfig) {
     current.auto_open = settings.auto_open;
     current.separate_window_mode = settings.separate_window_mode;
     current.minimize_to_tray_on_close = settings.minimize_to_tray_on_close;
+    current.language = settings.language.clone();
 }
 
 /// 保存配置文件
@@ -167,12 +177,12 @@ pub fn save_config(config: &LauncherConfig) -> Result<(), String> {
     let path = config_file_path()?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
-            .map_err(|e| format!("创建配置目录失败: {}", e))?;
+            .map_err(|e| crate::i18n::trf("Failed to create config directory: {error}", &[("error", e.to_string())]))?;
     }
     let content = serde_json::to_string_pretty(config)
-        .map_err(|e| format!("序列化配置失败: {}", e))?;
+        .map_err(|e| crate::i18n::trf("Failed to serialize config: {error}", &[("error", e.to_string())]))?;
     std::fs::write(&path, content)
-        .map_err(|e| format!("写入配置文件失败: {}", e))
+        .map_err(|e| crate::i18n::trf("Failed to write config file: {error}", &[("error", e.to_string())]))
 }
 
 #[cfg(test)]
@@ -246,6 +256,7 @@ mod tests {
             auto_open: false,
             separate_window_mode: true,
             minimize_to_tray_on_close: true,
+            language: "zh-CN".to_string(),
             ..Default::default()
         };
 
@@ -260,6 +271,7 @@ mod tests {
         assert_eq!(current.auto_open, false);
         assert_eq!(current.separate_window_mode, true);
         assert_eq!(current.minimize_to_tray_on_close, true);
+        assert_eq!(current.language, "zh-CN");
 
         // codex_guard 不变
         assert_eq!(current.codex_guard.enabled, true);

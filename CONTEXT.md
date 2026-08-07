@@ -14,7 +14,7 @@
 - **启用（Apply）** — 把参数的（修改后或默认）值写入 codex 对应文件。
 - **锁定（Lock）** — 已启用参数的看守状态；锁定期间轮询发现实际值与配置值不一致时自动改回。
 - **轮询（Poll）** — 周期性比对锁定参数的实际状态与配置状态。
-- **schema** — 描述托管参数集合的 JSON 文件。落盘于 launcher 配置目录，启动时与内置 schema 合并（同 id 内置覆盖磁盘，磁盘独有条目保留），UI 完全由合并结果驱动。
+- **schema** — 描述托管参数集合的 JSON 文件。落盘于 launcher 配置目录，启动时与内置 schema 合并（同 id 磁盘覆盖内置——用户定制内置参数；但 `label_en` / `description_en` / `default_en` 英文资源始终以内置为准，磁盘独有条目保留），UI 完全由合并结果驱动。
 - **漂移（Drift）** — 锁定参数的实际状态与配置值不一致。轮询发现漂移即自动改回（写入前备份），配置页记录上次校验/恢复时间，不弹通知。
 - **备份（Backup）** — 任何写入前把目标文件当前内容复制到 `~/.codex/dashi-backups/<文件名>.<时间戳>.bak`，每文件保留 20 份，无 UI 还原入口。
 - **路径（Path）** — TOML 参数在文件中的点分位置，如 `features.image_generation`、`features.multi_agent_v2.enabled`、`agents`（toml_absent 的目标）。写入/比对/删除都按路径在解析后的 TOML 树上定位，中间表不存在时写入会逐级创建。
@@ -44,6 +44,24 @@
 - **Launcher 仓库** — `sperictao/dashi-taskboard-launcher`（本仓库），Tauri 壳。
 - **Vendor 快照（Vendor Snapshot）** — taskboard 在 launcher 内 `vendor/dashi-taskboard/` 的 git submodule，指向 Fork、pin 具体 commit；升级由 launcher 显式 bump 指针。取代 v0.2.5 前的纯文件拷贝。
 - **Bundle** — Tauri 构建时经 `tauri.conf.json` resources 映射打进安装包的 taskboard 文件集。
+
+## 界面多语言（i18n）
+
+启动器的横切关注：壳 UI 与 Rust 侧所有用户可见字符串的多语言。
+
+### 术语
+
+- **界面语言（Display Language）** — 启动器自身用户可见文本的语言。设置项三选一：跟随系统 / English / 中文。
+- **跟随系统（Follow System）** — 默认取值。启动时按 OS 语言一次性解析：系统为中文则中文，其余一律英文。
+- **默认语言（Default Language）** — 英文。跟随系统解析不到中文时的兜底，也是缺失翻译的兜底。
+- **解析语言（Resolved Locale）** — 「跟随系统」经解析后得到的具体语言（en 或 zh-CN），启动时确定，改设置后立即重解析。
+
+### 语义边界
+
+- 覆盖启动器壳与 Rust 侧字符串（托盘、进程状态、错误消息）；vendor/dashi-taskboard 是独立应用，其 UI 语言不在此域。
+- 切换即时生效：界面重渲染、托盘重建；已产生/已显示的消息不回溯重翻。
+- 看守域的**托管参数** label/description 同样双语：schema 条目的 `label_en` / `description_en` 是英文资源，空则落回原文（自定义参数永远只有用户原文）。部分参数的 **default 值**（写入 codex 的内容，如 AGENTS.md 段落、default.toml 指令）也带 `default_en`：英文界面下期望值取 `default_en`，即**写入内容随界面语言**。语义后果：用户改过的 `state.value` 永远优先；未锁参数切语言会显示漂移（由用户决定重应用）；已锁参数切语言后 60 秒轮询内被自动恢复为新语言内容。无 `default_en` 的参数 default 值不随语言变化。
+- 界面语言与文档语言无关：README、release notes 的双语是另一回事，不受此设置影响。
 
 ## FastCtx 集成
 
