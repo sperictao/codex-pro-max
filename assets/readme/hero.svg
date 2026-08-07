@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1200" height="360" viewBox="0 0 1200 360"
+     role="img" aria-labelledby="title desc"
+     font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif">
+  <title id="title">Dashi Taskboard Launcher</title>
+  <desc id="desc">Tauri v2 桌面启动器，托管 dashi-taskboard 服务、向 Codex 桌面端注入面板、看守 ~/.codex 配置并支持自更新。</desc>
+
+  <rect x="1" y="1" width="1198" height="358" rx="23" fill="#0D1117" stroke="#21262D" stroke-width="1.5"/>
+
+  <!-- title block -->
+  <g transform="translate(64 0)">
+    <text x="0" y="88" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="19" letter-spacing="4" fill="#58A6FF">TAURI V2 · MACOS / WINDOWS / LINUX</text>
+    <text x="0" y="152" font-size="56" font-weight="700" fill="#E6EDF3">Dashi Taskboard</text>
+    <text x="0" y="216" font-size="56" font-weight="700" fill="#58A6FF">Launcher</text>
+    <text x="0" y="258" font-size="21" fill="#C9D1D9">图形界面替代手写命令，</text>
+    <text x="0" y="288" font-size="21" fill="#C9D1D9">一站式管理 dashi-taskboard。</text>
+    <text x="0" y="328" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="17" fill="#8B949E">服务托管 · CDP 注入 · 配置看守 · 自更新</text>
+  </g>
+
+  <!-- divider -->
+  <line x1="600" y1="52" x2="600" y2="308" stroke="#21262D" stroke-width="1.5"/>
+
+  <!-- launcher node -->
+  <g>
+    <rect x="628" y="140" width="160" height="88" rx="14" fill="#161B22" stroke="#3D444D" stroke-width="1.5"/>
+    <text x="708" y="180" font-size="24" font-weight="700" fill="#E6EDF3" text-anchor="middle">Launcher</text>
+    <text x="708" y="206" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="15" fill="#8B949E" text-anchor="middle">desktop app</text>
+  </g>
+
+  <!-- connectors -->
+  <g fill="none" stroke="#3D444D" stroke-width="2">
+    <path d="M788 170 C 812 170 820 88 846 88"/>
+    <path d="M788 184 L846 180"/>
+    <path d="M788 198 C 812 198 820 272 846 272"/>
+  </g>
+
+  <!-- target: taskboard service -->
+  <g>
+    <rect x="846" y="56" width="290" height="64" rx="12" fill="#161B22" stroke="#3D444D" stroke-width="1.5"/>
+    <circle cx="874" cy="88" r="6" fill="#3FB950"/>
+    <text x="894" y="86" font-size="21" font-weight="600" fill="#E6EDF3">Taskboard 服务</text>
+    <text x="894" y="109" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="16" fill="#8B949E">拉起 / 停止 · 健康检查</text>
+  </g>
+
+  <!-- target: codex injection -->
+  <g>
+    <rect x="846" y="148" width="290" height="64" rx="12" fill="#161B22" stroke="#3D444D" stroke-width="1.5"/>
+    <rect x="863" y="171" width="22" height="18" rx="3" fill="none" stroke="#58A6FF" stroke-width="2"/>
+    <rect x="867" y="175" width="9" height="10" rx="1.5" fill="#58A6FF"/>
+    <text x="894" y="178" font-size="21" font-weight="600" fill="#E6EDF3">Codex 桌面端</text>
+    <text x="894" y="201" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="16" fill="#8B949E">CDP 端口注入 Taskboard 面板</text>
+  </g>
+
+  <!-- target: codex config guard -->
+  <g>
+    <rect x="846" y="240" width="290" height="64" rx="12" fill="#161B22" stroke="#3D444D" stroke-width="1.5"/>
+    <path d="M867 268 v-5 a7 7 0 0 1 14 0 v5" fill="none" stroke="#D29922" stroke-width="2"/>
+    <rect x="863" y="268" width="22" height="16" rx="3" fill="none" stroke="#D29922" stroke-width="2"/>
+    <text x="894" y="270" font-size="21" font-weight="600" fill="#E6EDF3">~/.codex 配置看守</text>
+    <text x="894" y="293" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="16" fill="#8B949E">schema 托管 · 漂移自动恢复</text>
+  </g>
+</svg>

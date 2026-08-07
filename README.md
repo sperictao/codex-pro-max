@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./assets/readme/hero.svg" width="100%" alt="Dashi Taskboard Launcher — Tauri v2 桌面启动器：Taskboard 服务托管、Codex CDP 注入、~/.codex 配置看守、应用自更新">
+</p>
+
 # Dashi Taskboard Launcher
 
 Tauri v2 桌面启动器，用图形界面替代手写命令，一站式管理 [dashi-taskboard](https://github.com/chuspeeism/dashi-taskboard) 的使用体验：
