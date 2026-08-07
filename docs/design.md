@@ -71,6 +71,15 @@ Codex 配置看守（词汇与边界见 [../CONTEXT.md](../CONTEXT.md) 与 [adr/
 - **备份**：任何写入前复制目标文件到 `~/.codex/dashi-backups/`，每文件保留 20 份
 - **命令**：`guard_get_view` / `guard_set_enabled` / `guard_set_value` / `guard_apply` / `guard_set_locked` / `guard_add_custom_param` / `guard_remove_custom_param` / `guard_get_schema_file_path` / `guard_get_files` / `guard_add_file` / `guard_update_file` / `guard_remove_file` / `guard_detect_file`（路径检测：只搜顶层+一层子目录，结果落盘为检测记录，之后直接读记录不重复扫）
 
+### 3.5 taskboard 集成与打包
+
+dashi-taskboard 以 git submodule 集成于 `vendor/dashi-taskboard`（指向 fork、pin commit，决策见 [adr/0002](adr/0002-taskboard-submodule-packaging.md)，词汇见 [../CONTEXT.md](../CONTEXT.md)）：
+
+- **构建**：`dist/web`（vite 前端产物）上游不入库，由 `beforeBuildCommand` 的 `build:taskboard` 在打包前构建；`beforeDevCommand` 只确保目录存在（编译期 tauri-build 校验资源路径）
+- **打包**：`tauri.conf.json` resources 白名单只含运行时必需项（`server/ shared/ scripts/ inject/ dist/web package.json`），上游新增运行时目录需同步
+- **升级**：进 submodule checkout 目标 commit，回 launcher 提交指针
+- **运行时**：`get_bundled_taskboard_path` 打包后解析 `resource_dir/vendor/dashi-taskboard`，开发模式回退项目根目录；`taskboard_path` 配置可指向外部 checkout 覆盖内置版
+
 ## 4. 前端
 
 `src/main.ts` 单文件实现：
