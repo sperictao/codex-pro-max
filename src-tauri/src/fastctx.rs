@@ -133,8 +133,9 @@ pub fn fastctx_open_console() -> Result<(), String> {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         Command::new("cmd")
-            // start 的第一个引号参数是窗口标题，后面才是要跑的命令
-            .args(["/c", "start", "fastctx", "cmd", "/k", "fastctx"])
+            // start 只把带引号的首参当窗口标题，裸首参会被当成命令执行
+            // （曾因此跑出 fastctx cmd /k fastctx）；空标题 "" 是安全惯例
+            .args(["/c", "start", "", "cmd", "/k", "fastctx"])
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()
             .map_err(|e| format!("无法打开控制台: {}", e))?;
