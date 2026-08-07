@@ -168,6 +168,7 @@ async fn fail_if_exited(proc: &mut ManagedProcess) -> Result<(), String> {
                 ("status", status.to_string()),
                 ("detail", detail),
             ]);
+            crate::notify_process_failure(&proc.name, &proc.message);
             Err(proc.message.clone())
         }
         _ => Ok(()),
@@ -190,6 +191,7 @@ fn refresh_liveness(proc: &mut ManagedProcess) {
             ("status", status.to_string()),
             ("detail", detail),
         ]);
+        crate::notify_process_failure(&proc.name, &proc.message);
     }
 }
 
@@ -365,6 +367,7 @@ impl ProcessManager {
             Err(e) => {
                 tb.status = ProcessStatus::Failed;
                 tb.message = trf("Launch failed: {error}", &[("error", e.to_string())]);
+                crate::notify_process_failure(&tb.name, &tb.message);
                 Err(trf("Failed to start Taskboard server: {error}", &[("error", e.to_string())]))
             }
         }
@@ -444,6 +447,7 @@ impl ProcessManager {
         if let Err(e) = ensure_codex_cdp(codex_app_path, cdp_port, separate_window).await {
             inj.status = ProcessStatus::Failed;
             inj.message = e.clone();
+            crate::notify_process_failure(&inj.name, &inj.message);
             return Err(e);
         }
 
@@ -485,6 +489,7 @@ impl ProcessManager {
             Err(e) => {
                 inj.status = ProcessStatus::Failed;
                 inj.message = trf("Launch failed: {error}", &[("error", e.to_string())]);
+                crate::notify_process_failure(&inj.name, &inj.message);
                 Err(trf("Failed to start Codex injector: {error}", &[("error", e.to_string())]))
             }
         }

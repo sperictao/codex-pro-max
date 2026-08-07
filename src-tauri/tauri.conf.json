@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
   "productName": "Dashi Taskboard Launcher",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "identifier": "com.dashi.taskboard.launcher",
   "build": {
     "beforeDevCommand": "npm run ensure:taskboard && npm run dev",
@@ -12,7 +12,7 @@
   "app": {
     "withGlobalTauri": false,
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://localhost:1420 ws://localhost:1420"
     },
     "windows": [
       {
@@ -24,7 +24,8 @@
         "minWidth": 800,
         "minHeight": 560,
         "center": true,
-        "decorations": true
+        "decorations": true,
+        "visible": false
       }
     ]
   },
@@ -52,6 +53,9 @@
     }
   },
   "plugins": {
+    "shell": {
+      "open": "(https?://.+|/.+|[A-Za-z]:.+)"
+    },
     "updater": {
       "pubkey": "",
       "endpoints": []

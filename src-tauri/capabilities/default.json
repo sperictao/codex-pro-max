@@ -5,14 +5,10 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "shell:allow-execute",
-    "shell:allow-spawn",
-    "shell:allow-kill",
-    "shell:allow-stdin-write",
     "shell:allow-open",
     "process:default",
-    "fs:default",
     "dialog:default",
-    "updater:default"
+    "updater:default",
+    "notification:default"
   ]
 }

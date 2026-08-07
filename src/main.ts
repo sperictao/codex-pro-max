@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
 import { open as openDialog, ask } from "@tauri-apps/plugin-dialog";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
+import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
 import { initI18n, applyDomTranslations, applyLanguage, currentLanguage, t } from "./i18n";
 import type { ResolvedLanguage } from "./i18n";
 
@@ -285,6 +286,27 @@ function readConfigFromUI(): LauncherConfig {
 function toggleTrayMinimize(): void {
   document.getElementById("toggle-tray")!.classList.toggle("active");
   onConfigChange();
+}
+
+// 自启开关不落 LauncherConfig：OS 注册项是唯一事实来源（同 fastctx 接入状态的哲学）
+async function toggleAutostart(): Promise<void> {
+  const el = document.getElementById("toggle-autostart")!;
+  const next = !el.classList.contains("active");
+  try {
+    await invoke("autostart_set", { enabled: next });
+    el.classList.toggle("active", next);
+  } catch (e) {
+    toast(String(e), "error");
+  }
+}
+
+async function openLogDir(): Promise<void> {
+  try {
+    const dir = await invoke<string>("get_log_dir");
+    await openUrl(dir);
+  } catch (e) {
+    toast(String(e), "error");
+  }
 }
 
 function onConfigChange(): void {
@@ -1499,6 +1521,19 @@ async function init(): Promise<void> {
     const cfg = await invoke<LauncherConfig>("load_config");
     fillConfigUI(cfg);
 
+    // 自启状态从 OS 注册项实时读（不存配置）
+    try {
+      const autostart = await invoke<boolean>("autostart_is_enabled");
+      document.getElementById("toggle-autostart")!.classList.toggle("active", autostart);
+    } catch { /* 读不到就当关 */ }
+
+    // 进程事故通知需要系统授权（macOS），启动时静默请求一次
+    void (async () => {
+      try {
+        if (!(await isPermissionGranted())) await requestPermission();
+      } catch { /* 拒绝则通知静默失败，不打扰 */ }
+    })();
+
     // codex 路径为空或已失效时，自动探测真实安装位置并回填
     const codexInput = document.getElementById("cfg-codex") as HTMLInputElement;
     const currentValid = codexInput.value
@@ -1554,6 +1589,8 @@ w.showSkill = showSkill;
 w.setTheme = setTheme;
 w.setLanguage = setLanguage;
 w.toggleTrayMinimize = toggleTrayMinimize;
+w.toggleAutostart = toggleAutostart;
+w.openLogDir = openLogDir;
 w.switchSection = switchSection;
 w.browsePath = browsePath;
 w.browseNode = browseNode;

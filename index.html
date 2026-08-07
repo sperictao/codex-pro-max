@@ -1470,6 +1470,24 @@
                 </div>
                 <div class="toggle-switch" id="toggle-tray"></div>
               </div>
+              <div class="switch-row" onclick="toggleAutostart()">
+                <div class="switch-text">
+                  <span class="switch-label" data-i18n="Launch at login">Launch at login</span>
+                  <span class="switch-desc" data-i18n="When enabled, the app starts silently in the system tray when you log in.">When enabled, the app starts silently in the system tray when you log in.</span>
+                </div>
+                <div class="toggle-switch" id="toggle-autostart"></div>
+              </div>
+            </div>
+
+            <div class="config-row">
+              <label class="config-label" data-i18n="Logs">Logs</label>
+              <div class="switch-row" onclick="openLogDir()">
+                <div class="switch-text">
+                  <span class="switch-label" data-i18n="Open log folder">Open log folder</span>
+                  <span class="switch-desc" data-i18n="Logs are written to files only; open the folder when something goes wrong.">Logs are written to files only; open the folder when something goes wrong.</span>
+                </div>
+                <button class="btn btn-secondary btn-sm" data-i18n="Open">Open</button>
+              </div>
             </div>
 
           </section>
