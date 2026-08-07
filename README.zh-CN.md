@@ -129,12 +129,20 @@ npm run build:updater      # 生成 updater 产物
 
 | 文档 | 内容 |
 | --- | --- |
-| [CONTEXT.md](CONTEXT.md) | 领域术语表（配置看守 + Taskboard 集成） |
+| [CONTEXT.md](CONTEXT.md) | 领域术语表（配置看守 + Taskboard 集成 + FastCtx 集成） |
 | [docs/design.md](docs/design.md) | 架构与模块设计 |
 | [docs/adr/0001](docs/adr/0001-codex-config-guard-boundaries.md) | 看守的生命周期与回滚边界 |
 | [docs/adr/0002](docs/adr/0002-taskboard-submodule-packaging.md) | taskboard submodule 集成与打包白名单 |
+| [docs/adr/0003](docs/adr/0003-fastctx-delegate-to-cli.md) | FastCtx 集成委托 fastctx CLI 的决策 |
 | [docs/release/GITHUB_RELEASE.md](docs/release/GITHUB_RELEASE.md) | 发布流程 |
 | [docs/updater/SETUP.md](docs/updater/SETUP.md) | 自更新配置 |
+
+---
+
+## 📄 第三方声明
+
+- [dashi-taskboard](https://github.com/chuspeeism/dashi-taskboard) — 内置的任务看板，以 git submodule 集成于 `vendor/dashi-taskboard` 并随安装包分发（见 [ADR 0002](docs/adr/0002-taskboard-submodule-packaging.md)）。上游未声明许可；打包遵循 [CONTEXT.md](CONTEXT.md) 所述的上游 → fork（`sperictao/dashi-taskboard`）→ PR 协作流。启动器侧集成代码为我们自己的工作；看板本体为上游作者的作品。
+- [FastCtx](https://github.com/yc-duan/fastctx) — 可选集成，采用 [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) 许可。本启动器**不**再分发、不内嵌 FastCtx，仅在运行时调用用户自行安装的 `fastctx` CLI。本仓库中的全部集成代码均为我们自己的工作与独自的责任，不代表 FastCtx 作者的认可，FastCtx 作者亦不承担由此产生的任何责任。FastCtx 内嵌 Pdfium，其第三方许可见 FastCtx 的 `THIRD_PARTY_LICENSES.md`（仅在再分发 FastCtx 二进制时相关）。
 
 ---
 

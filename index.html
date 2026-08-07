@@ -1399,6 +1399,10 @@
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
             看守
           </button>
+          <button class="nav-item" id="nav-integration" onclick="switchSection('integration')">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            集成
+          </button>
           <button class="nav-item" id="nav-about" onclick="switchSection('about')">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
             关于
@@ -1562,6 +1566,40 @@
                   <div class="guard-files-toggle" onclick="toggleGuardFileForm()">＋ 添加文件</div>
                 </div>
                 <div class="guard-files-list" id="settings-guard-files"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Integration Section -->
+          <section class="settings-section hidden" id="section-integration">
+            <h2 class="section-heading">集成</h2>
+
+            <div class="config-row">
+              <label class="config-label">FastCtx</label>
+              <div class="switch-row" id="fastctx-row" onclick="toggleFastctx()">
+                <div class="switch-text">
+                  <span class="switch-label">接入 fastctx 仓库工具（MCP）</span>
+                  <span class="switch-desc">为 Codex 提供 read/grep/glob/replace/run 等结构化工具。接入 = fastctx apply；摘除 = fastctx unapply（删除 ~/.fastctx 受管数据，npm 包保留，可随时重新接入）。</span>
+                </div>
+                <div class="toggle-switch" id="toggle-fastctx"></div>
+              </div>
+            </div>
+
+            <div class="config-row">
+              <label class="config-label">状态</label>
+              <div style="flex:1;">
+                <div id="fastctx-status" style="font-size:13px;">检测中…</div>
+                <div id="fastctx-install-hint" class="hidden" style="margin-top:6px;font-size:12px;color:var(--muted-foreground);">
+                  未检测到 fastctx。请先运行 <span class="mono">npm install --global fastctx</span>（需 Node.js 18+），安装后回到本页。
+                </div>
+              </div>
+            </div>
+
+            <div class="config-row">
+              <label class="config-label">控制台</label>
+              <div style="flex:1;">
+                <button class="btn btn-secondary btn-sm" id="btn-fastctx-console" onclick="openFastctxConsole()">打开 fastctx 控制台</button>
+                <span style="font-size:12px;color:var(--muted-foreground);margin-left:8px;">输出档位、后台任务、更新均在 fastctx 控制台管理</span>
               </div>
             </div>
           </section>

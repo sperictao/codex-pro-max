@@ -91,6 +91,17 @@ interface UpdaterHelpPaths {
   templatePath: string;
 }
 
+interface FastctxStatus {
+  installed: boolean;
+  version: string | null;
+  integrated: boolean;
+}
+
+interface FastctxApplyResult {
+  selfCheckPassed: boolean;
+  selfCheckOutput: string;
+}
+
 interface UpdateInfo {
   currentVersion: string;
   availableVersion: string | null;
@@ -115,6 +126,8 @@ type ThemeMode = "light" | "dark" | "system";
 let statusPolling: ReturnType<typeof setInterval> | null = null;
 let guardState: CodexGuardState = { enabled: false, params: {} };
 let lastGuardJson = "";
+let fastctxState: FastctxStatus = { installed: false, version: null, integrated: false };
+let fastctxBusy = false;
 
 // ============ Toast 通知 ============
 function toast(message: string, type: "success" | "error" | "info" = "info"): void {
@@ -451,7 +464,7 @@ function switchSection(section: string): void {
   document.getElementById(`nav-${section}`)!.classList.add("active");
 
   const footer = document.getElementById("settings-footer")!;
-  if (section === "about" || section === "appearance" || section === "guard") {
+  if (section === "about" || section === "appearance" || section === "guard" || section === "integration") {
     footer.classList.add("hidden");
   } else {
     footer.classList.remove("hidden");
@@ -459,6 +472,10 @@ function switchSection(section: string): void {
 
   if (section === "guard") {
     void refreshGuardFiles();
+  }
+
+  if (section === "integration") {
+    void refreshFastctxStatus();
   }
 }
 
@@ -621,6 +638,80 @@ async function toggleGuard(): Promise<void> {
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+// ============ FastCtx 集成 ============
+// 接入/摘除委托 fastctx CLI（ADR 0003）；状态以 config.toml 为准实时检测，不持久化开关
+function renderFastctx(): void {
+  document.getElementById("toggle-fastctx")!.classList.toggle("active", fastctxState.integrated);
+  const status = document.getElementById("fastctx-status")!;
+  const hint = document.getElementById("fastctx-install-hint")!;
+  if (fastctxBusy) {
+    status.textContent = "处理中…";
+  } else if (!fastctxState.installed) {
+    status.textContent = "未安装";
+  } else if (fastctxState.integrated) {
+    status.textContent = `已接入${fastctxState.version ? ` · ${fastctxState.version}` : ""}`;
+  } else {
+    status.textContent = `已安装${fastctxState.version ? `（${fastctxState.version}）` : ""}，未接入`;
+  }
+  hint.classList.toggle("hidden", fastctxState.installed);
+}
+
+async function refreshFastctxStatus(): Promise<void> {
+  try {
+    fastctxState = await invoke<FastctxStatus>("fastctx_detect");
+  } catch (e) {
+    toast(`fastctx 检测失败: ${e}`, "error");
+  }
+  renderFastctx();
+}
+
+async function toggleFastctx(): Promise<void> {
+  if (fastctxBusy) return;
+  if (!fastctxState.installed) {
+    toast("未检测到 fastctx，请先运行 npm install --global fastctx", "error");
+    return;
+  }
+  if (fastctxState.integrated) {
+    const ok = await ask(
+      "摘除将停止 fastctx 进程并删除 ~/.fastctx 受管数据（npm 包保留，可随时重新接入）。已写入的 Codex 配置会被移除。\n\n确定摘除？",
+      { title: "摘除 fastctx", kind: "warning" },
+    );
+    if (!ok) return;
+  }
+  fastctxBusy = true;
+  renderFastctx();
+  try {
+    if (fastctxState.integrated) {
+      await invoke("fastctx_unapply");
+      toast("fastctx 已摘除，重启 Codex 会话后完全生效", "info");
+    } else {
+      const res = await invoke<FastctxApplyResult>("fastctx_apply");
+      toast("fastctx 已接入，请重启 Codex 会话使其生效", "success");
+      if (!res.selfCheckPassed) {
+        const line = res.selfCheckOutput.split("\n").find((l) => l.includes("[FAIL]")) ?? res.selfCheckOutput.split("\n")[0] ?? "";
+        toast(`fastctx 自检未通过：${line}（可打开控制台排查）`, "error");
+      }
+    }
+  } catch (e) {
+    toast(`fastctx 操作失败: ${e}`, "error");
+  } finally {
+    fastctxBusy = false;
+    await refreshFastctxStatus();
+  }
+}
+
+async function openFastctxConsole(): Promise<void> {
+  if (!fastctxState.installed) {
+    toast("未检测到 fastctx，请先运行 npm install --global fastctx", "error");
+    return;
+  }
+  try {
+    await invoke("fastctx_open_console");
+  } catch (e) {
+    toast(`打开控制台失败: ${e}`, "error");
+  }
 }
 
 function fmtTs(ts: number | null): string {
@@ -1440,5 +1531,7 @@ w.openGuardAddFormFor = openGuardAddFormFor;
 w.checkUpdate = onUpdateButton;
 w.openUpdaterHelp = openUpdaterHelp;
 w.openGithub = openGithub;
+w.toggleFastctx = toggleFastctx;
+w.openFastctxConsole = openFastctxConsole;
 
 init();

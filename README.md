@@ -129,12 +129,20 @@ npm run build:updater      # generate updater artifacts
 
 | Doc | Contents |
 | --- | --- |
-| [CONTEXT.md](CONTEXT.md) | Domain glossary (config guard + taskboard integration) |
+| [CONTEXT.md](CONTEXT.md) | Domain glossary (config guard + taskboard integration + FastCtx integration) |
 | [docs/design.md](docs/design.md) | Architecture and module design |
 | [docs/adr/0001](docs/adr/0001-codex-config-guard-boundaries.md) | Guard lifecycle and rollback boundaries |
 | [docs/adr/0002](docs/adr/0002-taskboard-submodule-packaging.md) | taskboard submodule integration and packaging whitelist |
+| [docs/adr/0003](docs/adr/0003-fastctx-delegate-to-cli.md) | FastCtx integration delegates to the fastctx CLI |
 | [docs/release/GITHUB_RELEASE.md](docs/release/GITHUB_RELEASE.md) | Release pipeline |
 | [docs/updater/SETUP.md](docs/updater/SETUP.md) | Self-update configuration |
+
+---
+
+## 📄 Third-Party Notices
+
+- [dashi-taskboard](https://github.com/chuspeeism/dashi-taskboard) — the bundled task board, integrated as a git submodule at `vendor/dashi-taskboard` and shipped inside the installer (see [ADR 0002](docs/adr/0002-taskboard-submodule-packaging.md)). Upstream declares no license; bundling follows the upstream → fork (`sperictao/dashi-taskboard`) → PR workflow described in [CONTEXT.md](CONTEXT.md). Launcher-side integration code is our own work; the taskboard itself remains the upstream author's work.
+- [FastCtx](https://github.com/yc-duan/fastctx) — optional integration, licensed under [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0). This launcher does **not** redistribute or embed FastCtx; it invokes a user-installed `fastctx` CLI at runtime. All integration code in this repository is our own work and our sole responsibility; it is not endorsed by the FastCtx authors, who bear no liability for it. FastCtx embeds Pdfium — see FastCtx's `THIRD_PARTY_LICENSES.md` (relevant only when redistributing FastCtx binaries).
 
 ---
 

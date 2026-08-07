@@ -8,6 +8,7 @@ use serde::Serialize;
 
 mod config;
 mod codex_guard;
+mod fastctx;
 mod process_manager;
 mod updater;
 
@@ -801,6 +802,10 @@ pub fn run() {
             codex_guard::guard_remove_file,
             codex_guard::guard_detect_file,
             codex_guard::guard_relativize_picked_path,
+            fastctx::fastctx_detect,
+            fastctx::fastctx_apply,
+            fastctx::fastctx_unapply,
+            fastctx::fastctx_open_console,
             updater::get_updater_config_health,
             updater::get_updater_help_paths,
             updater::check_update,

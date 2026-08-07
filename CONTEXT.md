@@ -44,3 +44,22 @@
 - **Launcher 仓库** — `sperictao/dashi-taskboard-launcher`（本仓库），Tauri 壳。
 - **Vendor 快照（Vendor Snapshot）** — taskboard 在 launcher 内 `vendor/dashi-taskboard/` 的 git submodule，指向 Fork、pin 具体 commit；升级由 launcher 显式 bump 指针。取代 v0.2.5 前的纯文件拷贝。
 - **Bundle** — Tauri 构建时经 `tauri.conf.json` resources 映射打进安装包的 taskboard 文件集。
+
+## FastCtx 集成
+
+启动器的第三功能域：设置页「集成」区的开关，把 fastctx（`yc-duan/fastctx`，MCP 工具运行时）接入/摘除 Codex。
+
+### 术语
+
+- **接入（Integrate）** — 调 fastctx CLI `fastctx apply --yes` 完成注册：fastctx 自己写 `~/.codex/config.toml`（`[mcp_servers.fastctx]`、`features.code_mode.direct_only_tool_namespaces`、共享键 `tool_output_token_limit`）并固化二进制到 `~/.fastctx/bin/`；默认 Standard 输出档。与看守域的"启用"区分：接入对象是外部工具整体，不是单条托管参数。
+- **摘除（Unapply）** — 调 `fastctx unapply --yes`：杀受管进程、移除 fastctx 配置、删除 `~/.fastctx` 受管数据；npm 全局包保留，可重新接入。
+- **安装检测（Install Detection）** — 检测 fastctx 可执行文件是否在 PATH；每次进入「集成」区实时执行，不落盘、无记录。与看守域的"检测记录"同名不同义：看守检测持久化到配置且只比对文件路径，安装检测即时丢弃且测的是可执行性。
+- **接入状态（Integration State）** — 以 `~/.codex/config.toml` 是否含 `[mcp_servers.fastctx]` 为唯一事实来源，启动器不存开关布尔值。
+- **自检（Self-check）** — 接入成功后跑一次 `fastctx status`；FAIL 只 toast 警告，不阻塞、不回滚。
+
+### 语义边界
+
+- 启动器不写任何 fastctx 拥有的 TOML 键（`mcp_servers.fastctx`、`tool_output_token_limit`、`features.code_mode.*`），一律委托 CLI；这些键也不应加入看守，用户自行锁入造成的互相改回不管。
+- 接受 apply 对 ChatGPT 桌面端配置的连带写入（fastctx 官方行为，两个 host 同时配置）。
+- 接入/摘除后需重启 Codex 会话才生效，启动器只提示，不自动重启。
+- fastctx 的安装、升级、输出档位、jobs 管理归 fastctx 自己的 TUI/CLI；启动器只做未安装引导（`npm i -g fastctx`）与「打开控制台」入口。
