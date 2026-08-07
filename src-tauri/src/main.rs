@@ -56,10 +56,19 @@ async fn load_config() -> Result<LauncherConfig, String> {
     config::load_config()
 }
 
-/// 保存配置
+/// 保存配置（全量覆盖，仅前端已知字段的场景使用）
 #[tauri::command]
 async fn save_config(config: LauncherConfig) -> Result<(), String> {
     config::save_config(&config)
+}
+
+/// 仅更新设置类字段，保留 codex_guard 等看守状态不变
+/// 防止设置页保存时把内存中过时的看守状态写回，导致 apply/lock 被回滚
+#[tauri::command]
+async fn update_settings(config: LauncherConfig) -> Result<(), String> {
+    let mut current = config::load_config()?;
+    config::merge_settings(&mut current, &config);
+    config::save_config(&current)
 }
 
 /// 检测 dashi-taskboard 项目路径是否有效
@@ -762,6 +771,7 @@ pub fn run() {
             get_bundled_taskboard_path,
             load_config,
             save_config,
+            update_settings,
             validate_taskboard_path,
             check_node_version,
             detect_codex_app,
@@ -782,6 +792,15 @@ pub fn run() {
             codex_guard::guard_set_value,
             codex_guard::guard_apply,
             codex_guard::guard_set_locked,
+            codex_guard::guard_add_custom_param,
+            codex_guard::guard_remove_custom_param,
+            codex_guard::guard_get_schema_file_path,
+            codex_guard::guard_get_files,
+            codex_guard::guard_add_file,
+            codex_guard::guard_update_file,
+            codex_guard::guard_remove_file,
+            codex_guard::guard_detect_file,
+            codex_guard::guard_relativize_picked_path,
             updater::get_updater_config_health,
             updater::get_updater_help_paths,
             updater::check_update,

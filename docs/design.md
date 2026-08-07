@@ -57,18 +57,19 @@ stopped → starting → running ⇄ stopping → stopped
 
 ### 3.3 main.rs
 
-`#[tauri::command]` 暴露给前端：配置读写、路径/Node 版本/Codex 应用校验、状态查询、进程启停、codex guard 五命令、updater 配置健康检查等。
+`#[tauri::command]` 暴露给前端：配置读写（`update_settings` 只合并设置字段，不动看守状态）、路径/Node 版本/Codex 应用校验、状态查询、进程启停、codex guard 命令、updater 配置健康检查等。
 
 ### 3.4 codex_guard.rs
 
 Codex 配置看守（词汇与边界见 [../CONTEXT.md](../CONTEXT.md) 与 [adr/0001](adr/0001-codex-config-guard-boundaries.md)）：
 
-- **schema**：内置 `guard_schema.json`（11 条 v1 参数），启动时与 `~/.dashi-taskboard-launcher/codex-guard-schema.json` 合并（同 id 磁盘覆盖内置，磁盘独有保留），UI 完全由合并结果驱动
+- **schema**：内置 `guard_schema.json`（11 条 v1 参数），启动时与 `~/.dashi-taskboard-launcher/codex-guard-schema.json` 合并（同 id 内置覆盖磁盘，磁盘独有保留），UI 完全由合并结果驱动；用户可在 UI 增删自定义参数（id 前缀 `custom.`，可删除），写入该磁盘文件
+- **文件列表**：看守目标文件（内置 config.toml / AGENTS.md / agents/default.toml + 自定义）存于 `LauncherConfig.codex_guard.files`；视图分组与轮询只覆盖列表内文件，路径不可重复
 - **apply_mode**：`toml_key` / `toml_absent` / `file_overwrite` / `markdown_block`（`<!-- dashi:begin/end id -->` 标记区块）；TOML 读写走 `toml_edit`，保留注释与格式
 - **状态**：`LauncherConfig.codex_guard`（enabled + 每参数 value/applied/locked/last_checked/last_restored）
-- **轮询**：`poll_loop` tokio 任务，60s 固定间隔，仅看守锁定参数；漂移即备份后改回
+- **轮询**：`poll_loop` tokio 任务，60s 固定间隔，仅看守文件列表内且锁定的参数；漂移即备份后改回
 - **备份**：任何写入前复制目标文件到 `~/.codex/dashi-backups/`，每文件保留 20 份
-- **命令**：`guard_get_view` / `guard_set_enabled` / `guard_set_value` / `guard_apply` / `guard_set_locked`
+- **命令**：`guard_get_view` / `guard_set_enabled` / `guard_set_value` / `guard_apply` / `guard_set_locked` / `guard_add_custom_param` / `guard_remove_custom_param` / `guard_get_schema_file_path` / `guard_get_files` / `guard_add_file` / `guard_update_file` / `guard_remove_file` / `guard_detect_file`（路径检测：只搜顶层+一层子目录，结果落盘为检测记录，之后直接读记录不重复扫）
 
 ## 4. 前端
 

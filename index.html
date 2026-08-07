@@ -815,6 +815,267 @@
         color: var(--muted-foreground);
       }
 
+      .guard-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+      }
+      .guard-header .section-heading {
+        margin: 0;
+      }
+      .guard-header-switch .switch-row {
+        padding: 0;
+      }
+      .guard-header-switch .switch-label {
+        font-size: 13px;
+        color: var(--muted-foreground);
+      }
+
+      .guard-subtitle {
+        font-size: 14px;
+        font-weight: 600;
+        margin: 24px 0 12px;
+        color: var(--foreground);
+      }
+
+      .guard-files-section {
+        margin-bottom: 8px;
+      }
+      .guard-files-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+      }
+      .guard-files-header .guard-subtitle {
+        margin: 0;
+      }
+      .guard-files-toggle {
+        font-size: 12px;
+        color: var(--interactive);
+        cursor: pointer;
+        padding: 4px 8px;
+        border-radius: var(--radius-sm);
+      }
+      .guard-files-toggle:hover {
+        background: hsl(215 100% 50% / 0.1);
+      }
+
+      .guard-files-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        gap: 10px;
+        margin-bottom: 8px;
+      }
+      .guard-file-card {
+        padding: 12px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .guard-file-card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .guard-file-name {
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .guard-file-format {
+        font-size: 10px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: hsl(215 100% 50% / 0.1);
+        color: var(--interactive);
+        text-transform: uppercase;
+      }
+      .guard-file-path {
+        font-size: 11px;
+        font-family: monospace;
+        color: var(--muted-foreground);
+        word-break: break-all;
+      }
+      .guard-file-detect {
+        font-size: 11px;
+        color: var(--muted-foreground);
+        word-break: break-all;
+      }
+      .guard-file-actions {
+        display: flex;
+        gap: 4px;
+        margin-top: 4px;
+      }
+      .guard-file-btn {
+        font-size: 11px;
+        padding: 4px 8px;
+        background: none;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        color: var(--muted-foreground);
+        cursor: pointer;
+      }
+      .guard-file-btn:hover {
+        color: var(--foreground);
+        border-color: var(--muted-foreground);
+      }
+      .guard-file-btn.danger:hover {
+        color: var(--destructive);
+        border-color: var(--destructive);
+      }
+
+      .guard-group-add {
+        margin-top: 12px;
+        text-align: center;
+      }
+      .guard-group-add button {
+        font-size: 12px;
+        color: var(--interactive);
+        background: none;
+        border: 1px dashed var(--border);
+        padding: 8px 16px;
+        border-radius: var(--radius-md);
+        cursor: pointer;
+      }
+      .guard-group-add button:hover {
+        border-color: var(--interactive);
+      }
+
+      .guard-param-delete {
+        color: var(--destructive);
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 12px;
+        padding: 4px 8px;
+        border-radius: var(--radius-sm);
+      }
+      .guard-param-delete:hover {
+        background: hsl(347 100% 49% / 0.1);
+      }
+
+      .guard-add-section {
+        margin-top: 24px;
+        padding-top: 20px;
+        border-top: 1px solid var(--border);
+      }
+
+      .guard-add-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        cursor: pointer;
+        padding: 8px 0;
+        color: var(--muted-foreground);
+        font-size: 13px;
+      }
+      .guard-add-toggle:hover {
+        color: var(--foreground);
+      }
+
+      .guard-add-form {
+        margin-top: 12px;
+        padding: 16px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .guard-form-row {
+        display: flex;
+        gap: 12px;
+      }
+      .guard-form-row > * {
+        flex: 1;
+      }
+
+      .guard-form-label {
+        font-size: 12px;
+        color: var(--muted-foreground);
+        margin-bottom: 4px;
+        display: block;
+      }
+
+      .guard-form-input,
+      .guard-form-select,
+      .guard-form-textarea {
+        width: 100%;
+        padding: 8px 10px;
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        color: var(--foreground);
+        font-size: 13px;
+        font-family: inherit;
+        box-sizing: border-box;
+      }
+      .guard-form-textarea {
+        min-height: 80px;
+        resize: vertical;
+      }
+      .guard-form-input:focus,
+      .guard-form-select:focus,
+      .guard-form-textarea:focus {
+        outline: none;
+        border-color: var(--interactive);
+      }
+
+      .guard-form-prefix {
+        color: var(--muted-foreground);
+        font-size: 12px;
+        margin-right: 4px;
+      }
+
+      .guard-advanced-link {
+        margin-top: 12px;
+        text-align: center;
+      }
+      .guard-advanced-link button {
+        background: none;
+        border: none;
+        color: var(--interactive);
+        font-size: 12px;
+        cursor: pointer;
+        padding: 4px 8px;
+      }
+      .guard-advanced-link button:hover {
+        text-decoration: underline;
+      }
+
+      /* ============ Modal ============ */
+      .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+      }
+      .modal-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: 20px;
+        width: 440px;
+        max-width: 90vw;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        box-shadow: var(--shadow-sm);
+      }
+      .modal-title {
+        margin: 0;
+        font-size: 15px;
+      }
+
       /* ============ Toast ============ */
       .toast-container {
         position: fixed;
@@ -1059,7 +1320,7 @@
         <div class="header-actions">
           <button class="header-btn active" id="btn-home" onclick="showHome()">主页</button>
           <button class="header-btn" id="btn-skill" onclick="showSkill()">Skill</button>
-          <button class="header-btn hidden" id="btn-guard" onclick="showGuard()">看守</button>
+          <button class="header-btn" id="btn-guard" onclick="showGuard()">看守</button>
           <button class="header-btn" id="btn-settings" onclick="toggleSettings()">设置</button>
         </div>
       </header>
@@ -1134,6 +1395,10 @@
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg>
             模式
           </button>
+          <button class="nav-item" id="nav-guard" onclick="switchSection('guard')">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
+            看守
+          </button>
           <button class="nav-item" id="nav-about" onclick="switchSection('about')">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
             关于
@@ -1171,17 +1436,6 @@
                 <input type="text" class="config-input mono" id="cfg-codex" placeholder="/Applications/ChatGPT.app" oninput="onConfigChange()" />
                 <button class="btn btn-secondary btn-sm" onclick="browseCodex()">浏览</button>
                 <span class="config-validate" id="validate-codex"></span>
-              </div>
-            </div>
-
-            <div class="config-row">
-              <label class="config-label">Codex 配置看守</label>
-              <div class="switch-row" onclick="toggleGuard()">
-                <div class="switch-text">
-                  <span class="switch-label">托管并锁定 ~/.codex 配置参数</span>
-                  <span class="switch-desc">开启后按 schema 检查 config.toml / AGENTS.md 等参数；锁定的参数被改动时自动改回（仅本应用运行期间，间隔 60 秒）。开启后顶部出现「看守」入口。</span>
-                </div>
-                <div class="toggle-switch" id="toggle-guard"></div>
               </div>
             </div>
 
@@ -1285,6 +1539,33 @@
 
           </section>
 
+          <!-- Guard Section -->
+          <section class="settings-section hidden" id="section-guard">
+            <h2 class="section-heading">配置看守</h2>
+
+            <div class="config-row">
+              <label class="config-label">总开关</label>
+              <div class="switch-row" onclick="toggleGuard()">
+                <div class="switch-text">
+                  <span class="switch-label">启用 Codex 配置看守</span>
+                  <span class="switch-desc">托管并锁定 ~/.codex 配置参数；锁定的参数被改动时自动改回（仅本应用运行期间，间隔 60 秒）。</span>
+                </div>
+                <div class="toggle-switch" id="settings-guard-toggle"></div>
+              </div>
+            </div>
+
+            <div class="config-row">
+              <label class="config-label">配置文件</label>
+              <div style="flex:1;">
+                <div class="guard-files-header">
+                  <span style="font-size:12px;color:var(--muted-foreground);">看守的目标文件列表（内置文件不可删除）</span>
+                  <div class="guard-files-toggle" onclick="toggleGuardFileForm()">＋ 添加文件</div>
+                </div>
+                <div class="guard-files-list" id="settings-guard-files"></div>
+              </div>
+            </div>
+          </section>
+
           <!-- About Section -->
           <section class="settings-section hidden" id="section-about">
             <h2 class="section-heading">关于</h2>
@@ -1365,17 +1646,122 @@
           </div>
         </div>
       </main>
+
       <!-- ============ Guard View ============ -->
       <main class="guard-view hidden" id="guard-view">
-        <h2 class="section-heading">Codex 配置看守</h2>
+        <h2 class="section-heading">配置看守</h2>
         <p class="guard-hint">
           启用 = 把参数值写入对应文件（写入前自动备份到 <code>~/.codex/dashi-backups/</code>）；
           锁定 = 每 60 秒校验，漂移自动改回。锁定的参数只读，先解锁再改。
+          总开关与文件管理在「设置 → 看守」中。
         </p>
+
         <div id="guard-groups"></div>
+
+          <div class="guard-add-section">
+            <div class="guard-add-toggle" onclick="toggleGuardAddForm()">
+              <span>＋ 添加自定义参数</span>
+              <span id="guard-add-arrow">▾</span>
+            </div>
+            <div class="guard-add-form hidden" id="guard-add-form">
+              <div class="guard-form-row">
+                <div>
+                  <label class="guard-form-label">ID</label>
+                  <div style="display:flex;align-items:center;">
+                    <span class="guard-form-prefix">custom.</span>
+                    <input type="text" class="guard-form-input" id="guard-add-id" placeholder="my_param" />
+                  </div>
+                </div>
+                <div>
+                  <label class="guard-form-label">类型</label>
+                  <select class="guard-form-select" id="guard-add-mode" onchange="onGuardAddModeChange()">
+                    <option value="toml_key">toml_key（TOML 键值）</option>
+                    <option value="toml_absent">toml_absent（确保不存在）</option>
+                    <option value="file_overwrite">file_overwrite（整文件覆写）</option>
+                    <option value="markdown_block">markdown_block（标记区块）</option>
+                  </select>
+                </div>
+              </div>
+              <div class="guard-form-row">
+                <div>
+                  <label class="guard-form-label">名称</label>
+                  <input type="text" class="guard-form-input" id="guard-add-label" placeholder="显示名称" />
+                </div>
+                <div>
+                  <label class="guard-form-label">归属文件</label>
+                  <select class="guard-form-select" id="guard-add-file-select">
+                    <!-- 由 JS 动态填充 -->
+                  </select>
+                </div>
+              </div>
+              <div id="guard-add-path-row">
+                <label class="guard-form-label">TOML 路径</label>
+                <input type="text" class="guard-form-input mono" id="guard-add-path" placeholder="如 features.foo.enabled" />
+              </div>
+              <div id="guard-add-value-type-row">
+                <label class="guard-form-label">值类型</label>
+                <select class="guard-form-select" id="guard-add-value-type" onchange="onGuardAddValueTypeChange()">
+                  <option value="bool">bool</option>
+                  <option value="int">int</option>
+                  <option value="string">string</option>
+                  <option value="text">text（多行文本）</option>
+                  <option value="none">none（无值，仅 toml_absent）</option>
+                </select>
+              </div>
+              <div id="guard-add-default-row">
+                <label class="guard-form-label">默认值</label>
+                <input type="text" class="guard-form-input" id="guard-add-default" />
+              </div>
+              <div>
+                <label class="guard-form-label">说明（可选）</label>
+                <input type="text" class="guard-form-input" id="guard-add-desc" placeholder="参数用途说明" />
+              </div>
+              <div style="display:flex;justify-content:flex-end;gap:8px;">
+                <button class="btn btn-secondary btn-sm" onclick="toggleGuardAddForm()">取消</button>
+                <button class="btn btn-primary btn-sm" onclick="guardAddCustom()">添加</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="guard-advanced-link">
+            <button onclick="guardOpenSchemaFile()">打开 schema 文件（高级用户手动编辑）</button>
+          </div>
+        </div>
       </main>
     </div>
     <div class="toast-container" id="toast-container"></div>
+
+    <!-- ============ 看守文件 添加/编辑弹窗 ============ -->
+    <div class="modal-overlay hidden" id="guard-file-modal" onclick="if(event.target===this)toggleGuardFileForm()">
+      <div class="modal-card">
+        <h3 class="modal-title" id="guard-file-modal-title">添加看守文件</h3>
+        <div class="guard-form-row">
+          <div>
+            <label class="guard-form-label">名称</label>
+            <input type="text" class="guard-form-input" id="settings-guard-file-name" placeholder="如 my-config.toml" />
+          </div>
+          <div>
+            <label class="guard-form-label">格式</label>
+            <select class="guard-form-select" id="settings-guard-file-format">
+              <option value="toml">TOML</option>
+              <option value="json">JSON</option>
+              <option value="md">Markdown</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="guard-form-label">路径（相对 ~/.codex）</label>
+          <div style="display:flex;gap:8px;">
+            <input type="text" class="guard-form-input mono" id="settings-guard-file-path" placeholder="如 my-config.toml" style="flex:1;" />
+            <button class="btn btn-secondary btn-sm" onclick="guardPickFilePath()">选择…</button>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px;">
+          <button class="btn btn-secondary btn-sm" onclick="toggleGuardFileForm()">取消</button>
+          <button class="btn btn-primary btn-sm" id="settings-guard-file-submit" onclick="guardSaveFileForm()">添加</button>
+        </div>
+      </div>
+    </div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

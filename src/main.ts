@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog, ask } from "@tauri-apps/plugin-dialog";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
 
 // ============ 类型定义 ============
@@ -47,13 +47,26 @@ interface GuardParamView {
   error: string | null;
   lastChecked: number | null;
   lastRestored: number | null;
+  custom: boolean;
 }
 
 interface GuardGroupView {
+  id: string;
   name: string;
   file: string;
+  format: string;
+  builtin: boolean;
   error: string | null;
   params: GuardParamView[];
+}
+
+interface GuardFileView {
+  id: string;
+  name: string;
+  file: string;
+  format: string;
+  builtin: boolean;
+  detection: { path: string | null; at: number } | null;
 }
 
 interface GuardView {
@@ -180,8 +193,18 @@ function fillConfigUI(cfg: LauncherConfig): void {
 }
 
 function renderGuardToggle(): void {
-  document.getElementById("toggle-guard")!.classList.toggle("active", guardState.enabled);
-  document.getElementById("btn-guard")!.classList.toggle("hidden", !guardState.enabled);
+  const el = document.getElementById("settings-guard-toggle");
+  if (el) el.classList.toggle("active", guardState.enabled);
+  // 总开关关闭时隐藏顶部「看守」Tab
+  const btn = document.getElementById("btn-guard");
+  if (btn) btn.classList.toggle("hidden", !guardState.enabled);
+  // 如果关了总开关且当前在看守页，跳回主页
+  if (!guardState.enabled) {
+    const view = document.getElementById("guard-view");
+    if (view && !view.classList.contains("hidden")) {
+      showHome();
+    }
+  }
 }
 
 function readConfigFromUI(): LauncherConfig {
@@ -211,7 +234,12 @@ function onConfigChange(): void {
 async function saveConfig(): Promise<void> {
   const cfg = readConfigFromUI();
   try {
-    await invoke("save_config", { config: cfg });
+    // 使用 update_settings 而非 save_config：只更新设置类字段，
+    // 保留 codex_guard 等看守状态不变，避免设置页保存回滚 apply/lock 状态
+    await invoke("update_settings", { config: cfg });
+    // 保存后同步后端最新的完整配置到前端 guardState，保持一致
+    const latest = await invoke<LauncherConfig>("load_config");
+    guardState = latest.codex_guard;
     toast("配置已保存", "success");
   } catch (e) {
     toast(`保存失败: ${e}`, "error");
@@ -389,8 +417,8 @@ function showHome(): void {
 function showSkill(): void {
   document.getElementById("main-view")!.classList.add("hidden");
   document.getElementById("settings-view")!.classList.add("hidden");
-  document.getElementById("skill-view")!.classList.remove("hidden");
   document.getElementById("guard-view")!.classList.add("hidden");
+  document.getElementById("skill-view")!.classList.remove("hidden");
   document.getElementById("btn-settings")!.classList.remove("active");
   document.getElementById("btn-home")!.classList.remove("active");
   document.getElementById("btn-guard")!.classList.remove("active");
@@ -408,6 +436,7 @@ function showGuard(): void {
   document.getElementById("btn-skill")!.classList.remove("active");
   document.getElementById("btn-guard")!.classList.add("active");
   void refreshGuardView(true);
+  void refreshGuardFiles();
 }
 
 function switchSection(section: string): void {
@@ -422,10 +451,14 @@ function switchSection(section: string): void {
   document.getElementById(`nav-${section}`)!.classList.add("active");
 
   const footer = document.getElementById("settings-footer")!;
-  if (section === "about" || section === "appearance") {
+  if (section === "about" || section === "appearance" || section === "guard") {
     footer.classList.add("hidden");
   } else {
     footer.classList.remove("hidden");
+  }
+
+  if (section === "guard") {
+    void refreshGuardFiles();
   }
 }
 
@@ -447,7 +480,7 @@ async function startAll(): Promise<void> {
   btn.textContent = "启动中...";
 
   try {
-    await invoke("save_config", { config: cfg });
+    await invoke("update_settings", { config: cfg });
     await invoke("start_all", { config: cfg });
     toast("所有服务已启动", "success");
     await refreshStatus();
@@ -587,7 +620,7 @@ async function toggleGuard(): Promise<void> {
 }
 
 function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 function fmtTs(ts: number | null): string {
@@ -596,7 +629,8 @@ function fmtTs(ts: number | null): string {
 }
 
 async function refreshGuardView(force = false): Promise<void> {
-  if (document.getElementById("guard-view")!.classList.contains("hidden")) return;
+  const viewEl = document.getElementById("guard-view");
+  if (!viewEl || viewEl.classList.contains("hidden")) return;
   try {
     const view = await invoke<GuardView>("guard_get_view");
     const json = JSON.stringify(view);
@@ -604,9 +638,10 @@ async function refreshGuardView(force = false): Promise<void> {
     // 用户正在输入时不重渲染，避免抢走焦点/清空草稿
     const ae = document.activeElement;
     if (!force && ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA")
-        && document.getElementById("guard-view")!.contains(ae)) return;
+        && viewEl.contains(ae)) return;
     lastGuardJson = json;
     renderGuardView(view);
+    renderGuardToggle();
   } catch {
     // 轮询错误忽略
   }
@@ -648,7 +683,10 @@ function renderGuardView(view: GuardView): void {
       return `<div class="guard-param">
         <div class="guard-param-head">
           <span class="guard-param-label">${escapeHtml(p.label)}</span>
-          <span class="status-badge ${s.cls}"><span class="dot"></span><span>${s.text}</span></span>
+          <span style="display:flex;align-items:center;gap:8px;">
+            ${p.custom ? `<button class="guard-param-delete" onclick="guardRemoveCustom('${p.id}')" title="删除自定义参数">删除</button>` : ""}
+            <span class="status-badge ${s.cls}"><span class="dot"></span><span>${s.text}</span></span>
+          </span>
         </div>
         <div class="guard-param-desc">${escapeHtml(p.description)}</div>
         ${p.path ? `<div class="guard-param-path mono">${escapeHtml(p.path)}</div>` : ""}
@@ -667,11 +705,15 @@ function renderGuardView(view: GuardView): void {
         ${meta}
       </div>`;
     }).join("");
-    return `<div class="guard-group">
+    const addBtn = `<div class="guard-group-add">
+      <button onclick="openGuardAddFormFor('${g.id}', '${escapeHtml(g.name)}')">＋ 添加参数</button>
+    </div>`;
+    return `<div class="guard-group" data-group-id="${g.id}">
       <div class="guard-group-name">${escapeHtml(g.name)}</div>
       <div class="guard-group-file mono">~/.codex/${escapeHtml(g.file)}</div>
       ${g.error ? `<div class="guard-group-error">${escapeHtml(g.error)}</div>` : ""}
       ${params}
+      ${addBtn}
     </div>`;
   }).join("");
 }
@@ -727,6 +769,356 @@ async function guardSetLocked(id: string, locked: boolean): Promise<void> {
     toast(`操作失败: ${e}`, "error");
   }
   await refreshGuardView(true);
+}
+
+// ============ 文件管理 ============
+let guardFiles: GuardFileView[] = [];
+let guardAddParamFileId: string | null = null;
+
+async function refreshGuardFiles(): Promise<void> {
+  try {
+    guardFiles = await invoke<GuardFileView[]>("guard_get_files");
+    renderGuardFiles();
+    // 首次（无检测记录）自动检测一次并落盘；之后直接读记录，不重复扫盘
+    for (const f of guardFiles) {
+      if (f.builtin && !f.detection) {
+        await guardDetectFile(f.id, true);
+      }
+    }
+  } catch (e) {
+    console.error("加载文件列表失败", e);
+  }
+}
+
+function renderGuardFileSelect(): void {
+  const sel = document.getElementById("guard-add-file-select") as HTMLSelectElement | null;
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = guardFiles.map((f) =>
+    `<option value="${f.id}">${escapeHtml(f.name)} (${f.format})</option>`
+  ).join("");
+  if (guardAddParamFileId && guardFiles.some((f) => f.id === guardAddParamFileId)) {
+    sel.value = guardAddParamFileId;
+  } else if (prev && guardFiles.some((f) => f.id === prev)) {
+    sel.value = prev;
+  }
+}
+
+function renderGuardFiles(): void {
+  // 设置页里的文件列表
+  const container = document.getElementById("settings-guard-files");
+  if (container) {
+    if (guardFiles.length === 0) {
+      container.textContent = "暂无文件";
+    } else {
+      const html = guardFiles.map((f) => {
+        const delBtn = f.builtin
+          ? `<button class="guard-file-btn" disabled style="opacity:0.4;">内置</button>`
+          : `<button class="guard-file-btn danger" onclick="guardRemoveFile('${f.id}')">删除</button>`;
+        const detectBtn = f.builtin
+          ? `<button class="guard-file-btn" onclick="guardDetectFile('${f.id}')">检测</button>`
+          : "";
+        const det = f.detection;
+        const detText = det
+          ? det.path === null
+            ? `检测记录：未找到该文件（${fmtTs(det.at)}）`
+            : det.path === f.file
+              ? `检测记录：路径一致（${fmtTs(det.at)}）`
+              : `检测记录：实际位于 ${det.path}（${fmtTs(det.at)}）`
+          : "";
+        return `<div class="guard-file-card" data-file-id="${f.id}">
+          <div class="guard-file-card-head">
+            <span class="guard-file-name">${escapeHtml(f.name)}</span>
+            <span class="guard-file-format">${f.format}</span>
+          </div>
+          <div class="guard-file-path">~/.codex/${escapeHtml(f.file)}</div>
+          ${detText ? `<div class="guard-file-detect">${escapeHtml(detText)}</div>` : ""}
+          <div class="guard-file-actions">
+            ${detectBtn}
+            <button class="guard-file-btn" onclick="guardEditFile('${f.id}')">编辑</button>
+            ${delBtn}
+          </div>
+        </div>`;
+      }).join("");
+      container.innerHTML = html;
+    }
+  }
+  // 添加参数表单里的文件下拉
+  renderGuardFileSelect();
+}
+
+let editingFileId: string | null = null;
+
+function toggleGuardFileForm(): void {
+  const modal = document.getElementById("guard-file-modal");
+  if (modal) modal.classList.toggle("hidden");
+  editingFileId = null;
+  const submit = document.getElementById("settings-guard-file-submit");
+  if (submit) submit.textContent = "添加";
+  const title = document.getElementById("guard-file-modal-title");
+  if (title) title.textContent = "添加看守文件";
+  // 编辑模式下格式不可改（后端 guard_update_file 不收 format），添加时恢复可选
+  const formatSel = document.getElementById("settings-guard-file-format") as HTMLSelectElement | null;
+  if (formatSel) formatSel.disabled = false;
+}
+
+function guardEditFile(id: string): void {
+  const f = guardFiles.find((x) => x.id === id);
+  if (!f) return;
+  editingFileId = id;
+  (document.getElementById("settings-guard-file-name") as HTMLInputElement).value = f.name;
+  (document.getElementById("settings-guard-file-path") as HTMLInputElement).value = f.file;
+  const formatSel = document.getElementById("settings-guard-file-format") as HTMLSelectElement;
+  formatSel.value = f.format;
+  formatSel.disabled = true;
+  document.getElementById("settings-guard-file-submit")!.textContent = "保存";
+  document.getElementById("guard-file-modal-title")!.textContent = "编辑看守文件";
+  document.getElementById("guard-file-modal")!.classList.remove("hidden");
+}
+
+async function guardPickFilePath(): Promise<void> {
+  try {
+    const selected = await openDialog({ multiple: false });
+    if (typeof selected !== "string") return;
+    const rel = await invoke<string>("guard_relativize_picked_path", { absPath: selected });
+    (document.getElementById("settings-guard-file-path") as HTMLInputElement).value = rel;
+    // 顺手带入文件名与格式
+    const nameEl = document.getElementById("settings-guard-file-name") as HTMLInputElement;
+    const fileName = rel.split("/").pop() ?? rel;
+    if (!nameEl.value.trim()) nameEl.value = fileName;
+    const ext = fileName.split(".").pop()?.toLowerCase();
+    if (ext === "toml" || ext === "json" || ext === "md") {
+      (document.getElementById("settings-guard-file-format") as HTMLSelectElement).value = ext;
+    }
+  } catch (e) {
+    toast(`${e}`, "error");
+  }
+}
+
+async function guardSaveFileForm(): Promise<void> {
+  const name = (document.getElementById("settings-guard-file-name") as HTMLInputElement).value.trim();
+  const file = (document.getElementById("settings-guard-file-path") as HTMLInputElement).value.trim();
+  const format = (document.getElementById("settings-guard-file-format") as HTMLSelectElement).value;
+  if (!name) { toast("请填写文件名称", "error"); return; }
+  if (!file) { toast("请填写文件路径", "error"); return; }
+  try {
+    if (editingFileId) {
+      await invoke("guard_update_file", { id: editingFileId, name, file });
+      toast("已更新", "success");
+    } else {
+      await invoke("guard_add_file", { name, file, format });
+      toast("已添加文件", "success");
+    }
+    (document.getElementById("settings-guard-file-name") as HTMLInputElement).value = "";
+    (document.getElementById("settings-guard-file-path") as HTMLInputElement).value = "";
+    toggleGuardFileForm();
+    await refreshGuardFiles();
+    await refreshGuardView(true);
+  } catch (e) {
+    toast(`${editingFileId ? "更新" : "添加"}失败: ${e}`, "error");
+  }
+}
+
+async function guardDetectFile(id: string, auto = false): Promise<void> {
+  const f = guardFiles.find((x) => x.id === id);
+  if (!f) return;
+  try {
+    const updated = await invoke<GuardFileView>("guard_detect_file", { id });
+    guardFiles = guardFiles.map((x) => (x.id === id ? updated : x));
+    renderGuardFiles();
+    const detected = updated.detection?.path ?? null;
+    if (detected && detected !== updated.file) {
+      const ok = await ask(
+        `检测到「${updated.name}」实际位于：\n~/.codex/${detected}\n\n与当前配置 ~/.codex/${updated.file} 不同，是否更新为检测到的路径？`,
+        { title: "更新看守路径", kind: "warning" }
+      );
+      if (ok) {
+        await invoke("guard_update_file", { id, name: updated.name, file: detected });
+        toast("已更新为检测到的路径", "success");
+        await refreshGuardFiles();
+        await refreshGuardView(true);
+      }
+    } else if (!auto) {
+      toast(detected ? "检测完成：路径一致" : "未在 ~/.codex 下找到该文件", detected ? "success" : "info");
+    }
+  } catch (e) {
+    if (!auto) toast(`检测失败: ${e}`, "error");
+  }
+}
+
+async function guardRemoveFile(id: string): Promise<void> {
+  const f = guardFiles.find((x) => x.id === id);
+  if (!f) return;
+  if (!(await ask(`确定删除文件「${f.name}」？\n\n该文件下的所有自定义参数会被移除看守，但已写入 ~/.codex/${f.file} 的值不会被回滚。`, { title: "删除看守文件", kind: "warning" }))) {
+    return;
+  }
+  try {
+    await invoke("guard_remove_file", { id });
+    toast("已删除", "success");
+    await refreshGuardFiles();
+    await refreshGuardView(true);
+  } catch (e) {
+    toast(`删除失败: ${e}`, "error");
+  }
+}
+
+// ============ 自定义参数管理 ============
+function openGuardAddFormFor(fileId: string): void {
+  guardAddParamFileId = fileId;
+  const form = document.getElementById("guard-add-form")!;
+  form.classList.remove("hidden");
+  const fileSelect = document.getElementById("guard-add-file-select") as HTMLSelectElement | null;
+  if (fileSelect) {
+    fileSelect.value = fileId;
+  }
+  form.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function toggleGuardAddForm(): void {
+  const form = document.getElementById("guard-add-form")!;
+  const arrow = document.getElementById("guard-add-arrow")!;
+  form.classList.toggle("hidden");
+  arrow.textContent = form.classList.contains("hidden") ? "▾" : "▴";
+  if (!form.classList.contains("hidden")) {
+    onGuardAddModeChange();
+    onGuardAddValueTypeChange();
+  }
+}
+
+function onGuardAddModeChange(): void {
+  const mode = (document.getElementById("guard-add-mode") as HTMLSelectElement).value;
+  const pathRow = document.getElementById("guard-add-path-row")!;
+  const valueTypeRow = document.getElementById("guard-add-value-type-row")!;
+  const defaultRow = document.getElementById("guard-add-default-row")!;
+
+  const isToml = mode === "toml_key" || mode === "toml_absent";
+  // file_overwrite / markdown_block 固定为 text 类型，无需选值类型
+  pathRow.classList.toggle("hidden", !isToml);
+  valueTypeRow.classList.toggle("hidden", !isToml);
+  defaultRow.classList.toggle("hidden",
+    isToml && (document.getElementById("guard-add-value-type") as HTMLSelectElement).value === "none");
+}
+
+function onGuardAddValueTypeChange(): void {
+  const vt = (document.getElementById("guard-add-value-type") as HTMLSelectElement).value;
+  const defaultRow = document.getElementById("guard-add-default-row")!;
+  defaultRow.classList.toggle("hidden", vt === "none");
+
+  const defaultEl = document.getElementById("guard-add-default") as HTMLInputElement;
+  const defaultRowParent = defaultEl.parentElement!;
+  // 替换 input 为 textarea 或反之
+  if (vt === "text" && defaultEl.tagName === "INPUT") {
+    const ta = document.createElement("textarea");
+    ta.className = "guard-form-textarea";
+    ta.id = "guard-add-default";
+    ta.value = defaultEl.value;
+    defaultRowParent.replaceChild(ta, defaultEl);
+  } else if (vt !== "text" && defaultEl.tagName === "TEXTAREA") {
+    const inp = document.createElement("input");
+    inp.type = "text";
+    inp.className = "guard-form-input";
+    inp.id = "guard-add-default";
+    inp.value = defaultEl.value;
+    defaultRowParent.replaceChild(inp, defaultEl);
+  }
+}
+
+function parseDefaultValue(value: string, effectiveType: string): unknown {
+  switch (effectiveType) {
+    case "bool":
+      return value === "true";
+    case "int": {
+      const n = parseInt(value, 10);
+      if (Number.isNaN(n)) throw new Error("默认值必须是整数");
+      return n;
+    }
+    case "string":
+    case "text":
+      return value;
+    case "none":
+      return null;
+    default:
+      return value;
+  }
+}
+
+async function guardAddCustom(): Promise<void> {
+  const id = (document.getElementById("guard-add-id") as HTMLInputElement).value.trim();
+  const label = (document.getElementById("guard-add-label") as HTMLInputElement).value.trim();
+  const fileSelect = document.getElementById("guard-add-file-select") as HTMLSelectElement;
+  const fileId = fileSelect?.value || guardAddParamFileId;
+  const mode = (document.getElementById("guard-add-mode") as HTMLSelectElement).value;
+  const path = (document.getElementById("guard-add-path") as HTMLInputElement).value.trim();
+  const valueType = (document.getElementById("guard-add-value-type") as HTMLSelectElement).value;
+  const desc = (document.getElementById("guard-add-desc") as HTMLInputElement).value.trim();
+  const defaultEl = document.getElementById("guard-add-default") as HTMLInputElement | HTMLTextAreaElement;
+  const defaultRaw = defaultEl.value;
+
+  if (!id) { toast("请填写 ID", "error"); return; }
+  if (!label) { toast("请填写名称", "error"); return; }
+  if (!fileId) { toast("请选择目标文件", "error"); return; }
+  if ((mode === "toml_key" || mode === "toml_absent") && !path) {
+    toast("请填写 TOML 路径", "error"); return;
+  }
+
+  try {
+    const effectiveType = (mode === "file_overwrite" || mode === "markdown_block") ? "text" : valueType;
+    const defaultVal = parseDefaultValue(defaultRaw, effectiveType);
+    const param = {
+      id,
+      label,
+      description: desc,
+      file: "",
+      applyMode: mode,
+      path,
+      valueType: effectiveType,
+      default: defaultVal,
+      custom: true,
+    };
+    await invoke("guard_add_custom_param", { param, fileId });
+    toast("已添加自定义参数", "success");
+    // 清空表单并收起
+    (document.getElementById("guard-add-id") as HTMLInputElement).value = "";
+    (document.getElementById("guard-add-label") as HTMLInputElement).value = "";
+    (document.getElementById("guard-add-path") as HTMLInputElement).value = "";
+    (document.getElementById("guard-add-desc") as HTMLInputElement).value = "";
+    defaultEl.value = "";
+    guardAddParamFileId = null;
+    toggleGuardAddForm();
+    await refreshGuardView(true);
+  } catch (e) {
+    toast(`添加失败: ${e}`, "error");
+  }
+}
+
+async function guardRemoveCustom(id: string): Promise<void> {
+  if (!(await ask(`确定删除自定义参数 ${id}？\n\n删除后看守停止，已写入 ~/.codex/ 的值不会被回滚，可从 ~/.codex/dashi-backups/ 手动恢复。`, { title: "删除自定义参数", kind: "warning" }))) {
+    return;
+  }
+  try {
+    await invoke("guard_remove_custom_param", { id });
+    toast("已删除", "success");
+    await refreshGuardView(true);
+  } catch (e) {
+    toast(`删除失败: ${e}`, "error");
+  }
+}
+
+async function guardOpenSchemaFile(): Promise<void> {
+  try {
+    const path = await invoke<string>("guard_get_schema_file_path");
+    // shell 插件的 open 可以打开文件所在目录/文件
+    await openUrl(path);
+  } catch (e) {
+    // 回退：复制路径到剪贴板
+    try {
+      const path = await invoke<string>("guard_get_schema_file_path");
+      await navigator.clipboard.writeText(path);
+      toast(`路径已复制到剪贴板: ${path}`, "info");
+    } catch {
+      toast(`打开失败: ${e}`, "error");
+    }
+  }
 }
 
 // ============ 更新检查 ============
@@ -963,7 +1355,7 @@ async function init(): Promise<void> {
       const found = await invoke<string | null>("detect_codex_app");
       if (found) {
         codexInput.value = found;
-        await invoke("save_config", { config: readConfigFromUI() });
+        await invoke("update_settings", { config: readConfigFromUI() });
       }
     }
 
@@ -1032,6 +1424,19 @@ w.guardToggleBool = guardToggleBool;
 w.guardSetValue = guardSetValue;
 w.guardApply = guardApply;
 w.guardSetLocked = guardSetLocked;
+w.toggleGuardAddForm = toggleGuardAddForm;
+w.onGuardAddModeChange = onGuardAddModeChange;
+w.onGuardAddValueTypeChange = onGuardAddValueTypeChange;
+w.guardAddCustom = guardAddCustom;
+w.guardRemoveCustom = guardRemoveCustom;
+w.guardOpenSchemaFile = guardOpenSchemaFile;
+w.toggleGuardFileForm = toggleGuardFileForm;
+w.guardSaveFileForm = guardSaveFileForm;
+w.guardEditFile = guardEditFile;
+w.guardDetectFile = guardDetectFile;
+w.guardPickFilePath = guardPickFilePath;
+w.guardRemoveFile = guardRemoveFile;
+w.openGuardAddFormFor = openGuardAddFormFor;
 w.checkUpdate = onUpdateButton;
 w.openUpdaterHelp = openUpdaterHelp;
 w.openGithub = openGithub;

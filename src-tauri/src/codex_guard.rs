@@ -16,7 +16,6 @@ const BUILTIN_SCHEMA: &str = include_str!("guard_schema.json");
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GuardParam {
     pub id: String,
-    pub group: String,
     pub label: String,
     #[serde(default)]
     pub description: String,
@@ -32,6 +31,9 @@ pub struct GuardParam {
     pub value_type: String,
     #[serde(default)]
     pub default: serde_json::Value,
+    /// 是否为用户自定义参数（非内置）；自定义参数可删除
+    #[serde(default)]
+    pub custom: bool,
 }
 
 /// 单个参数的托管状态，持久化在 LauncherConfig.codex_guard.params
@@ -56,6 +58,33 @@ pub struct CodexGuardState {
     pub enabled: bool,
     #[serde(default)]
     pub params: HashMap<String, GuardParamState>,
+    /// 看守目标文件列表（内置 + 自定义）
+    #[serde(default)]
+    pub files: Vec<GuardFile>,
+}
+
+/// 看守目标文件
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GuardFile {
+    pub id: String,
+    pub name: String,
+    /// 相对 ~/.codex 的路径
+    pub file: String,
+    /// toml | json | md
+    pub format: String,
+    #[serde(default)]
+    pub builtin: bool,
+    /// 上次路径检测记录；None = 从未检测（检测走文件系统，落盘后不再重复扫）
+    #[serde(default)]
+    pub detection: Option<DetectRecord>,
+}
+
+/// 一次路径检测的结果记录
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DetectRecord {
+    /// 检测到的相对 ~/.codex 路径；None = 未找到该文件
+    pub path: Option<String>,
+    pub at: u64,
 }
 
 // ============ 给前端的视图 ============
@@ -79,13 +108,17 @@ pub struct ParamView {
     pub error: Option<String>,
     pub last_checked: Option<u64>,
     pub last_restored: Option<u64>,
+    pub custom: bool,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GroupView {
+    pub id: String,
     pub name: String,
     pub file: String,
+    pub format: String,
+    pub builtin: bool,
     pub error: Option<String>,
     pub params: Vec<ParamView>,
 }
@@ -118,6 +151,98 @@ fn now_secs() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+// ============ 文件管理 ============
+
+fn builtin_files() -> Vec<GuardFile> {
+    vec![
+        GuardFile {
+            id: "builtin.config-toml".to_string(),
+            name: "config.toml".to_string(),
+            file: "config.toml".to_string(),
+            format: "toml".to_string(),
+            builtin: true,
+            detection: None,
+        },
+        GuardFile {
+            id: "builtin.agents-md".to_string(),
+            name: "AGENTS.md".to_string(),
+            file: "AGENTS.md".to_string(),
+            format: "md".to_string(),
+            builtin: true,
+            detection: None,
+        },
+        GuardFile {
+            id: "builtin.default-toml".to_string(),
+            name: "default.toml".to_string(),
+            file: "agents/default.toml".to_string(),
+            format: "toml".to_string(),
+            builtin: true,
+            detection: None,
+        },
+    ]
+}
+
+const CUSTOM_ID_PREFIX: &str = "custom.";
+
+fn normalize_custom_id(id: &str) -> String {
+    if id.starts_with(CUSTOM_ID_PREFIX) {
+        id.to_string()
+    } else {
+        format!("{}{}", CUSTOM_ID_PREFIX, id)
+    }
+}
+
+fn validate_file_path(rel: &str) -> Result<(), String> {
+    if rel.trim().is_empty() {
+        return Err("文件路径不能为空".to_string());
+    }
+    if rel.starts_with('/') || rel.starts_with('\\') {
+        return Err("文件路径必须是相对 ~/.codex 的路径，不能以 / 开头".to_string());
+    }
+    for seg in rel.split(['/', '\\']) {
+        if seg == ".." {
+            return Err("文件路径不能包含 ..，必须在 ~/.codex 目录内".to_string());
+        }
+    }
+    Ok(())
+}
+
+fn validate_format(format: &str) -> Result<(), String> {
+    match format {
+        "toml" | "json" | "md" => Ok(()),
+        other => Err(format!("不支持的文件格式: {}", other)),
+    }
+}
+
+fn validate_guard_file(f: &GuardFile) -> Result<(), String> {
+    if f.name.trim().is_empty() {
+        return Err("文件名称不能为空".to_string());
+    }
+    validate_file_path(&f.file)?;
+    validate_format(&f.format)?;
+    Ok(())
+}
+
+/// 加载文件列表；若配置为空则初始化内置文件并持久化
+pub fn load_files() -> Result<Vec<GuardFile>, String> {
+    let mut cfg = config::load_config()?;
+    if cfg.codex_guard.files.is_empty() {
+        cfg.codex_guard.files = builtin_files();
+        config::save_config(&cfg)?;
+    }
+    Ok(cfg.codex_guard.files.clone())
+}
+
+fn save_files(files: &[GuardFile]) -> Result<(), String> {
+    let mut cfg = config::load_config()?;
+    cfg.codex_guard.files = files.to_vec();
+    config::save_config(&cfg)
+}
+
+fn find_file(files: &[GuardFile], id: &str) -> Option<GuardFile> {
+    files.iter().find(|f| f.id == id).cloned()
 }
 
 /// 加载 schema：内置覆盖同 id 磁盘条目，磁盘独有条目保留（无 version，见 CONTEXT.md）
@@ -455,42 +580,49 @@ fn expected_of(param: &GuardParam, state: Option<&GuardParamState>) -> serde_jso
 pub fn build_view() -> Result<GuardView, String> {
     let cfg = config::load_config().unwrap_or_default();
     let schema = load_schema();
+    let files = load_files().unwrap_or_else(|_| builtin_files());
 
     let mut groups: Vec<GroupView> = Vec::new();
-    for p in &schema {
-        let state = cfg.codex_guard.params.get(&p.id);
-        let expected = expected_of(p, state);
-        let c = check(p, &expected);
-        let view = ParamView {
-            id: p.id.clone(),
-            label: p.label.clone(),
-            description: p.description.clone(),
-            apply_mode: p.apply_mode.clone(),
-            value_type: p.value_type.clone(),
-            path: p.path.clone(),
-            default: p.default.clone(),
-            value: expected,
-            applied: state.is_some_and(|s| s.applied),
-            locked: state.is_some_and(|s| s.locked),
-            actual: c.actual,
-            status: c.status,
-            error: c.error,
-            last_checked: state.and_then(|s| s.last_checked),
-            last_restored: state.and_then(|s| s.last_restored),
-        };
-        if let Some(g) = groups.iter_mut().find(|g| g.name == p.group) {
-            if g.error.is_none() {
-                g.error = view.error.clone();
+    for f in &files {
+        let mut group_params: Vec<ParamView> = Vec::new();
+        let mut group_error: Option<String> = None;
+
+        for p in schema.iter().filter(|p| p.file == f.file) {
+            let state = cfg.codex_guard.params.get(&p.id);
+            let expected = expected_of(p, state);
+            let c = check(p, &expected);
+            if group_error.is_none() && c.error.is_some() {
+                group_error = c.error.clone();
             }
-            g.params.push(view);
-        } else {
-            groups.push(GroupView {
-                name: p.group.clone(),
-                file: p.file.clone(),
-                error: view.error.clone(),
-                params: vec![view],
+            group_params.push(ParamView {
+                id: p.id.clone(),
+                label: p.label.clone(),
+                description: p.description.clone(),
+                apply_mode: p.apply_mode.clone(),
+                value_type: p.value_type.clone(),
+                path: p.path.clone(),
+                default: p.default.clone(),
+                value: expected,
+                applied: state.is_some_and(|s| s.applied),
+                locked: state.is_some_and(|s| s.locked),
+                actual: c.actual,
+                status: c.status,
+                error: c.error,
+                last_checked: state.and_then(|s| s.last_checked),
+                last_restored: state.and_then(|s| s.last_restored),
+                custom: p.custom,
             });
         }
+
+        groups.push(GroupView {
+            id: f.id.clone(),
+            name: f.name.clone(),
+            file: f.file.clone(),
+            format: f.format.clone(),
+            builtin: f.builtin,
+            error: group_error,
+            params: group_params,
+        });
     }
     Ok(GuardView {
         enabled: cfg.codex_guard.enabled,
@@ -515,8 +647,13 @@ fn poll_once() -> Result<(), String> {
         return Ok(());
     }
     let schema = load_schema();
+    // 只看守文件列表内的目标文件，与 UI 可见范围一致（CONTEXT.md：UI 完全由合并结果驱动）
+    let files = load_files().unwrap_or_else(|_| builtin_files());
     let mut dirty = false;
     for p in &schema {
+        if !files.iter().any(|f| f.file == p.file) {
+            continue;
+        }
         let locked = cfg
             .codex_guard
             .params
@@ -629,6 +766,298 @@ pub fn guard_set_locked(id: String, locked: bool) -> Result<(), String> {
     config::save_config(&cfg)
 }
 
+// ============ 自定义参数管理 ============
+
+fn validate_apply_mode(mode: &str) -> Result<(), String> {
+    match mode {
+        "toml_key" | "toml_absent" | "file_overwrite" | "markdown_block" => Ok(()),
+        other => Err(format!("不支持的 apply_mode: {}", other)),
+    }
+}
+
+fn validate_value_type(value_type: &str) -> Result<(), String> {
+    match value_type {
+        "bool" | "int" | "string" | "text" | "none" => Ok(()),
+        other => Err(format!("不支持的 value_type: {}", other)),
+    }
+}
+
+fn validate_param_fields(p: &GuardParam) -> Result<(), String> {
+    validate_file_path(&p.file)?;
+    validate_apply_mode(&p.apply_mode)?;
+    validate_value_type(&p.value_type)?;
+
+    if p.label.trim().is_empty() {
+        return Err("label 不能为空".to_string());
+    }
+
+    if (p.apply_mode == "toml_key" || p.apply_mode == "toml_absent") && p.path.trim().is_empty() {
+        return Err(format!("{} 模式必须指定 path", p.apply_mode));
+    }
+    if p.apply_mode == "toml_key" && p.value_type == "none" {
+        return Err("toml_key 模式的 value_type 不能是 none".to_string());
+    }
+
+    Ok(())
+}
+
+/// 加载磁盘上的用户 schema（不含内置合并）
+fn load_disk_schema() -> Result<Vec<GuardParam>, String> {
+    let path = schema_file_path()?;
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let content = std::fs::read_to_string(&path)
+        .map_err(|e| format!("读取 schema 文件失败: {}", e))?;
+    let schema: Vec<GuardParam> = serde_json::from_str(&content)
+        .map_err(|e| format!("解析 schema 文件失败: {}", e))?;
+    Ok(schema)
+}
+
+fn save_disk_schema(schema: &[GuardParam]) -> Result<(), String> {
+    let path = schema_file_path()?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("创建 schema 目录失败: {}", e))?;
+    }
+    let content = serde_json::to_string_pretty(schema)
+        .map_err(|e| format!("序列化 schema 失败: {}", e))?;
+    std::fs::write(&path, content)
+        .map_err(|e| format!("写入 schema 文件失败: {}", e))
+}
+
+#[tauri::command]
+pub fn guard_add_custom_param(
+    mut param: GuardParam,
+    file_id: String,
+) -> Result<(), String> {
+    let files = load_files()?;
+    let f = find_file(&files, &file_id)
+        .ok_or_else(|| format!("未找到目标文件: {}", file_id))?;
+
+    param.id = normalize_custom_id(&param.id);
+    param.custom = true;
+    param.file = f.file.clone();
+    validate_param_fields(&param)?;
+
+    let mut disk = load_disk_schema().unwrap_or_default();
+    if let Some(slot) = disk.iter_mut().find(|p| p.id == param.id) {
+        *slot = param;
+    } else {
+        disk.push(param);
+    }
+    save_disk_schema(&disk)
+}
+
+#[tauri::command]
+pub fn guard_remove_custom_param(id: String) -> Result<(), String> {
+    let normalized = normalize_custom_id(&id);
+
+    let mut disk = load_disk_schema().unwrap_or_default();
+    let before = disk.len();
+    disk.retain(|p| p.id != normalized);
+    if disk.len() == before {
+        return Err(format!("未找到自定义参数: {}", normalized));
+    }
+    save_disk_schema(&disk)?;
+
+    // 同时清理配置里的状态，但保留已写入 codex 文件的值（不回滚，与 ADR 一致）
+    let mut cfg = config::load_config()?;
+    cfg.codex_guard.params.remove(&normalized);
+    config::save_config(&cfg)?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn guard_get_schema_file_path() -> Result<String, String> {
+    schema_file_path().map(|p| p.to_string_lossy().to_string())
+}
+
+// ============ 文件管理命令 ============
+
+#[tauri::command]
+pub fn guard_get_files() -> Result<Vec<GuardFile>, String> {
+    load_files()
+}
+
+#[tauri::command]
+pub fn guard_add_file(name: String, file: String, format: String) -> Result<GuardFile, String> {
+    let mut files = load_files()?;
+
+    // 从 name 推导 id slug（简单处理：非字母数字替换为 -，去首尾 -，小写）
+    let slug = name
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '-' })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string();
+    if slug.is_empty() {
+        return Err("文件名称必须包含至少一个字母或数字".to_string());
+    }
+    let id = normalize_custom_id(&slug);
+
+    // id 与路径冲突检查（同路径会让参数在两个分组里重复显示）
+    if files.iter().any(|f| f.id == id) {
+        return Err(format!("已存在同名文件: {}", name));
+    }
+    let trimmed_file = file.trim().to_string();
+    if files.iter().any(|f| f.file == trimmed_file) {
+        return Err(format!("该路径已在看守列表中: {}", trimmed_file));
+    }
+
+    let gf = GuardFile {
+        id: id.clone(),
+        name: name.trim().to_string(),
+        file: trimmed_file,
+        format,
+        builtin: false,
+        detection: None,
+    };
+    validate_guard_file(&gf)?;
+
+    files.push(gf.clone());
+    save_files(&files)?;
+
+    Ok(gf)
+}
+
+#[tauri::command]
+pub fn guard_update_file(id: String, name: String, file: String) -> Result<GuardFile, String> {
+    let mut files = load_files()?;
+    let idx = files
+        .iter()
+        .position(|f| f.id == id)
+        .ok_or_else(|| format!("未找到文件: {}", id))?;
+
+    let old_file = files[idx].file.clone();
+    let new_file = file.trim().to_string();
+
+    if old_file != new_file && files.iter().any(|f| f.id != id && f.file == new_file) {
+        return Err(format!("该路径已在看守列表中: {}", new_file));
+    }
+
+    let f = &mut files[idx];
+    f.name = name.trim().to_string();
+    f.file = new_file.clone();
+    if old_file != new_file {
+        // 路径变了，旧检测记录作废（下次打开设置页会重新检测一次）
+        f.detection = None;
+    }
+    validate_guard_file(f)?;
+
+    // 如果是自定义参数的归属文件，路径变了参数的 file 也要跟着变
+    // schema 中该文件路径下的自定义参数需要更新 file 字段
+    if old_file != new_file {
+        let mut disk = load_disk_schema().unwrap_or_default();
+        let mut changed = false;
+        for p in disk.iter_mut() {
+            if p.custom && p.file == old_file {
+                p.file = new_file.clone();
+                changed = true;
+            }
+        }
+        if changed {
+            save_disk_schema(&disk)?;
+        }
+    }
+
+    save_files(&files)?;
+    Ok(files[idx].clone())
+}
+
+#[tauri::command]
+pub fn guard_remove_file(id: String) -> Result<(), String> {
+    let mut files = load_files()?;
+    let idx = files
+        .iter()
+        .position(|f| f.id == id)
+        .ok_or_else(|| format!("未找到文件: {}", id))?;
+
+    if files[idx].builtin {
+        return Err("内置文件不可删除".to_string());
+    }
+
+    let target_file = files[idx].file.clone();
+    files.remove(idx);
+    save_files(&files)?;
+
+    // 清理该文件下的所有自定义参数（schema + 状态）
+    // 不回滚已写入 codex 的值（与 ADR 一致）
+    let mut disk = load_disk_schema().unwrap_or_default();
+    // 先收集待删参数的 id 再删 schema（删完就查不到了），用于清理配置里的状态
+    let removed_ids: Vec<String> = disk
+        .iter()
+        .filter(|p| p.custom && p.file == target_file)
+        .map(|p| p.id.clone())
+        .collect();
+    disk.retain(|p| !(p.custom && p.file == target_file));
+    if !removed_ids.is_empty() {
+        save_disk_schema(&disk)?;
+    }
+
+    let mut cfg = config::load_config()?;
+    for pid in &removed_ids {
+        cfg.codex_guard.params.remove(pid);
+    }
+    config::save_config(&cfg)?;
+
+    Ok(())
+}
+
+// ============ 路径检测 ============
+
+// ponytail: 只搜顶层 + 一层子目录；配置散得更深再升级递归
+fn detect_file_path_in(home: &Path, rel: &str) -> Option<String> {
+    if home.join(rel).exists() {
+        return Some(rel.to_string());
+    }
+    let name = Path::new(rel).file_name()?.to_string_lossy().to_string();
+    for e in std::fs::read_dir(home).ok()?.flatten() {
+        let dir = e.path();
+        if dir.is_dir() && dir.join(&name).exists() {
+            return Some(format!("{}/{}", e.file_name().to_string_lossy(), name));
+        }
+    }
+    None
+}
+
+fn detect_file_path(rel: &str) -> Option<String> {
+    detect_file_path_in(&codex_home().ok()?, rel)
+}
+
+/// 检测文件实际路径并落盘记录；之后直接读记录，不重复扫盘
+#[tauri::command]
+pub fn guard_detect_file(id: String) -> Result<GuardFile, String> {
+    let mut files = load_files()?;
+    let idx = files
+        .iter()
+        .position(|f| f.id == id)
+        .ok_or_else(|| format!("未找到文件: {}", id))?;
+    let detected = detect_file_path(&files[idx].file);
+    let f = &mut files[idx];
+    f.detection = Some(DetectRecord {
+        path: detected,
+        at: now_secs(),
+    });
+    let out = f.clone();
+    save_files(&files)?;
+    Ok(out)
+}
+
+/// 把文件选择器选中的绝对路径换算为相对 ~/.codex 的路径（越界拒绝）
+#[tauri::command]
+pub fn guard_relativize_picked_path(abs_path: String) -> Result<String, String> {
+    let home = codex_home()?;
+    let rel = Path::new(&abs_path)
+        .strip_prefix(&home)
+        .map_err(|_| "选择的文件必须位于 ~/.codex 目录内".to_string())?;
+    let rel = rel.to_string_lossy().replace('\\', "/");
+    validate_file_path(&rel)?;
+    Ok(rel)
+}
+
 // ============ 自校验 ============
 
 #[cfg(test)]
@@ -685,4 +1114,120 @@ mod tests {
         assert!(!s2.contains("你好"));
         assert_eq!(extract_block(&s2, "<!-- b -->", "<!-- e -->"), Some("世界"));
     }
+
+    // --- 自定义参数校验 ---
+
+    #[test]
+    fn normalize_custom_id_adds_prefix() {
+        assert_eq!(normalize_custom_id("foo"), "custom.foo");
+        assert_eq!(normalize_custom_id("custom.bar"), "custom.bar");
+    }
+
+    #[test]
+    fn validate_apply_mode_accepts_four_modes() {
+        for m in ["toml_key", "toml_absent", "file_overwrite", "markdown_block"] {
+            assert!(validate_apply_mode(m).is_ok(), "{} should be valid", m);
+        }
+        assert!(validate_apply_mode("nonsense").is_err());
+    }
+
+    #[test]
+    fn validate_param_fields_checks_toml_key_requirements() {
+        let mut p = GuardParam {
+            id: "custom.test".into(),
+            label: "测试".into(),
+            description: String::new(),
+            file: "config.toml".into(),
+            apply_mode: "toml_key".into(),
+            path: String::new(),
+            value_type: "bool".into(),
+            default: serde_json::json!(true),
+            custom: true,
+        };
+        // 空 path 应该报错
+        assert!(validate_param_fields(&p).is_err());
+        p.path = "x.y".into();
+        assert!(validate_param_fields(&p).is_ok());
+        // toml_key 不能是 none 类型
+        p.value_type = "none".into();
+        assert!(validate_param_fields(&p).is_err());
+    }
+
+    #[test]
+    fn validate_param_fields_rejects_bad_file_path() {
+        let p = GuardParam {
+            id: "custom.test".into(),
+            label: "测试".into(),
+            description: String::new(),
+            file: "../evil.toml".into(),
+            apply_mode: "file_overwrite".into(),
+            path: String::new(),
+            value_type: "text".into(),
+            default: serde_json::json!("hi"),
+            custom: true,
+        };
+        assert!(validate_param_fields(&p).is_err());
+    }
+
+    #[test]
+    fn builtin_schema_has_no_custom_flag() {
+        let builtin: Vec<GuardParam> = serde_json::from_str(BUILTIN_SCHEMA).unwrap();
+        for p in &builtin {
+            assert!(!p.custom, "内置参数 {} 不应有 custom=true", p.id);
+        }
+    }
+
+    // --- 文件管理 ---
+
+    #[test]
+    fn builtin_files_has_three_entries() {
+        let files = builtin_files();
+        assert_eq!(files.len(), 3);
+        for f in &files {
+            assert!(f.builtin, "{} 应该是内置文件", f.id);
+            assert!(f.id.starts_with("builtin."));
+            validate_guard_file(f).unwrap();
+        }
+    }
+
+    #[test]
+    fn detect_file_path_finds_config_and_shallow_nested() {
+        let home = std::env::temp_dir().join(format!("dashi-detect-test-{}", std::process::id()));
+        std::fs::create_dir_all(home.join("agents")).unwrap();
+        std::fs::write(home.join("config.toml"), "").unwrap();
+        std::fs::write(home.join("agents/default.toml"), "").unwrap();
+
+        // 原位置命中
+        assert_eq!(detect_file_path_in(&home, "config.toml"), Some("config.toml".into()));
+        assert_eq!(
+            detect_file_path_in(&home, "agents/default.toml"),
+            Some("agents/default.toml".into())
+        );
+        // 配置写顶层但实际在子目录 → 浅搜命中
+        assert_eq!(detect_file_path_in(&home, "default.toml"), Some("agents/default.toml".into()));
+        // 不存在 → None
+        assert_eq!(detect_file_path_in(&home, "nope.toml"), None);
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn validate_file_path_rejects_traversal() {
+        assert!(validate_file_path("config.toml").is_ok());
+        assert!(validate_file_path("agents/foo.toml").is_ok());
+        assert!(validate_file_path("../escape").is_err());
+        assert!(validate_file_path("a/../b").is_err());
+        assert!(validate_file_path("/absolute").is_err());
+        assert!(validate_file_path("").is_err());
+    }
+
+    #[test]
+    fn validate_format_accepts_three() {
+        for f in ["toml", "json", "md"] {
+            assert!(validate_format(f).is_ok());
+        }
+        assert!(validate_format("yaml").is_err());
+        assert!(validate_format("").is_err());
+    }
+
 }
