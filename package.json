@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "build:updater": "node scripts/build-updater.mjs",
-    "build:taskboard": "npm --prefix vendor/dashi-taskboard install && npm --prefix vendor/dashi-taskboard run build:web"
+    "build:taskboard": "npm --prefix vendor/dashi-taskboard install && npm --prefix vendor/dashi-taskboard run build:web",
+    "ensure:taskboard": "node -e \"require('fs').mkdirSync('vendor/dashi-taskboard/dist/web',{recursive:true})\""
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

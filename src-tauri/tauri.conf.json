@@ -4,7 +4,7 @@
   "version": "0.7.0",
   "identifier": "com.dashi.taskboard.launcher",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "npm run ensure:taskboard && npm run dev",
     "beforeBuildCommand": "npm run build:taskboard && npm run build",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
