@@ -5,7 +5,7 @@
   "identifier": "com.dashi.taskboard.launcher",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build:taskboard && npm run build",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },
@@ -39,7 +39,12 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../vendor/dashi-taskboard": "vendor/dashi-taskboard"
+      "../vendor/dashi-taskboard/server": "vendor/dashi-taskboard/server",
+      "../vendor/dashi-taskboard/shared": "vendor/dashi-taskboard/shared",
+      "../vendor/dashi-taskboard/scripts": "vendor/dashi-taskboard/scripts",
+      "../vendor/dashi-taskboard/inject": "vendor/dashi-taskboard/inject",
+      "../vendor/dashi-taskboard/dist/web": "vendor/dashi-taskboard/dist/web",
+      "../vendor/dashi-taskboard/package.json": "vendor/dashi-taskboard/package.json"
     },
     "macOS": {
       "hardenedRuntime": true,

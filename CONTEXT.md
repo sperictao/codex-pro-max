@@ -32,3 +32,15 @@
 - 全局开启本身只检查不写入；写入只发生在手动启用或锁定后漂移恢复。
 - 文件移出看守列表即不再生效：该文件的参数从视图消失，轮询同样跳过（列表是看守范围的唯一事实来源）。
 - TOML 解析失败：跳过该文件全部校验并在分组显示错误，绝不重写整文件；文件缺失时启用则新建。
+
+## Taskboard 集成
+
+启动器的另一功能域：把 dashi-taskboard 应用打包进安装包并注入 Codex 桌面端。
+
+### 术语
+
+- **主仓库（Upstream）** — `chuspeeism/dashi-taskboard`，taskboard 代码的权威来源，变更以 PR 汇入。
+- **Fork** — `sperictao/dashi-taskboard`，主仓库的 fork，向主仓库提 PR 的中转地。
+- **Launcher 仓库** — `sperictao/dashi-taskboard-launcher`（本仓库），Tauri 壳。
+- **Vendor 快照（Vendor Snapshot）** — taskboard 在 launcher 内 `vendor/dashi-taskboard/` 的 git submodule，指向 Fork、pin 具体 commit；升级由 launcher 显式 bump 指针。取代 v0.2.5 前的纯文件拷贝。
+- **Bundle** — Tauri 构建时经 `tauri.conf.json` resources 映射打进安装包的 taskboard 文件集。

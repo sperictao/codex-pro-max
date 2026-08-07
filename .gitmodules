@@ -1,0 +1,3 @@
+[submodule "vendor/dashi-taskboard"]
+	path = vendor/dashi-taskboard
+	url = https://github.com/sperictao/dashi-taskboard
