@@ -1,99 +1,53 @@
-@import "@fontsource-variable/geist";
-@import "@fontsource-variable/geist-mono";
 @import "tailwindcss";
+@import "./themes.css";
 
-@plugin "daisyui" {
-  themes: all;
+/* shadcn token → Tailwind utility 桥（ADR 0008）。
+   inline = 工具类直接引用 var(--x)，token 只活在 [data-theme] 块里，随主题切换。 */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-serif);
+  --font-mono: var(--font-mono);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --tracking-tighter: var(--tracking-tighter);
+  --tracking-tight: var(--tracking-tight);
+  --tracking-wide: var(--tracking-wide);
+  --tracking-wider: var(--tracking-wider);
+  --tracking-widest: var(--tracking-widest);
 }
 
-/* geist 族：token 唯一来源是 DESIGN.md（亮）与 DESIGN.DARK.md（暗）。
-   主按钮 = gray-1000 实底（Geist 语义），蓝色交互走 accent。 */
-@plugin "daisyui/theme" {
-  name: "geist-light";
-  default: true;
-  prefersdark: false;
-  color-scheme: light;
-
-  --color-base-100: #ffffff; /* background-100 */
-  --color-base-200: #fafafa; /* background-200 */
-  --color-base-300: #00000014; /* gray-alpha-400: translucent default border */
-  --color-base-content: #171717; /* gray-1000 */
-  --color-primary: #171717; /* gray-1000 实底主按钮 */
-  --color-primary-content: #ffffff;
-  --color-secondary: #f2f2f2; /* gray-100 */
-  --color-secondary-content: #171717;
-  --color-accent: #006bff; /* blue-700 交互蓝 */
-  --color-accent-content: #ffffff;
-  --color-neutral: #171717;
-  --color-neutral-content: #fafafa;
-  --color-info: #48aeff; /* blue-600 */
-  --color-info-content: #002359; /* blue-1000 */
-  --color-success: #28a948; /* green-700 */
-  --color-success-content: #ffffff;
-  --color-warning: #ffa600; /* amber-600 */
-  --color-warning-content: #561900; /* amber-1000 */
-  --color-error: #ea001d; /* red-800（button-error） */
-  --color-error-content: #ffffff;
-
-  --radius-selector: 0.375rem; /* 6px，对齐 Geist sm */
-  --radius-field: 0.375rem;
-  --radius-box: 0.75rem; /* 12px，对齐 Geist md */
-  --border: 1px;
-  --depth: 0; /* Geist：层级靠色调与边框，阴影克制 */
-  --noise: 0;
+/* 状态语义色不随族：42 个预设无法各自重新定义「绿=运行中」；
+   错误色走 var(--destructive)（随族），成功/警告为亮暗皆可的固定值 */
+:root {
+  --status-ok: oklch(0.62 0.17 155);
+  --status-warn: oklch(0.72 0.15 80);
 }
 
-@plugin "daisyui/theme" {
-  name: "geist-dark";
-  default: false;
-  prefersdark: true;
-  color-scheme: dark;
-
-  --color-base-100: #000000; /* background-100 */
-  --color-base-200: #0a0a0a; /* 现状卡片面 */
-  --color-base-300: #ffffff24; /* gray-alpha-400: translucent default border */
-  --color-base-content: #ededed; /* gray-1000 */
-  --color-primary: #ededed;
-  --color-primary-content: #000000;
-  --color-secondary: #1a1a1a;
-  --color-secondary-content: #ededed;
-  --color-accent: #006efe; /* blue-700（dark） */
-  --color-accent-content: #ffffff;
-  --color-neutral: #ededed;
-  --color-neutral-content: #171717;
-  --color-info: #0090ff; /* blue-600 */
-  --color-info-content: #eaf6ff; /* blue-1000 */
-  --color-success: #00ac3a; /* green-700 */
-  --color-success-content: #003a00; /* green-1000(亮面暗字) */
-  --color-warning: #ffae00; /* amber-700 */
-  --color-warning-content: #2a1700; /* amber-100 */
-  --color-error: #f13242; /* red-700 */
-  --color-error-content: #ffffff;
-
-  --radius-selector: 0.375rem;
-  --radius-field: 0.375rem;
-  --radius-box: 0.75rem;
-  --border: 1px;
-  --depth: 0;
-  --noise: 0;
-}
-
-@theme {
-  --font-sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", monospace;
-}
-
-/* ================= 自定义组件类（语义色全部走 daisyUI 变量，随主题切换） ================= */
-
-/* Geist 次按钮：base-100 底 + 边框 */
-.btn-secondary {
-  background-color: var(--color-base-100);
-  color: var(--color-base-content);
-  border: 1px solid var(--color-base-300);
-}
-.btn-secondary:hover:not(:disabled) {
-  background-color: var(--color-base-200);
-}
+/* ================= 自有 recipe 类（复合结构/状态，ADR 0008 保留为类） ================= */
 
 /* 状态徽章（running/stopped/starting/stopping/failed） */
 .status-badge {
@@ -104,30 +58,29 @@
   border-radius: 9999px;
   font-size: 12px;
   font-weight: 500;
-  background-color: var(--color-base-200);
-  color: var(--color-base-content);
-  border: 1px solid var(--color-base-300);
+  background-color: var(--muted);
+  color: var(--foreground);
+  border: 1px solid var(--border);
 }
 .status-badge .dot {
   width: 6px;
   height: 6px;
   border-radius: 9999px;
-  background-color: var(--color-base-content);
-  opacity: 0.4;
+  background-color: var(--muted-foreground);
 }
-.status-badge.running .dot { background-color: var(--color-success); opacity: 1; }
-.status-badge.failed .dot { background-color: var(--color-error); opacity: 1; }
+.status-badge.running .dot { background-color: var(--status-ok); }
+.status-badge.failed .dot { background-color: var(--destructive); }
 .status-badge.starting .dot,
-.status-badge.stopping .dot { background-color: var(--color-warning); opacity: 1; }
+.status-badge.stopping .dot { background-color: var(--status-warn); }
 
 /* 校验提示 */
 .config-validate { font-size: 12px; align-self: center; white-space: nowrap; }
-.config-validate.ok { color: var(--color-success); }
-.config-validate.err { color: var(--color-error); }
-.health-status.ok { color: var(--color-success); }
-.health-status.err { color: var(--color-error); }
+.config-validate.ok { color: var(--status-ok); }
+.config-validate.err { color: var(--destructive); }
+.health-status.ok { color: var(--status-ok); }
+.health-status.err { color: var(--destructive); }
 
-/* 选择卡（语言/模式/主题族通用）：默认灰边框，选中走 accent */
+/* 选择卡（语言/模式/主题族通用）：默认边框，选中走 primary */
 .select-card {
   position: relative;
   display: flex;
@@ -135,15 +88,16 @@
   align-items: center;
   gap: 8px;
   padding: 12px;
-  border: 1px solid var(--color-base-300);
-  border-radius: var(--radius-box, 12px);
-  background-color: var(--color-base-100);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 10px);
+  background-color: var(--card);
+  color: var(--card-foreground);
   cursor: pointer;
   transition: border-color 150ms;
   min-width: 96px;
 }
-.select-card:hover { border-color: var(--color-base-content); }
-.select-card.selected { border-color: var(--color-accent); box-shadow: 0 0 0 1px var(--color-accent); }
+.select-card:hover { border-color: var(--foreground); }
+.select-card.selected { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
 .select-card .select-card-check {
   position: absolute;
   top: 6px;
@@ -151,8 +105,8 @@
   width: 16px;
   height: 16px;
   border-radius: 9999px;
-  background-color: var(--color-accent);
-  color: var(--color-accent-content);
+  background-color: var(--primary);
+  color: var(--primary-foreground);
   display: none;
   align-items: center;
   justify-content: center;
@@ -166,12 +120,12 @@
   height: 44px;
   border-radius: 6px;
   overflow: hidden;
-  border: 1px solid var(--color-base-300);
+  border: 1px solid var(--border);
 }
 .mode-preview .mp-light { background: #fafafa; }
 .mode-preview .mp-dark { background: #0a0a0a; }
 
-/* 主题族色板卡预览：自身 data-theme 局部生效 */
+/* 主题族色板卡预览：自身 data-theme 局部生效，直接渲染该族亮主题 token */
 .family-preview {
   display: flex;
   flex-direction: column;
@@ -181,25 +135,26 @@
   height: 44px;
   border-radius: 6px;
   overflow: hidden;
-  border: 1px solid var(--color-base-300);
-  background-color: var(--color-base-100);
+  border: 1px solid var(--border);
+  background-color: var(--background);
   padding: 5px;
 }
 .family-preview .fp-dots { display: flex; gap: 3px; }
 .family-preview .fp-dot { width: 10px; height: 10px; border-radius: 9999px; }
-.family-preview .fp-bar { height: 4px; border-radius: 2px; background-color: var(--color-base-content); opacity: 0.25; }
+.family-preview .fp-bar { height: 4px; border-radius: 2px; background-color: var(--foreground); opacity: 0.25; }
 
 /* 顶部导航按钮 */
 .header-btn {
   padding: 6px 12px;
   border-radius: 6px;
   font-size: 14px;
-  color: var(--color-base-content);
+  color: var(--foreground);
   opacity: 0.65;
+  cursor: pointer;
   transition: opacity 150ms, background-color 150ms;
 }
-.header-btn:hover { opacity: 1; background-color: var(--color-base-200); }
-.header-btn.active { opacity: 1; background-color: var(--color-base-200); font-weight: 500; }
+.header-btn:hover { opacity: 1; background-color: var(--accent); color: var(--accent-foreground); }
+.header-btn.active { opacity: 1; background-color: var(--accent); color: var(--accent-foreground); font-weight: 500; }
 
 /* 设置侧栏 */
 .nav-item {
@@ -210,12 +165,13 @@
   border-radius: 6px;
   font-size: 14px;
   width: 100%;
-  color: var(--color-base-content);
+  color: var(--foreground);
   opacity: 0.7;
+  cursor: pointer;
   transition: opacity 150ms, background-color 150ms;
 }
-.nav-item:hover { opacity: 1; background-color: var(--color-base-200); }
-.nav-item.active { opacity: 1; background-color: var(--color-base-200); font-weight: 500; }
+.nav-item:hover { opacity: 1; background-color: var(--accent); color: var(--accent-foreground); }
+.nav-item.active { opacity: 1; background-color: var(--accent); color: var(--accent-foreground); font-weight: 500; }
 
 /* Toast */
 .toast {
@@ -223,14 +179,14 @@
   border-radius: 8px;
   font-size: 13px;
   max-width: 420px;
-  color: var(--color-base-content);
-  background-color: var(--color-base-100);
-  border: 1px solid var(--color-base-300);
+  color: var(--card-foreground);
+  background-color: var(--card);
+  border: 1px solid var(--border);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
-.toast.success { border-color: var(--color-success); }
-.toast.error { border-color: var(--color-error); }
-.toast.info { border-color: var(--color-info); }
+.toast.success { border-color: var(--status-ok); }
+.toast.error { border-color: var(--destructive); }
+.toast.info { border-color: var(--primary); }
 
 /* 弹窗（hidden 类控制显隐，机制不变）
    .hidden 规则必须压过 .modal-overlay 的 display:flex ——
@@ -248,9 +204,10 @@
   display: none;
 }
 .modal-card {
-  background-color: var(--color-base-100);
-  border: 1px solid var(--color-base-300);
-  border-radius: var(--radius-box, 12px);
+  background-color: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 12px);
   padding: 20px;
   width: 420px;
   max-width: calc(100vw - 32px);
@@ -268,19 +225,24 @@
   font-family: var(--font-mono);
   font-size: 13px;
   padding: 8px 12px;
-  border-radius: var(--radius-field, 6px);
-  border: 1px solid var(--color-base-300);
-  background-color: var(--color-base-100);
-  color: var(--color-base-content);
+  border-radius: var(--radius, 8px);
+  border: 1px solid var(--input);
+  background-color: var(--background);
+  color: var(--foreground);
+  outline: none;
 }
-.guard-param-actual.ok { color: var(--color-success); }
-.guard-param-actual.bad { color: var(--color-error); }
+.guard-textarea:focus-visible,
+.guard-form-textarea:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+.guard-param-actual.ok { color: var(--status-ok); }
+.guard-param-actual.bad { color: var(--destructive); }
 
 /* 更新进度条 */
 .update-progress-track {
   height: 6px;
   border-radius: 9999px;
-  background-color: var(--color-base-300);
+  background-color: var(--muted);
   overflow: hidden;
   width: 220px;
 }
@@ -288,6 +250,6 @@
   height: 100%;
   width: 0%;
   border-radius: 9999px;
-  background-color: var(--color-accent);
+  background-color: var(--primary);
   transition: width 200ms;
 }

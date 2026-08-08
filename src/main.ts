@@ -6,8 +6,8 @@ import { open as openUrl } from "@tauri-apps/plugin-shell";
 import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
 import { initI18n, applyDomTranslations, applyLanguage, currentLanguage, t } from "./i18n";
 import type { ResolvedLanguage } from "./i18n";
+import { THEME_FAMILIES } from "./theme-families";
 import {
-  THEME_FAMILIES,
   getStoredFamily as resolveStoredFamily,
   getStoredTheme as resolveStoredTheme,
   resolveDataTheme as resolveThemeData,
@@ -155,8 +155,8 @@ function toast(message: string, type: "success" | "error" | "info" = "info"): vo
   }, 3000);
 }
 
-// ============ 主题管理（ADR 0007：族 × 模式 二维模型） ============
-// 选择器只列亮族；暗面由配对表决定，未配对落内置 dark。geist 族是视觉基准（DESIGN.md/DESIGN.DARK.md）
+// ============ 主题管理（ADR 0008：tweakcn token 族 × 模式 二维模型） ============
+// 选择器只列亮族；暗面由命名约定 <族id>-dark 决定。默认族 vercel 是视觉基准
 
 const CHECK_SVG = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
 
@@ -201,16 +201,15 @@ function setThemeFamily(family: string): void {
 function renderThemeFamilyGrid(): void {
   const grid = document.getElementById("theme-family-grid");
   if (!grid) return;
-  grid.innerHTML = Object.entries(THEME_FAMILIES)
-    .map(
-      ([id, f]) => `<button type="button" class="select-card" data-family="${id}" aria-pressed="false">
+  grid.innerHTML = THEME_FAMILIES.map(
+      (f: { id: string; label: string }) => `<button type="button" class="select-card" data-family="${f.id}" aria-pressed="false">
         <span class="select-card-check">${CHECK_SVG}</span>
-        <span class="family-preview bg-base-100" data-theme="${f.light}">
+        <span class="family-preview" data-theme="${f.id}-light">
           <span class="fp-dots">
             <span class="fp-dot bg-primary"></span>
             <span class="fp-dot bg-secondary"></span>
             <span class="fp-dot bg-accent"></span>
-            <span class="fp-dot bg-neutral"></span>
+            <span class="fp-dot bg-muted"></span>
           </span>
           <span class="fp-bar w-full"></span>
           <span class="fp-bar w-2/3"></span>

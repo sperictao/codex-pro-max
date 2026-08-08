@@ -102,18 +102,21 @@
 
 ## 界面主题（Theming）
 
-启动器的横切关注：壳 UI 的色彩主题系统（Tailwind/daisyUI 重构后）。
+启动器的横切关注：壳 UI 的色彩主题系统（tweakcn token 化重构后，daisyUI 已移除）。
 
 ### 术语
 
-- **主题族（Theme Family）** — 亮暗成对的逻辑分组，选择器中的可选项。族内维护配对表 `{ light, dark }`，暗面未配对时回落内置 `dark`。
+- **主题族（Theme Family）** — 一个 tweakcn 预设的本地化实例，亮暗原生成对。全量 41 族，由 `src/theme-families.ts`（构建脚本生成的 manifest）枚举，选择器中的可选项即 manifest 内容。
 - **模式（Theme Mode）** — 三选一：跟随系统 / 亮 / 暗。与主题族正交。
-- **解析主题（Resolved Theme）** — 族 × 模式解析出的具体 daisyUI 主题名（如 geist + 暗 → `geist-dark`），赋给 `<html data-theme>`；跟随系统时随 OS 切换重解析。
-- **geist 族** — 自定义主题族（`geist-light` / `geist-dark`），token 取自 `DESIGN.md` / `DESIGN.DARK.md`（Vercel Geist 设计系统），是默认族与视觉基准。
+- **解析主题（Resolved Theme）** — 族 × 模式解析出的主题名，命名约定 `<族id>-light|dark`，赋给 `<html data-theme>`，对应 `src/themes.css` 中同名 scoped token 块；跟随系统时随 OS 切换重解析。
+- **默认族（Default Family）** — `vercel`，视觉基准。localStorage 中的族值不在 manifest 时静默回落默认族。
 - **色板卡（Swatch Card）** — 主题族选择器项：卡面自身带 `data-theme` 局部生效，直接渲染该族亮主题的色板缩略。
+- **主题构建脚本（Theme Build）** — `scripts/build-themes.mjs`：按写死的 41 个预设 id 从 tweakcn registry 拉取 token 与字体引用，生成 `src/themes.css`（scoped 块 + `@font-face`）与 `src/theme-families.ts`；生成物提交进 git、不手改，重跑脚本即主动跟随上游（上游新增预设不自动进入，id 列表是唯一事实来源）。
+- **字体本地化（Local Fonts）** — 预设引用的 Google 字体 woff2 全部由构建脚本下载进 `assets/fonts/`，CSP 保持 `font-src 'self'`，主题字体完全离线可用。
 
 ### 语义边界
 
-- 主题选择器只列亮族：用户不直接选暗色主题，暗面永远由配对表决定（「每主题适配亮暗」的唯一语义）。
+- 主题选择器只列亮族：用户不直接选暗色主题，暗面永远由命名约定的配对决定（「每主题适配亮暗」的唯一语义）。
 - 主题持久化在 localStorage（`theme` 模式、`theme-family` 族），不进 LauncherConfig、不同步 Rust；语言在 LauncherConfig，两者互不影响。
-- 视觉基准以 geist 族为准：其余内置族是增值选项，组件样式不得为非 geist 族写特例。
+- 视觉基准以默认族 vercel 为准：其余 40 族是增值选项，组件样式不得为任何族写特例。
+- 字体随族：各族的 font token 是该族外观的组成部分，产品不承诺单一品牌字体。
