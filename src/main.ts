@@ -857,13 +857,13 @@ function renderGuardView(view: GuardView): void {
       const dis = p.locked ? "disabled" : "";
       if (p.valueType === "bool") {
         editor = `<div class="flex items-center gap-2">
-          <input type="checkbox" class="toggle toggle-sm toggle-accent" data-change-action="guardToggleBool" data-id="${p.id}"
+          <input type="checkbox" class="relative h-5 w-9 shrink-0 cursor-pointer appearance-none rounded-full bg-input transition-colors outline-none checked:bg-primary focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 before:absolute before:left-0.5 before:top-0.5 before:h-4 before:w-4 before:rounded-full before:bg-background before:shadow-sm before:transition-transform checked:before:translate-x-4" data-change-action="guardToggleBool" data-id="${p.id}"
                  ${p.value === true ? "checked" : ""} ${p.locked ? "disabled" : ""} />
           <span class="text-xs opacity-70">${p.value === true ? "true" : "false"} ${t("(recommended {{default}})", { default: String(p.default) })}</span>
         </div>`;
       } else if (p.valueType === "int" || p.valueType === "string") {
         const t = p.valueType === "int" ? "number" : "text";
-        editor = `<input type="${t}" class="input w-full font-mono text-sm" ${dis}
+        editor = `<input type="${t}" class="h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 font-mono" ${dis}
                value="${escapeHtml(String(p.value ?? ""))}" data-guard-id="${p.id}"
                data-change-action="guardSetValue" data-id="${p.id}" />`;
       } else if (p.valueType === "text") {
@@ -875,11 +875,11 @@ function renderGuardView(view: GuardView): void {
       const meta = p.locked
         ? `<div class="mt-1 text-xs opacity-50">${t("Last checked {{checked}} | Last auto-restored {{restored}}", { checked: fmtTs(p.lastChecked), restored: fmtTs(p.lastRestored) })}</div>`
         : "";
-      return `<div class="rounded-lg border border-base-300 bg-base-100 p-3">
+      return `<div class="rounded-lg border border-border bg-card text-card-foreground p-3">
         <div class="flex items-center justify-between">
           <span class="text-sm font-medium">${escapeHtml(p.label)}</span>
           <span class="flex items-center gap-2">
-            ${p.custom ? `<button class="btn btn-error btn-outline btn-xs" data-action="guardRemoveCustom" data-id="${p.id}" title="${t("Delete custom parameter")}">${t("Delete")}</button>` : ""}
+            ${p.custom ? `<button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-destructive/50 bg-background text-destructive hover:bg-destructive/10 h-6 px-2 text-xs" data-action="guardRemoveCustom" data-id="${p.id}" title="${t("Delete custom parameter")}">${t("Delete")}</button>` : ""}
             <span class="status-badge ${s.cls}"><span class="dot"></span><span>${s.text}</span></span>
           </span>
         </div>
@@ -890,23 +890,23 @@ function renderGuardView(view: GuardView): void {
         </div>
         <div class="mt-2">${editor}</div>
         <div class="mt-2 flex gap-2">
-          <button class="btn btn-primary btn-sm" ${p.locked ? "disabled" : ""}
+          <button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-8 px-3 text-xs" ${p.locked ? "disabled" : ""}
                   data-action="guardApply" data-id="${p.id}">${t("Apply")}</button>
           ${p.locked
-            ? `<button class="btn btn-secondary btn-sm" data-action="guardSetLocked" data-id="${p.id}" data-locked="false">${t("Unlock")}</button>`
-            : `<button class="btn btn-secondary btn-sm" ${p.applied ? "" : "disabled"}
+            ? `<button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-8 px-3 text-xs" data-action="guardSetLocked" data-id="${p.id}" data-locked="false">${t("Unlock")}</button>`
+            : `<button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-8 px-3 text-xs" ${p.applied ? "" : "disabled"}
                   data-action="guardSetLocked" data-id="${p.id}" data-locked="true">${t("Lock")}</button>`}
         </div>
         ${meta}
       </div>`;
     }).join("");
     const addBtn = `<div class="mt-2">
-      <button class="btn btn-secondary btn-xs" data-action="openGuardAddFormFor" data-id="${g.id}">${t("+ Add Parameter")}</button>
+      <button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-6 px-2 text-xs" data-action="openGuardAddFormFor" data-id="${g.id}">${t("+ Add Parameter")}</button>
     </div>`;
-    return `<div class="rounded-box border border-base-300 bg-base-100 p-4" data-group-id="${g.id}">
+    return `<div class="rounded-xl border border-border bg-card text-card-foreground p-4" data-group-id="${g.id}">
       <div class="text-sm font-semibold">${escapeHtml(g.name)}</div>
       <div class="mb-2 font-mono text-xs opacity-50">~/.codex/${escapeHtml(g.file)}</div>
-      ${g.error ? `<div class="mb-2 text-xs text-error">${escapeHtml(g.error)}</div>` : ""}
+      ${g.error ? `<div class="mb-2 text-xs text-destructive">${escapeHtml(g.error)}</div>` : ""}
       <div class="flex flex-col gap-2">${params}</div>
       ${addBtn}
     </div>`;
@@ -1008,10 +1008,10 @@ function renderGuardFiles(): void {
     } else {
       const html = guardFiles.map((f) => {
         const delBtn = f.builtin
-          ? `<button class="btn btn-secondary btn-xs" disabled>${t("Built-in")}</button>`
-          : `<button class="btn btn-error btn-outline btn-xs" data-action="guardRemoveFile" data-id="${f.id}">${t("Delete")}</button>`;
+          ? `<button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-6 px-2 text-xs" disabled>${t("Built-in")}</button>`
+          : `<button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-destructive/50 bg-background text-destructive hover:bg-destructive/10 h-6 px-2 text-xs" data-action="guardRemoveFile" data-id="${f.id}">${t("Delete")}</button>`;
         const detectBtn = f.builtin
-          ? `<button class="btn btn-secondary btn-xs" data-action="guardDetectFile" data-id="${f.id}">${t("Detect")}</button>`
+          ? `<button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-6 px-2 text-xs" data-action="guardDetectFile" data-id="${f.id}">${t("Detect")}</button>`
           : "";
         const det = f.detection;
         const detText = det
@@ -1021,16 +1021,16 @@ function renderGuardFiles(): void {
               ? t("Detection: path matches ({{at}})", { at: fmtTs(det.at) })
               : t("Detection: actually at {{path}} ({{at}})", { path: det.path, at: fmtTs(det.at) })
           : "";
-        return `<div class="rounded-lg border border-base-300 bg-base-100 p-3" data-file-id="${f.id}">
+        return `<div class="rounded-lg border border-border bg-card text-card-foreground p-3" data-file-id="${f.id}">
           <div class="flex items-center gap-2">
             <span class="text-sm font-medium">${escapeHtml(f.name)}</span>
-            <span class="badge badge-sm">${f.format}</span>
+            <span class="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">${f.format}</span>
           </div>
           <div class="mt-1 font-mono text-xs opacity-60">~/.codex/${escapeHtml(f.file)}</div>
           ${detText ? `<div class="mt-1 text-xs opacity-60">${escapeHtml(detText)}</div>` : ""}
           <div class="mt-2 flex gap-2">
             ${detectBtn}
-            <button class="btn btn-secondary btn-xs" data-action="guardEditFile" data-id="${f.id}">${t("Edit")}</button>
+            <button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-6 px-2 text-xs" data-action="guardEditFile" data-id="${f.id}">${t("Edit")}</button>
             ${delBtn}
           </div>
         </div>`;
@@ -1213,7 +1213,7 @@ function onGuardAddValueTypeChange(): void {
   } else if (vt !== "text" && defaultEl.tagName === "TEXTAREA") {
     const inp = document.createElement("input");
     inp.type = "text";
-    inp.className = "input w-full text-sm";
+    inp.className = "h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
     inp.id = "guard-add-default";
     inp.value = defaultEl.value;
     defaultRowParent.replaceChild(inp, defaultEl);
