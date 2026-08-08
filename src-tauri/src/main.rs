@@ -751,7 +751,7 @@ fn build_tray_menu(
 fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::tray::TrayIconBuilder;
 
-    let menu = build_tray_menu(&app.handle())?;
+    let menu = build_tray_menu(app.handle())?;
 
     let mut tray = TrayIconBuilder::with_id("main")
         .menu(&menu)
@@ -870,10 +870,10 @@ pub fn run() {
             if let Err(e) = setup_tray(app) {
                 log::error!("初始化系统托盘失败: {}", e);
             }
-            // 窗口创建时 visible:false（配合 window-state 恢复几何后再显示）；
-            // 自启拉起（--autostart）则保持隐藏、静默驻留托盘
+            // 主窗口保持可交互创建；自启拉起（--autostart）再隐藏到托盘，
+            // 避免 macOS WebKit 在隐藏创建后再显示时丢失鼠标事件。
             if std::env::args().any(|a| a == "--autostart") {
-                hide_main_window_to_tray(&app.handle());
+                hide_main_window_to_tray(app.handle());
             } else {
                 // ponytail: window-state 恢复的坐标可能落在已拔掉的显示器上；
                 // 与任一显示器可视区无交集时放弃恢复位置、改居中
@@ -897,7 +897,7 @@ pub fn run() {
                         let _ = window.center();
                     }
                 }
-                show_main_window(&app.handle());
+                show_main_window(app.handle());
             }
             tauri::async_runtime::spawn(codex_guard::poll_loop());
             Ok(())

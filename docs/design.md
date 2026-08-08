@@ -82,11 +82,12 @@ dashi-taskboard 以 git submodule 集成于 `vendor/dashi-taskboard`（指向 fo
 
 ## 4. 前端
 
-`src/main.ts` 单文件实现：
+`src/main.ts` 与 `src/theme.ts` 实现：
 
 - 启动时加载配置并检测环境（Node 版本、Codex 应用）
 - 进程状态轮询（`get_status`），按状态机渲染启停按钮
-- 主题 light/dark/system，对话框用 `@tauri-apps/plugin-dialog`，外链走 `plugin-shell`
+- 主题采用 Tailwind v4 + daisyUI v5 的「主题族 × 模式」模型：族和模式分别持久化到 localStorage，具体主题名写入 `<html data-theme>`；系统模式监听 OS 外观变化，未配对暗色回落内置 `dark`。Geist 亮/暗 token 见 [`DESIGN.md`](../DESIGN.md) / [`DESIGN.DARK.md`](../DESIGN.DARK.md)，主题决策见 [ADR 0007](adr/0007-tailwind-daisyui-geist-theming.md)
+- 对话框用 `@tauri-apps/plugin-dialog`，外链走 `plugin-shell`
 - 「检查更新」调 `@tauri-apps/plugin-updater`；未配置密钥时返回可读提示而非崩溃
 
 ## 5. 更新与发布

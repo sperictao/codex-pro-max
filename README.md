@@ -107,6 +107,7 @@ Pushing the tag triggers five CI builds (macOS aarch64 / x86_64 / universal, Win
 | --- | --- |
 | Desktop framework | Tauri 2.x (Rust) |
 | Frontend | TypeScript 5 + Vite 6 (single-page UI) |
+| UI and theming | Tailwind CSS v4 + daisyUI v5; Geist Sans/Mono variable fonts (self-hosted) |
 | taskboard integration | git submodule (consuming upstream via a fork) |
 | Config guard | schema-driven; TOML key / Markdown block / whole-file comparison modes |
 | Self-update | Tauri Updater + GitHub Releases |
@@ -119,6 +120,7 @@ Pushing the tag triggers five CI builds (macOS aarch64 / x86_64 / universal, Win
 npm run tauri dev          # dev mode (frontend + Rust backend)
 npm run tauri build        # production bundle
 npm run build              # frontend only (tsc + vite build)
+npm test                   # theme parser tests
 npm run build:taskboard    # build the bundled taskboard web UI into dist/web
 npm run build:updater      # generate updater artifacts
 ```
@@ -131,6 +133,8 @@ npm run build:updater      # generate updater artifacts
 | --- | --- |
 | [CONTEXT.md](CONTEXT.md) | Domain glossary (config guard + taskboard integration + FastCtx integration) |
 | [docs/design.md](docs/design.md) | Architecture and module design |
+| [DESIGN.md](DESIGN.md) / [DESIGN.DARK.md](DESIGN.DARK.md) | Geist light/dark token reference |
+| [docs/adr/0007](docs/adr/0007-tailwind-daisyui-geist-theming.md) | Tailwind/daisyUI theme-family and mode model |
 | [docs/adr/0001](docs/adr/0001-codex-config-guard-boundaries.md) | Guard lifecycle and rollback boundaries |
 | [docs/adr/0002](docs/adr/0002-taskboard-submodule-packaging.md) | taskboard submodule integration and packaging whitelist |
 | [docs/adr/0003](docs/adr/0003-fastctx-delegate-to-cli.md) | FastCtx integration delegates to the fastctx CLI |
@@ -143,6 +147,7 @@ npm run build:updater      # generate updater artifacts
 
 - [dashi-taskboard](https://github.com/chuspeeism/dashi-taskboard) — the bundled task board, integrated as a git submodule at `vendor/dashi-taskboard` and shipped inside the installer (see [ADR 0002](docs/adr/0002-taskboard-submodule-packaging.md)). Upstream declares no license; bundling follows the upstream → fork (`sperictao/dashi-taskboard`) → PR workflow described in [CONTEXT.md](CONTEXT.md). Launcher-side integration code is our own work; the taskboard itself remains the upstream author's work.
 - [FastCtx](https://github.com/yc-duan/fastctx) — optional integration, licensed under [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0). This launcher does **not** redistribute or embed FastCtx; it invokes a user-installed `fastctx` CLI at runtime. All integration code in this repository is our own work and our sole responsibility; it is not endorsed by the FastCtx authors, who bear no liability for it. FastCtx embeds Pdfium — see FastCtx's `THIRD_PARTY_LICENSES.md` (relevant only when redistributing FastCtx binaries).
+- [Geist](https://vercel.com/font) via `@fontsource-variable/geist` and `@fontsource-variable/geist-mono` — bundled variable fonts under the SIL Open Font License 1.1 (OFL-1.1).
 
 ---
 

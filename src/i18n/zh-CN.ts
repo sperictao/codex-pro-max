@@ -28,6 +28,7 @@ export const zhCN: Record<I18nKey, string> = {
   "Appearance": "外观",
   "Network": "网络",
   "Mode": "模式",
+  "Theme": "主题",
   "Integrations": "集成",
   "About": "关于",
   "Taskboard Path": "Taskboard 路径",

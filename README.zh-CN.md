@@ -107,6 +107,7 @@ tag 推送触发 CI 五路构建（macOS aarch64 / x86_64 / universal、Windows�
 | --- | --- |
 | 桌面框架 | Tauri 2.x（Rust） |
 | 前端 | TypeScript 5 + Vite 6（单页 UI） |
+| UI 与主题 | Tailwind CSS v4 + daisyUI v5；Geist Sans/Mono 可变字体（自托管） |
 | taskboard 集成 | git submodule（fork 仓库消费上游） |
 | 配置看守 | schema 驱动，TOML / Markdown 区块 / 整文件三种比对模式 |
 | 自更新 | Tauri Updater + GitHub Releases |
@@ -119,6 +120,7 @@ tag 推送触发 CI 五路构建（macOS aarch64 / x86_64 / universal、Windows�
 npm run tauri dev          # 开发模式（前端 + Rust 后端）
 npm run tauri build        # 生产打包
 npm run build              # 仅构建前端（tsc + vite build）
+npm test                   # 主题解析测试
 npm run build:taskboard    # 构建内置 taskboard 的 web UI 到 dist/web
 npm run build:updater      # 生成 updater 产物
 ```
@@ -131,6 +133,8 @@ npm run build:updater      # 生成 updater 产物
 | --- | --- |
 | [CONTEXT.md](CONTEXT.md) | 领域术语表（配置看守 + Taskboard 集成 + FastCtx 集成） |
 | [docs/design.md](docs/design.md) | 架构与模块设计 |
+| [DESIGN.md](DESIGN.md) / [DESIGN.DARK.md](DESIGN.DARK.md) | Geist 亮/暗 token 参考 |
+| [docs/adr/0007](docs/adr/0007-tailwind-daisyui-geist-theming.md) | Tailwind/daisyUI 主题族与模式模型 |
 | [docs/adr/0001](docs/adr/0001-codex-config-guard-boundaries.md) | 看守的生命周期与回滚边界 |
 | [docs/adr/0002](docs/adr/0002-taskboard-submodule-packaging.md) | taskboard submodule 集成与打包白名单 |
 | [docs/adr/0003](docs/adr/0003-fastctx-delegate-to-cli.md) | FastCtx 集成委托 fastctx CLI 的决策 |
@@ -143,6 +147,7 @@ npm run build:updater      # 生成 updater 产物
 
 - [dashi-taskboard](https://github.com/chuspeeism/dashi-taskboard) — 内置的任务看板，以 git submodule 集成于 `vendor/dashi-taskboard` 并随安装包分发（见 [ADR 0002](docs/adr/0002-taskboard-submodule-packaging.md)）。上游未声明许可；打包遵循 [CONTEXT.md](CONTEXT.md) 所述的上游 → fork（`sperictao/dashi-taskboard`）→ PR 协作流。启动器侧集成代码为我们自己的工作；看板本体为上游作者的作品。
 - [FastCtx](https://github.com/yc-duan/fastctx) — 可选集成，采用 [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) 许可。本启动器**不**再分发、不内嵌 FastCtx，仅在运行时调用用户自行安装的 `fastctx` CLI。本仓库中的全部集成代码均为我们自己的工作与独自的责任，不代表 FastCtx 作者的认可，FastCtx 作者亦不承担由此产生的任何责任。FastCtx 内嵌 Pdfium，其第三方许可见 FastCtx 的 `THIRD_PARTY_LICENSES.md`（仅在再分发 FastCtx 二进制时相关）。
+- [Geist](https://vercel.com/font)（通过 `@fontsource-variable/geist` 与 `@fontsource-variable/geist-mono` 引入）— 随应用打包的可变字体，采用 SIL Open Font License 1.1（OFL-1.1）许可。
 
 ---
 

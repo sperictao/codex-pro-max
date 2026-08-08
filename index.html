@@ -4,1817 +4,485 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Dashi Taskboard Launcher</title>
-    <style>
-      /* ============ Geist Design Variables ============ */
-      :root {
-        --background: #ffffff;
-        --foreground: #171717;
-        --card: #ffffff;
-        --border: hsl(0 0% 92%);
-        --muted: hsl(0 0% 96%);
-        --muted-foreground: hsl(0 0% 40%);
-        --interactive: hsl(215 100% 50%);
-        --interactive-hover: hsl(217 100% 46%);
-        --destructive: hsl(347 100% 49%);
-        --success: hsl(135 62% 41%);
-        --warning: hsl(39 100% 50%);
-        --radius-sm: 6px;
-        --radius-md: 12px;
-        --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-        --font-mono: "SF Mono", "Fira Code", ui-monospace, monospace;
-        --ease-geist: cubic-bezier(0.175, 0.885, 0.32, 1.1);
-        --shadow-sm: 0 2px 2px rgba(0, 0, 0, 0.04);
-      }
-
-      .dark {
-        --background: #000000;
-        --foreground: #ededed;
-        --card: #0a0a0a;
-        --border: hsl(0 0% 15%);
-        --muted: hsl(0 0% 10%);
-        --muted-foreground: hsl(0 0% 63%);
-        --interactive: hsl(214 100% 50%);
-        --destructive: hsl(355 89% 57%);
-        --success: hsl(138 100% 29%);
-        --warning: hsl(39 100% 46%);
-      }
-
-      /* ============ Reset ============ */
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-
-      body {
-        font-family: var(--font-sans);
-        background: var(--background);
-        color: var(--foreground);
-        height: 100vh;
-        overflow: hidden;
-        user-select: none;
-        -webkit-font-smoothing: antialiased;
-        -moz-osx-font-smoothing: grayscale;
-      }
-
-      .hidden {
-        display: none !important;
-      }
-
-      .mono {
-        font-family: var(--font-mono);
-      }
-
-      /* ============ App Layout ============ */
-      .app {
-        display: flex;
-        flex-direction: column;
-        height: 100vh;
-      }
-
-      /* ============ Header ============ */
-      .header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 12px 24px;
-        border-bottom: 1px solid var(--border);
-        background: var(--background);
-        flex-shrink: 0;
-      }
-
-      .logo {
-        font-size: 16px;
-        font-weight: 600;
-        letter-spacing: -0.3px;
-        color: var(--foreground);
-      }
-
-      .header-actions {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-      }
-
-      .header-btn {
-        padding: 6px 14px;
-        border: 1px solid var(--border);
-        background: var(--background);
-        color: var(--muted-foreground);
-        border-radius: var(--radius-sm);
-        cursor: pointer;
-        font-size: 13px;
-        font-family: var(--font-sans);
-        font-weight: 500;
-        transition: all 150ms var(--ease-geist);
-      }
-
-      .header-btn:hover {
-        background: var(--muted);
-        color: var(--foreground);
-      }
-
-      .header-btn.active {
-        color: var(--interactive);
-        border-color: var(--interactive);
-      }
-
-      /* ============ Main View ============ */
-      .main-view {
-        flex: 1;
-        overflow-y: auto;
-        padding: 24px;
-      }
-
-      .action-bar {
-        display: flex;
-        gap: 12px;
-        margin-bottom: 24px;
-      }
-
-      .btn-large {
-        flex: 1;
-        padding: 14px 24px;
-        font-size: 15px;
-        font-weight: 600;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-      }
-
-      /* ============ Status Section ============ */
-      .section-title {
-        font-size: 12px;
-        font-weight: 600;
-        color: var(--muted-foreground);
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        margin-bottom: 12px;
-      }
-
-      .status-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-      }
-
-      .status-card {
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-md);
-        padding: 20px;
-        box-shadow: var(--shadow-sm);
-        transition: border-color 150ms var(--ease-geist);
-      }
-
-      .status-card:hover {
-        border-color: var(--muted-foreground);
-      }
-
-      .status-card-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 12px;
-      }
-
-      .status-card-title {
-        font-size: 15px;
-        font-weight: 600;
-        color: var(--foreground);
-      }
-
-      .status-message {
-        font-size: 12px;
-        color: var(--muted-foreground);
-        margin-bottom: 16px;
-        min-height: 16px;
-        word-break: break-all;
-      }
-
-      .status-actions {
-        display: flex;
-        gap: 8px;
-      }
-
-      /* ============ Status Badge ============ */
-      .status-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        padding: 3px 10px;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 500;
-      }
-
-      .status-badge .dot {
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-      }
-
-      .status-badge.running {
-        background: hsl(135 62% 41% / 0.1);
-        color: var(--success);
-      }
-      .status-badge.running .dot {
-        background: var(--success);
-      }
-      .status-badge.stopped {
-        background: var(--muted);
-        color: var(--muted-foreground);
-      }
-      .status-badge.stopped .dot {
-        background: var(--muted-foreground);
-      }
-      .status-badge.starting {
-        background: hsl(39 100% 50% / 0.1);
-        color: var(--warning);
-      }
-      .status-badge.starting .dot {
-        background: var(--warning);
-        animation: pulse 1s infinite;
-      }
-      .status-badge.stopping {
-        background: hsl(39 100% 50% / 0.1);
-        color: var(--warning);
-      }
-      .status-badge.stopping .dot {
-        background: var(--warning);
-      }
-      .status-badge.failed {
-        background: hsl(347 100% 49% / 0.1);
-        color: var(--destructive);
-      }
-      .status-badge.failed .dot {
-        background: var(--destructive);
-      }
-
-      @keyframes pulse {
-        0%,
-        100% {
-          opacity: 1;
-        }
-        50% {
-          opacity: 0.4;
-        }
-      }
-
-      /* ============ Buttons ============ */
-      .btn {
-        padding: 8px 16px;
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        cursor: pointer;
-        font-size: 13px;
-        font-weight: 500;
-        font-family: var(--font-sans);
-        transition: all 150ms var(--ease-geist);
-        background: var(--background);
-        color: var(--foreground);
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-      }
-
-      .btn:disabled {
-        opacity: 0.45;
-        cursor: not-allowed;
-      }
-
-      .btn-primary {
-        background: var(--interactive);
-        color: #ffffff;
-        border-color: var(--interactive);
-      }
-
-      .btn-primary:hover:not(:disabled) {
-        background: var(--interactive-hover);
-        border-color: var(--interactive-hover);
-      }
-
-      .btn-secondary {
-        background: var(--background);
-        color: var(--foreground);
-        border-color: var(--border);
-      }
-
-      .btn-secondary:hover:not(:disabled) {
-        background: var(--muted);
-      }
-
-      .btn-danger {
-        background: var(--background);
-        color: var(--destructive);
-        border-color: var(--border);
-      }
-
-      .btn-danger:hover:not(:disabled) {
-        background: hsl(347 100% 49% / 0.08);
-        border-color: var(--destructive);
-      }
-
-      .btn-sm {
-        padding: 6px 12px;
-        font-size: 12px;
-      }
-
-      /* ============ Settings View ============ */
-      .settings-view {
-        flex: 1;
-        display: flex;
-        overflow: hidden;
-      }
-
-      .settings-sidebar {
-        width: 200px;
-        border-right: 1px solid var(--border);
-        padding: 16px 0;
-        flex-shrink: 0;
-      }
-
-      .nav-item {
-        display: flex;
-        align-items: center;
-        gap: 9px;
-        width: 100%;
-        padding: 10px 20px;
-        border: none;
-        background: none;
-        color: var(--muted-foreground);
-        font-size: 14px;
-        font-weight: 500;
-        font-family: var(--font-sans);
-        text-align: left;
-        cursor: pointer;
-        transition: all 150ms var(--ease-geist);
-      }
-
-      .nav-item svg {
-        flex-shrink: 0;
-      }
-
-      .nav-item:hover {
-        background: var(--muted);
-        color: var(--foreground);
-      }
-
-      .nav-item.active {
-        color: var(--interactive);
-        background: hsl(215 100% 50% / 0.08);
-      }
-
-      .settings-content {
-        flex: 1;
-        overflow-y: auto;
-        padding: 24px 32px;
-        display: flex;
-        flex-direction: column;
-      }
-
-      .section-heading {
-        font-size: 18px;
-        font-weight: 600;
-        color: var(--foreground);
-        margin-bottom: 24px;
-      }
-
-      .settings-section {
-        flex: 1;
-      }
-
-      /* ============ Config Rows ============ */
-      .config-row {
-        margin-bottom: 20px;
-      }
-
-      .config-label {
-        display: block;
-        font-size: 13px;
-        font-weight: 500;
-        color: var(--foreground);
-        margin-bottom: 6px;
-      }
-
-      .config-input-group {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-
-      .config-input {
-        flex: 1;
-        padding: 8px 12px;
-        background: var(--background);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        color: var(--foreground);
-        font-size: 13px;
-        font-family: var(--font-sans);
-        outline: none;
-        transition: border-color 150ms var(--ease-geist);
-      }
-
-      .config-input:focus {
-        border-color: var(--interactive);
-      }
-
-      .config-input.mono {
-        font-family: var(--font-mono);
-        font-size: 12px;
-      }
-
-      .config-validate {
-        font-size: 12px;
-        font-family: var(--font-mono);
-        white-space: nowrap;
-      }
-
-      .config-validate.ok {
-        color: var(--success);
-      }
-
-      .config-validate.err {
-        color: var(--destructive);
-      }
-
-      /* ============ Toggle Switch ============ */
-      .config-toggle {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-
-      .toggle-switch {
-        position: relative;
-        width: 40px;
-        height: 22px;
-        background: var(--border);
-        border-radius: 11px;
-        cursor: pointer;
-        transition: background 150ms var(--ease-geist);
-        flex-shrink: 0;
-      }
-
-      .toggle-switch.active {
-        background: var(--interactive);
-      }
-
-      .toggle-switch::after {
-        content: "";
-        position: absolute;
-        top: 3px;
-        left: 3px;
-        width: 16px;
-        height: 16px;
-        background: #ffffff;
-        border-radius: 50%;
-        transition: transform 150ms var(--ease-geist);
-      }
-
-      .toggle-switch.active::after {
-        transform: translateX(18px);
-      }
-
-      .toggle-label {
-        font-size: 13px;
-        color: var(--muted-foreground);
-      }
-
-      /* ============ Skill Install ============ */
-      .skill-install-area {
-        display: flex;
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 10px;
-      }
-
-      .skill-result {
-        width: 100%;
-      }
-
-      .skill-result {
-        font-size: 12px;
-        color: var(--muted-foreground);
-        min-height: 16px;
-        word-break: break-all;
-      }
-
-      /* ============ About Section ============ */
-      .about-row {
-        display: flex;
-        align-items: center;
-        gap: 16px;
-        padding: 14px 0;
-        border-bottom: 1px solid var(--border);
-      }
-
-      .about-row:last-child {
-        border-bottom: none;
-      }
-
-      .about-label {
-        font-size: 13px;
-        color: var(--muted-foreground);
-        min-width: 120px;
-      }
-
-      .about-value {
-        font-size: 13px;
-        color: var(--foreground);
-      }
-
-      .about-value.mono {
-        font-family: var(--font-mono);
-      }
-
-      .about-link {
-        color: var(--interactive);
-        text-decoration: none;
-        font-size: 13px;
-        cursor: pointer;
-      }
-
-      .about-link:hover {
-        text-decoration: underline;
-      }
-
-      .update-info {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        min-width: 0;
-      }
-
-      .update-notes {
-        font-size: 12px;
-        color: var(--muted-foreground);
-        white-space: pre-wrap;
-        word-break: break-word;
-      }
-
-      .update-progress {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        flex: 1;
-        min-width: 0;
-      }
-
-      .update-progress-track {
-        height: 6px;
-        border-radius: 3px;
-        background: var(--muted);
-        overflow: hidden;
-      }
-
-      .update-progress-bar {
-        height: 100%;
-        width: 0%;
-        border-radius: 3px;
-        background: var(--interactive);
-        transition: width 0.2s ease;
-      }
-
-      .update-progress-text {
-        font-size: 12px;
-        color: var(--muted-foreground);
-      }
-
-      .health-status {
-        font-size: 12px;
-        font-family: var(--font-mono);
-      }
-
-      .health-status.ok {
-        color: var(--success);
-      }
-
-      .health-status.err {
-        color: var(--destructive);
-      }
-
-      /* ============ Settings Footer ============ */
-      .settings-footer {
-        padding-top: 20px;
-        border-top: 1px solid var(--border);
-        margin-top: 20px;
-        display: flex;
-        justify-content: flex-end;
-      }
-
-      /* ============ Skill View ============ */
-      .skill-view {
-        flex: 1;
-        overflow-y: auto;
-        padding: 28px 36px;
-      }
-
-      .skill-card {
-        max-width: 560px;
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-md);
-        padding: 20px;
-        box-shadow: var(--shadow-sm);
-      }
-
-      .skill-desc {
-        font-size: 13px;
-        color: var(--muted-foreground);
-        line-height: 1.7;
-        margin-bottom: 18px;
-      }
-
-      .skill-desc code {
-        font-family: var(--font-mono);
-        font-size: 12px;
-        background: var(--muted);
-        border-radius: 4px;
-        padding: 1px 5px;
-      }
-
-      .skill-status-row {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 6px;
-      }
-
-      .skill-target {
-        font-size: 11.5px;
-        color: var(--muted-foreground);
-      }
-
-      .skill-status-detail {
-        font-size: 12px;
-        color: var(--muted-foreground);
-        margin-bottom: 16px;
-        min-height: 15px;
-        word-break: break-all;
-      }
-
-      /* ============ Guard View ============ */
-      .guard-view {
-        flex: 1;
-        overflow-y: auto;
-        padding: 28px 36px;
-      }
-
-      .guard-hint {
-        font-size: 12px;
-        color: var(--muted-foreground);
-        line-height: 1.7;
-        margin-bottom: 20px;
-        max-width: 720px;
-      }
-
-      .guard-hint code {
-        font-family: var(--font-mono);
-        font-size: 11.5px;
-        background: var(--muted);
-        border-radius: 4px;
-        padding: 1px 5px;
-      }
-
-      .guard-group {
-        max-width: 720px;
-        margin-bottom: 24px;
-      }
-
-      .guard-group-name {
-        font-size: 13px;
-        font-weight: 600;
-        color: var(--foreground);
-        margin-bottom: 4px;
-      }
-
-      .guard-group-file {
-        font-size: 11.5px;
-        color: var(--muted-foreground);
-        margin-bottom: 10px;
-      }
-
-      .guard-group-error {
-        font-size: 12px;
-        color: var(--destructive);
-        background: hsl(347 100% 49% / 0.08);
-        border: 1px solid var(--destructive);
-        border-radius: var(--radius-sm);
-        padding: 8px 12px;
-        margin-bottom: 10px;
-      }
-
-      .guard-param {
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-md);
-        padding: 14px 16px;
-        margin-bottom: 10px;
-      }
-
-      .guard-param-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-        margin-bottom: 4px;
-      }
-
-      .guard-param-label {
-        font-size: 13.5px;
-        font-weight: 600;
-      }
-
-      .guard-param-desc {
-        font-size: 12px;
-        color: var(--muted-foreground);
-        line-height: 1.6;
-        margin-bottom: 6px;
-      }
-
-      .guard-param-path {
-        font-size: 11.5px;
-        color: var(--muted-foreground);
-        margin-bottom: 6px;
-      }
-
-      .guard-param-actual {
-        font-size: 12px;
-        margin-bottom: 8px;
-        word-break: break-all;
-      }
-
-      .guard-param-actual.ok {
-        color: var(--success);
-      }
-
-      .guard-param-actual.bad {
-        color: var(--destructive);
-      }
-
-      .guard-param-controls {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        flex-wrap: wrap;
-      }
-
-      .guard-value-input {
-        flex: 1;
-        min-width: 120px;
-      }
-
-      .guard-textarea {
-        width: 100%;
-        min-height: 120px;
-        margin-bottom: 8px;
-        padding: 8px 12px;
-        background: var(--background);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        color: var(--foreground);
-        font-size: 12px;
-        font-family: var(--font-mono);
-        line-height: 1.6;
-        outline: none;
-        resize: vertical;
-        user-select: text;
-      }
-
-      .guard-textarea:focus {
-        border-color: var(--interactive);
-      }
-
-      .guard-bool-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-
-      .guard-bool-label {
-        font-size: 12px;
-        color: var(--muted-foreground);
-      }
-
-      .toggle-switch.disabled {
-        opacity: 0.45;
-        cursor: not-allowed;
-      }
-
-      .guard-param-meta {
-        font-size: 11px;
-        color: var(--muted-foreground);
-        margin-top: 8px;
-      }
-
-      .guard-default-hint {
-        font-size: 11px;
-        color: var(--muted-foreground);
-      }
-
-      .guard-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 8px;
-      }
-      .guard-header .section-heading {
-        margin: 0;
-      }
-      .guard-header-switch .switch-row {
-        padding: 0;
-      }
-      .guard-header-switch .switch-label {
-        font-size: 13px;
-        color: var(--muted-foreground);
-      }
-
-      .guard-subtitle {
-        font-size: 14px;
-        font-weight: 600;
-        margin: 24px 0 12px;
-        color: var(--foreground);
-      }
-
-      .guard-files-section {
-        margin-bottom: 8px;
-      }
-      .guard-files-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 12px;
-      }
-      .guard-files-header .guard-subtitle {
-        margin: 0;
-      }
-      .guard-files-toggle {
-        font-size: 12px;
-        color: var(--interactive);
-        cursor: pointer;
-        padding: 4px 8px;
-        border-radius: var(--radius-sm);
-      }
-      .guard-files-toggle:hover {
-        background: hsl(215 100% 50% / 0.1);
-      }
-
-      .guard-files-list {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-        gap: 10px;
-        margin-bottom: 8px;
-      }
-      .guard-file-card {
-        padding: 12px;
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-md);
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-      }
-      .guard-file-card-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-      }
-      .guard-file-name {
-        font-size: 13px;
-        font-weight: 600;
-      }
-      .guard-file-format {
-        font-size: 10px;
-        padding: 2px 6px;
-        border-radius: 4px;
-        background: hsl(215 100% 50% / 0.1);
-        color: var(--interactive);
-        text-transform: uppercase;
-      }
-      .guard-file-path {
-        font-size: 11px;
-        font-family: monospace;
-        color: var(--muted-foreground);
-        word-break: break-all;
-      }
-      .guard-file-detect {
-        font-size: 11px;
-        color: var(--muted-foreground);
-        word-break: break-all;
-      }
-      .guard-file-actions {
-        display: flex;
-        gap: 4px;
-        margin-top: 4px;
-      }
-      .guard-file-btn {
-        font-size: 11px;
-        padding: 4px 8px;
-        background: none;
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        color: var(--muted-foreground);
-        cursor: pointer;
-      }
-      .guard-file-btn:hover {
-        color: var(--foreground);
-        border-color: var(--muted-foreground);
-      }
-      .guard-file-btn.danger:hover {
-        color: var(--destructive);
-        border-color: var(--destructive);
-      }
-
-      .guard-group-add {
-        margin-top: 12px;
-        text-align: center;
-      }
-      .guard-group-add button {
-        font-size: 12px;
-        color: var(--interactive);
-        background: none;
-        border: 1px dashed var(--border);
-        padding: 8px 16px;
-        border-radius: var(--radius-md);
-        cursor: pointer;
-      }
-      .guard-group-add button:hover {
-        border-color: var(--interactive);
-      }
-
-      .guard-param-delete {
-        color: var(--destructive);
-        background: none;
-        border: none;
-        cursor: pointer;
-        font-size: 12px;
-        padding: 4px 8px;
-        border-radius: var(--radius-sm);
-      }
-      .guard-param-delete:hover {
-        background: hsl(347 100% 49% / 0.1);
-      }
-
-      .guard-add-section {
-        margin-top: 24px;
-        padding-top: 20px;
-        border-top: 1px solid var(--border);
-      }
-
-      .guard-add-toggle {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        cursor: pointer;
-        padding: 8px 0;
-        color: var(--muted-foreground);
-        font-size: 13px;
-      }
-      .guard-add-toggle:hover {
-        color: var(--foreground);
-      }
-
-      .guard-add-form {
-        margin-top: 12px;
-        padding: 16px;
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-md);
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-      }
-
-      .guard-form-row {
-        display: flex;
-        gap: 12px;
-      }
-      .guard-form-row > * {
-        flex: 1;
-      }
-
-      .guard-form-label {
-        font-size: 12px;
-        color: var(--muted-foreground);
-        margin-bottom: 4px;
-        display: block;
-      }
-
-      .guard-form-input,
-      .guard-form-select,
-      .guard-form-textarea {
-        width: 100%;
-        padding: 8px 10px;
-        background: var(--background);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        color: var(--foreground);
-        font-size: 13px;
-        font-family: inherit;
-        box-sizing: border-box;
-      }
-      .guard-form-textarea {
-        min-height: 80px;
-        resize: vertical;
-      }
-      .guard-form-input:focus,
-      .guard-form-select:focus,
-      .guard-form-textarea:focus {
-        outline: none;
-        border-color: var(--interactive);
-      }
-
-      .guard-form-prefix {
-        color: var(--muted-foreground);
-        font-size: 12px;
-        margin-right: 4px;
-      }
-
-      .guard-advanced-link {
-        margin-top: 12px;
-        text-align: center;
-      }
-      .guard-advanced-link button {
-        background: none;
-        border: none;
-        color: var(--interactive);
-        font-size: 12px;
-        cursor: pointer;
-        padding: 4px 8px;
-      }
-      .guard-advanced-link button:hover {
-        text-decoration: underline;
-      }
-
-      /* ============ Modal ============ */
-      .modal-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.4);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 100;
-      }
-      .modal-card {
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-md);
-        padding: 20px;
-        width: 440px;
-        max-width: 90vw;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-        box-shadow: var(--shadow-sm);
-      }
-      .modal-title {
-        margin: 0;
-        font-size: 15px;
-      }
-
-      /* ============ Toast ============ */
-      .toast-container {
-        position: fixed;
-        bottom: 24px;
-        right: 24px;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        z-index: 1000;
-      }
-
-      .toast {
-        padding: 12px 20px;
-        border-radius: var(--radius-sm);
-        font-size: 13px;
-        max-width: 400px;
-        background: var(--card);
-        border: 1px solid var(--border);
-        box-shadow: var(--shadow-sm);
-        color: var(--foreground);
-        animation: slideIn 150ms var(--ease-geist);
-      }
-
-      .toast.success {
-        border-left: 3px solid var(--success);
-      }
-      .toast.error {
-        border-left: 3px solid var(--destructive);
-      }
-      .toast.info {
-        border-left: 3px solid var(--interactive);
-      }
-
-      @keyframes slideIn {
-        from {
-          transform: translateX(100%);
-          opacity: 0;
-        }
-        to {
-          transform: translateX(0);
-          opacity: 1;
-        }
-      }
-      /* ============ Theme Cards（外观） ============ */
-      .theme-cards {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 14px;
-      }
-
-      .theme-card {
-        position: relative;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 10px;
-        padding: 12px 12px 10px;
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-md);
-        cursor: pointer;
-        color: var(--foreground);
-        font-family: var(--font-sans);
-        transition: border-color 150ms var(--ease-geist), background 150ms var(--ease-geist),
-          box-shadow 150ms var(--ease-geist);
-      }
-
-      .theme-card:hover {
-        background: var(--muted);
-      }
-
-      .theme-card.selected {
-        border-color: var(--interactive);
-        background: hsl(215 100% 50% / 0.06);
-        box-shadow: var(--shadow-sm);
-      }
-
-      .theme-check {
-        position: absolute;
-        top: 8px;
-        right: 8px;
-        width: 16px;
-        height: 16px;
-        border-radius: 50%;
-        background: var(--interactive);
-        color: #ffffff;
-        display: none;
-        align-items: center;
-        justify-content: center;
-      }
-
-      .theme-card.selected .theme-check {
-        display: flex;
-      }
-
-      /* 主题微缩预览：纯 CSS 绘制的迷你窗口 */
-      .theme-preview {
-        display: flex;
-        width: 100%;
-        height: 64px;
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        overflow: hidden;
-        pointer-events: none;
-        user-select: none;
-      }
-
-      .tp-window {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-      }
-
-      .tp-window + .tp-window {
-        border-left: 1px solid var(--border);
-      }
-
-      .tp-light {
-        background: #f4f4f5;
-      }
-
-      .tp-dark {
-        background: #17171a;
-      }
-
-      .tp-title {
-        display: flex;
-        align-items: center;
-        gap: 3px;
-        padding: 4px 5px;
-      }
-
-      .tp-light .tp-title {
-        background: #ffffff;
-        border-bottom: 1px solid #e4e4e7;
-      }
-
-      .tp-dark .tp-title {
-        background: #202023;
-        border-bottom: 1px solid #2e2e33;
-      }
-
-      .tp-title i {
-        width: 4px;
-        height: 4px;
-        border-radius: 50%;
-      }
-
-      .tp-title i:nth-child(1) { background: #ee6a5f; }
-      .tp-title i:nth-child(2) { background: #f5bd4f; }
-      .tp-title i:nth-child(3) { background: #61c454; }
-
-      .tp-body {
-        flex: 1;
-        display: flex;
-        gap: 5px;
-        padding: 5px;
-      }
-
-      .tp-side {
-        display: flex;
-        flex-direction: column;
-        gap: 3px;
-        width: 14px;
-      }
-
-      .tp-main {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        gap: 3px;
-        padding-top: 1px;
-      }
-
-      .tp-side i,
-      .tp-main i {
-        display: block;
-        height: 3px;
-        border-radius: 2px;
-      }
-
-      .tp-main i:nth-child(2) { width: 75%; }
-      .tp-main i:nth-child(3) { width: 55%; }
-
-      .tp-light .tp-side i { background: #d4d4d8; }
-      .tp-light .tp-main i { background: #e4e4e7; }
-      .tp-dark .tp-side i { background: #333338; }
-      .tp-dark .tp-main i { background: #2b2b30; }
-
-      .theme-name {
-        font-size: 12.5px;
-        font-weight: 600;
-      }
-
-      .appearance-desc {
-        margin-top: 14px;
-        font-size: 12px;
-        color: var(--muted-foreground);
-        line-height: 1.6;
-      }
-
-      /* ============ Switch Row（带描述的开关行） ============ */
-      .switch-row {
-        display: flex;
-        align-items: flex-start;
-        gap: 10px;
-        cursor: pointer;
-        padding: 4px 0;
-      }
-
-      .switch-row .toggle-switch {
-        margin-top: 1px;
-        margin-left: auto;
-        flex-shrink: 0;
-      }
-
-      .switch-text {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-      }
-
-      .switch-label {
-        font-size: 13px;
-        font-weight: 500;
-        color: var(--foreground);
-      }
-
-      .switch-desc {
-        font-size: 12px;
-        color: var(--muted-foreground);
-        line-height: 1.5;
-      }
-    </style>
   </head>
-  <body>
-    <div class="app">
-      <!-- ============ Header ============ -->
-      <header class="header">
-        <div class="logo">Dashi Taskboard Launcher</div>
-        <div class="header-actions">
-          <button class="header-btn active" id="btn-home" onclick="showHome()" data-i18n="Home">Home</button>
-          <button class="header-btn" id="btn-skill" onclick="showSkill()">Skill</button>
-          <button class="header-btn" id="btn-guard" onclick="showGuard()" data-i18n="Guard">Guard</button>
-          <button class="header-btn" id="btn-settings" onclick="toggleSettings()" data-i18n="Settings">Settings</button>
-        </div>
-      </header>
+  <body class="flex h-screen select-none flex-col overflow-hidden bg-base-100 font-sans text-base-content antialiased">
+    <!-- ============ Header ============ -->
+    <header class="flex shrink-0 items-center justify-between border-b border-base-300 px-4 py-2.5">
+      <div class="text-sm font-semibold">Dashi Taskboard Launcher</div>
+      <div class="flex items-center gap-1">
+        <button class="header-btn active" id="btn-home" data-i18n="Home">Home</button>
+        <button class="header-btn" id="btn-skill">Skill</button>
+        <button class="header-btn" id="btn-guard" data-i18n="Guard">Guard</button>
+        <button class="header-btn" id="btn-settings" data-i18n="Settings">Settings</button>
+      </div>
+    </header>
 
-      <!-- ============ Main View ============ -->
-      <main class="main-view" id="main-view">
-        <!-- Action Bar -->
-        <div class="action-bar">
-          <button class="btn btn-primary btn-large" id="btn-start-all" onclick="startAll()" data-i18n="Start All">
-            Start All
-          </button>
-          <button class="btn btn-danger btn-large" id="btn-stop-all" onclick="stopAll()" disabled data-i18n="Stop All">
-            Stop All
-          </button>
-        </div>
+    <!-- ============ Main View ============ -->
+    <main class="flex-1 overflow-y-auto p-6" id="main-view">
+      <div class="mb-6 flex gap-3">
+        <button class="btn btn-primary btn-lg" id="btn-start-all" data-i18n="Start All">Start All</button>
+        <button class="btn btn-error btn-lg" id="btn-stop-all" disabled data-i18n="Stop All">Stop All</button>
+      </div>
 
-        <!-- Status Grid -->
-        <div class="section-title" data-i18n="Service Status">Service Status</div>
-        <div class="status-grid">
-          <!-- Taskboard Card -->
-          <div class="status-card">
-            <div class="status-card-header">
-              <div class="status-card-title" data-i18n="Taskboard Server">Taskboard Server</div>
-              <div class="status-badge stopped" id="badge-taskboard">
-                <span class="dot"></span>
-                <span id="badge-taskboard-text" data-i18n="Stopped">Stopped</span>
-              </div>
-            </div>
-            <div class="status-message mono" id="msg-taskboard" data-i18n="Not started">Not started</div>
-            <div class="status-actions">
-              <button class="btn btn-secondary btn-sm" id="btn-start-tb" onclick="startTaskboard()" data-i18n="Start">Start</button>
-              <button class="btn btn-secondary btn-sm" id="btn-stop-tb" onclick="stopTaskboard()" disabled data-i18n="Stop">Stop</button>
-              <button class="btn btn-secondary btn-sm" id="btn-open-tb" onclick="openTaskboard()" disabled data-i18n="Open">Open</button>
+      <div class="mb-3 text-sm font-semibold" data-i18n="Service Status">Service Status</div>
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div class="rounded-box flex flex-col gap-3 border border-base-300 bg-base-100 p-4">
+          <div class="flex items-center justify-between">
+            <div class="text-sm font-medium" data-i18n="Taskboard Server">Taskboard Server</div>
+            <div class="status-badge stopped" id="badge-taskboard">
+              <span class="dot"></span>
+              <span id="badge-taskboard-text" data-i18n="Stopped">Stopped</span>
             </div>
           </div>
-
-          <!-- Injector Card -->
-          <div class="status-card">
-            <div class="status-card-header">
-              <div class="status-card-title" data-i18n="Codex Injector">Codex Injector</div>
-              <div class="status-badge stopped" id="badge-injector">
-                <span class="dot"></span>
-                <span id="badge-injector-text" data-i18n="Stopped">Stopped</span>
-              </div>
-            </div>
-            <div class="status-message mono" id="msg-injector" data-i18n="Not started">Not started</div>
-            <div class="status-actions">
-              <button class="btn btn-secondary btn-sm" id="btn-start-inj" onclick="startInjector()" data-i18n="Start">Start</button>
-              <button class="btn btn-secondary btn-sm" id="btn-stop-inj" onclick="stopInjector()" disabled data-i18n="Stop">Stop</button>
-            </div>
+          <div class="min-h-8 truncate font-mono text-xs opacity-70" id="msg-taskboard" data-i18n="Not started">Not started</div>
+          <div class="flex gap-2">
+            <button class="btn btn-secondary btn-sm" id="btn-start-tb" data-i18n="Start">Start</button>
+            <button class="btn btn-secondary btn-sm" id="btn-stop-tb" disabled data-i18n="Stop">Stop</button>
+            <button class="btn btn-secondary btn-sm" id="btn-open-tb" disabled data-i18n="Open">Open</button>
           </div>
         </div>
-      </main>
 
-      <!-- ============ Settings View ============ -->
-      <main class="settings-view hidden" id="settings-view">
-        <!-- Sidebar -->
-        <nav class="settings-sidebar">
-          <button class="nav-item active" id="nav-general" onclick="switchSection('general')">
+        <div class="rounded-box flex flex-col gap-3 border border-base-300 bg-base-100 p-4">
+          <div class="flex items-center justify-between">
+            <div class="text-sm font-medium" data-i18n="Codex Injector">Codex Injector</div>
+            <div class="status-badge stopped" id="badge-injector">
+              <span class="dot"></span>
+              <span id="badge-injector-text" data-i18n="Stopped">Stopped</span>
+            </div>
+          </div>
+          <div class="min-h-8 truncate font-mono text-xs opacity-70" id="msg-injector" data-i18n="Not started">Not started</div>
+          <div class="flex gap-2">
+            <button class="btn btn-secondary btn-sm" id="btn-start-inj" data-i18n="Start">Start</button>
+            <button class="btn btn-secondary btn-sm" id="btn-stop-inj" disabled data-i18n="Stop">Stop</button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ============ Settings View ============ -->
+    <main class="hidden min-h-0 flex-1" id="settings-view">
+      <div class="flex h-full">
+        <nav class="flex w-44 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-base-300 p-3">
+          <button class="nav-item active" id="nav-general">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
             <span data-i18n="General">General</span>
           </button>
-          <button class="nav-item" id="nav-appearance" onclick="switchSection('appearance')">
+          <button class="nav-item" id="nav-appearance">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
             <span data-i18n="Appearance">Appearance</span>
           </button>
-          <button class="nav-item" id="nav-network" onclick="switchSection('network')">
+          <button class="nav-item" id="nav-network">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
             <span data-i18n="Network">Network</span>
           </button>
-          <button class="nav-item" id="nav-mode" onclick="switchSection('mode')">
+          <button class="nav-item" id="nav-mode">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg>
             <span data-i18n="Mode">Mode</span>
           </button>
-          <button class="nav-item" id="nav-guard" onclick="switchSection('guard')">
+          <button class="nav-item" id="nav-guard">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
             <span data-i18n="Guard">Guard</span>
           </button>
-          <button class="nav-item" id="nav-integration" onclick="switchSection('integration')">
+          <button class="nav-item" id="nav-integration">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
             <span data-i18n="Integrations">Integrations</span>
           </button>
-          <button class="nav-item" id="nav-about" onclick="switchSection('about')">
+          <button class="nav-item" id="nav-about">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
             <span data-i18n="About">About</span>
           </button>
         </nav>
 
-        <!-- Content -->
-        <div class="settings-content">
+        <div class="flex-1 overflow-y-auto p-6">
           <!-- General Section -->
           <section class="settings-section" id="section-general">
-            <h2 class="section-heading" data-i18n="General">General</h2>
+            <h2 class="mb-4 text-base font-semibold" data-i18n="General">General</h2>
 
-            <div class="config-row">
-              <label class="config-label" data-i18n="Language">Language</label>
-              <div class="theme-cards" style="flex:1;">
-                <button type="button" class="theme-card" id="lang-card-system" onclick="setLanguage('system')">
-                  <span class="theme-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
-                  <span class="theme-name" data-i18n="Follow System">Follow System</span>
+            <div class="flex items-start gap-4 border-b border-base-200 py-4">
+              <label class="w-36 shrink-0 pt-1 text-sm font-medium" data-i18n="Language">Language</label>
+              <div class="flex flex-1 gap-3">
+                <button type="button" class="select-card" id="lang-card-system">
+                  <span class="select-card-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+                  <span class="text-sm" data-i18n="Follow System">Follow System</span>
                 </button>
-                <button type="button" class="theme-card" id="lang-card-en" onclick="setLanguage('en')">
-                  <span class="theme-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
-                  <span class="theme-name" data-i18n="English">English</span>
+                <button type="button" class="select-card" id="lang-card-en">
+                  <span class="select-card-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+                  <span class="text-sm" data-i18n="English">English</span>
                 </button>
-                <button type="button" class="theme-card" id="lang-card-zh-CN" onclick="setLanguage('zh-CN')">
-                  <span class="theme-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
-                  <span class="theme-name" data-i18n="中文">中文</span>
+                <button type="button" class="select-card" id="lang-card-zh-CN">
+                  <span class="select-card-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+                  <span class="text-sm" data-i18n="中文">中文</span>
                 </button>
               </div>
             </div>
 
-            <div class="config-row">
-              <label class="config-label" for="cfg-path" data-i18n="Taskboard Path">Taskboard Path</label>
-              <div class="config-input-group">
-                <input type="text" class="config-input mono" id="cfg-path" placeholder="/path/to/dashi-taskboard" oninput="onConfigChange()" />
-                <button class="btn btn-secondary btn-sm" onclick="browsePath()" data-i18n="Browse">Browse</button>
-                <button class="btn btn-secondary btn-sm" id="btn-use-bundled" onclick="useBundledTaskboard()" data-i18n="Use Bundled">Use Bundled</button>
+            <div class="flex items-start gap-4 border-b border-base-200 py-4">
+              <label class="w-36 shrink-0 pt-2 text-sm font-medium" for="cfg-path" data-i18n="Taskboard Path">Taskboard Path</label>
+              <div class="flex flex-1 items-center gap-2">
+                <input type="text" class="input w-full font-mono text-sm" id="cfg-path" placeholder="/path/to/dashi-taskboard" />
+                <button class="btn btn-secondary btn-sm" id="btn-browse-path" data-i18n="Browse">Browse</button>
+                <button class="btn btn-secondary btn-sm" id="btn-use-bundled" data-i18n="Use Bundled">Use Bundled</button>
                 <span class="config-validate" id="validate-path"></span>
               </div>
             </div>
 
-            <div class="config-row">
-              <label class="config-label" for="cfg-node" data-i18n="Node.js Path">Node.js Path</label>
-              <div class="config-input-group">
-                <input type="text" class="config-input mono" id="cfg-node" placeholder="Leave empty to use node from PATH" data-i18n-placeholder="Leave empty to use node from PATH" oninput="onConfigChange()" />
-                <button class="btn btn-secondary btn-sm" onclick="browseNode()" data-i18n="Browse">Browse</button>
+            <div class="flex items-start gap-4 border-b border-base-200 py-4">
+              <label class="w-36 shrink-0 pt-2 text-sm font-medium" for="cfg-node" data-i18n="Node.js Path">Node.js Path</label>
+              <div class="flex flex-1 items-center gap-2">
+                <input type="text" class="input w-full font-mono text-sm" id="cfg-node" placeholder="Leave empty to use node from PATH" data-i18n-placeholder="Leave empty to use node from PATH" />
+                <button class="btn btn-secondary btn-sm" id="btn-browse-node" data-i18n="Browse">Browse</button>
                 <span class="config-validate" id="validate-node"></span>
               </div>
             </div>
 
-            <div class="config-row">
-              <label class="config-label" for="cfg-codex" data-i18n="Codex App Path">Codex App Path</label>
-              <div class="config-input-group">
-                <input type="text" class="config-input mono" id="cfg-codex" placeholder="/Applications/ChatGPT.app" oninput="onConfigChange()" />
-                <button class="btn btn-secondary btn-sm" onclick="browseCodex()" data-i18n="Browse">Browse</button>
+            <div class="flex items-start gap-4 border-b border-base-200 py-4">
+              <label class="w-36 shrink-0 pt-2 text-sm font-medium" for="cfg-codex" data-i18n="Codex App Path">Codex App Path</label>
+              <div class="flex flex-1 items-center gap-2">
+                <input type="text" class="input w-full font-mono text-sm" id="cfg-codex" placeholder="/Applications/ChatGPT.app" />
+                <button class="btn btn-secondary btn-sm" id="btn-browse-codex" data-i18n="Browse">Browse</button>
                 <span class="config-validate" id="validate-codex"></span>
               </div>
             </div>
 
-            <div class="config-row">
-              <label class="config-label" data-i18n="System Behavior">System Behavior</label>
-              <div class="switch-row" onclick="toggleTrayMinimize()">
-                <div class="switch-text">
-                  <span class="switch-label" data-i18n="Minimize to tray when closing window">Minimize to tray when closing window</span>
-                  <span class="switch-desc" data-i18n="When enabled, the close button hides the window and the app keeps running in the system tray.">When enabled, the close button hides the window and the app keeps running in the system tray.</span>
-                </div>
-                <div class="toggle-switch" id="toggle-tray"></div>
-              </div>
-              <div class="switch-row" onclick="toggleAutostart()">
-                <div class="switch-text">
-                  <span class="switch-label" data-i18n="Launch at login">Launch at login</span>
-                  <span class="switch-desc" data-i18n="When enabled, the app starts silently in the system tray when you log in.">When enabled, the app starts silently in the system tray when you log in.</span>
-                </div>
-                <div class="toggle-switch" id="toggle-autostart"></div>
-              </div>
-            </div>
-
-            <div class="config-row">
-              <label class="config-label" data-i18n="Logs">Logs</label>
-              <div class="switch-row" onclick="openLogDir()">
-                <div class="switch-text">
-                  <span class="switch-label" data-i18n="Open log folder">Open log folder</span>
-                  <span class="switch-desc" data-i18n="Logs are written to files only; open the folder when something goes wrong.">Logs are written to files only; open the folder when something goes wrong.</span>
-                </div>
-                <button class="btn btn-secondary btn-sm" data-i18n="Open">Open</button>
+            <div class="flex items-start gap-4 border-b border-base-200 py-4">
+              <label class="w-36 shrink-0 pt-1 text-sm font-medium" data-i18n="System Behavior">System Behavior</label>
+              <div class="flex flex-1 flex-col gap-2">
+                <label class="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-base-300 p-3">
+                  <span class="flex flex-col gap-0.5">
+                    <span class="text-sm" data-i18n="Minimize to tray when closing window">Minimize to tray when closing window</span>
+                    <span class="text-xs opacity-60" data-i18n="When enabled, the close button hides the window and the app keeps running in the system tray.">When enabled, the close button hides the window and the app keeps running in the system tray.</span>
+                  </span>
+                  <input type="checkbox" class="toggle toggle-accent" id="toggle-tray" />
+                </label>
+                <label class="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-base-300 p-3">
+                  <span class="flex flex-col gap-0.5">
+                    <span class="text-sm" data-i18n="Launch at login">Launch at login</span>
+                    <span class="text-xs opacity-60" data-i18n="When enabled, the app starts silently in the system tray when you log in.">When enabled, the app starts silently in the system tray when you log in.</span>
+                  </span>
+                  <input type="checkbox" class="toggle toggle-accent" id="toggle-autostart" />
+                </label>
               </div>
             </div>
 
+            <div class="flex items-start gap-4 py-4">
+              <label class="w-36 shrink-0 pt-1 text-sm font-medium" data-i18n="Logs">Logs</label>
+              <div class="flex flex-1 items-center justify-between gap-4 rounded-lg border border-base-300 p-3">
+                <span class="flex flex-col gap-0.5">
+                  <span class="text-sm" data-i18n="Open log folder">Open log folder</span>
+                  <span class="text-xs opacity-60" data-i18n="Logs are written to files only; open the folder when something goes wrong.">Logs are written to files only; open the folder when something goes wrong.</span>
+                </span>
+                <button class="btn btn-secondary btn-sm" id="btn-open-logs" data-i18n="Open">Open</button>
+              </div>
+            </div>
           </section>
 
           <!-- Appearance Section -->
           <section class="settings-section hidden" id="section-appearance">
-            <h2 class="section-heading" data-i18n="Appearance">Appearance</h2>
+            <h2 class="mb-4 text-base font-semibold" data-i18n="Appearance">Appearance</h2>
 
-            <div class="theme-cards">
-              <button type="button" class="theme-card" id="theme-card-system" onclick="setTheme('system')">
-                <span class="theme-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
-                <span class="theme-preview">
-                  <span class="tp-window tp-light">
-                    <span class="tp-title"><i></i><i></i><i></i></span>
-                    <span class="tp-body"><span class="tp-side"><i></i><i></i><i></i></span><span class="tp-main"><i></i><i></i><i></i></span></span>
-                  </span>
-                  <span class="tp-window tp-dark">
-                    <span class="tp-title"><i></i><i></i><i></i></span>
-                    <span class="tp-body"><span class="tp-side"><i></i><i></i><i></i></span><span class="tp-main"><i></i><i></i><i></i></span></span>
-                  </span>
-                </span>
-                <span class="theme-name" data-i18n="Follow System">Follow System</span>
+            <div class="mb-2 text-sm font-medium" data-i18n="Theme">Theme</div>
+            <div class="mb-6 grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6" id="theme-family-grid">
+              <!-- 由 JS 按主题族配对表渲染色板卡 -->
+            </div>
+
+            <div class="mb-2 text-sm font-medium" data-i18n="Mode">Mode</div>
+            <div class="flex gap-3">
+              <button type="button" class="select-card" id="theme-card-system" aria-pressed="false">
+                <span class="select-card-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+                <span class="mode-preview"><span class="mp-light h-full w-1/2"></span><span class="mp-dark h-full w-1/2"></span></span>
+                <span class="text-sm" data-i18n="Follow System">Follow System</span>
               </button>
-
-              <button type="button" class="theme-card" id="theme-card-light" onclick="setTheme('light')">
-                <span class="theme-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
-                <span class="theme-preview">
-                  <span class="tp-window tp-light">
-                    <span class="tp-title"><i></i><i></i><i></i></span>
-                    <span class="tp-body"><span class="tp-side"><i></i><i></i><i></i></span><span class="tp-main"><i></i><i></i><i></i></span></span>
-                  </span>
-                </span>
-                <span class="theme-name" data-i18n="Light">Light</span>
+              <button type="button" class="select-card" id="theme-card-light" aria-pressed="false">
+                <span class="select-card-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+                <span class="mode-preview"><span class="mp-light h-full w-full"></span></span>
+                <span class="text-sm" data-i18n="Light">Light</span>
               </button>
-
-              <button type="button" class="theme-card" id="theme-card-dark" onclick="setTheme('dark')">
-                <span class="theme-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
-                <span class="theme-preview">
-                  <span class="tp-window tp-dark">
-                    <span class="tp-title"><i></i><i></i><i></i></span>
-                    <span class="tp-body"><span class="tp-side"><i></i><i></i><i></i></span><span class="tp-main"><i></i><i></i><i></i></span></span>
-                  </span>
-                </span>
-                <span class="theme-name" data-i18n="Dark">Dark</span>
+              <button type="button" class="select-card" id="theme-card-dark" aria-pressed="false">
+                <span class="select-card-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+                <span class="mode-preview"><span class="mp-dark h-full w-full"></span></span>
+                <span class="text-sm" data-i18n="Dark">Dark</span>
               </button>
             </div>
 
-            <p class="appearance-desc" data-i18n="Theme changes apply immediately. With Follow System, the theme switches automatically with the OS appearance.">Theme changes apply immediately. With Follow System, the theme switches automatically with the OS appearance.</p>
+            <p class="mt-4 text-xs opacity-60" data-i18n="Theme changes apply immediately. With Follow System, the theme switches automatically with the OS appearance.">Theme changes apply immediately. With Follow System, the theme switches automatically with the OS appearance.</p>
           </section>
 
           <!-- Network Section -->
           <section class="settings-section hidden" id="section-network">
-            <h2 class="section-heading" data-i18n="Network">Network</h2>
+            <h2 class="mb-4 text-base font-semibold" data-i18n="Network">Network</h2>
 
-            <div class="config-row">
-              <label class="config-label" for="cfg-host" data-i18n="Taskboard Host">Taskboard Host</label>
-              <input type="text" class="config-input mono" id="cfg-host" value="127.0.0.1" oninput="onConfigChange()" />
+            <div class="flex items-start gap-4 border-b border-base-200 py-4">
+              <label class="w-36 shrink-0 pt-2 text-sm font-medium" for="cfg-host" data-i18n="Taskboard Host">Taskboard Host</label>
+              <input type="text" class="input w-full max-w-xs font-mono text-sm" id="cfg-host" value="127.0.0.1" />
             </div>
 
-            <div class="config-row">
-              <label class="config-label" for="cfg-port" data-i18n="Taskboard Port">Taskboard Port</label>
-              <input type="number" class="config-input mono" id="cfg-port" value="47823" oninput="onConfigChange()" style="max-width: 200px;" />
+            <div class="flex items-start gap-4 border-b border-base-200 py-4">
+              <label class="w-36 shrink-0 pt-2 text-sm font-medium" for="cfg-port" data-i18n="Taskboard Port">Taskboard Port</label>
+              <input type="number" class="input w-full max-w-[200px] font-mono text-sm" id="cfg-port" value="47823" />
             </div>
 
-            <div class="config-row">
-              <label class="config-label" for="cfg-cdp" data-i18n="CDP Debug Port">CDP Debug Port</label>
-              <input type="number" class="config-input mono" id="cfg-cdp" value="9231" oninput="onConfigChange()" style="max-width: 200px;" />
+            <div class="flex items-start gap-4 py-4">
+              <label class="w-36 shrink-0 pt-2 text-sm font-medium" for="cfg-cdp" data-i18n="CDP Debug Port">CDP Debug Port</label>
+              <input type="number" class="input w-full max-w-[200px] font-mono text-sm" id="cfg-cdp" value="9231" />
             </div>
           </section>
 
           <!-- Mode Section -->
           <section class="settings-section hidden" id="section-mode">
-            <h2 class="section-heading" data-i18n="Mode">Mode</h2>
+            <h2 class="mb-4 text-base font-semibold" data-i18n="Mode">Mode</h2>
 
-            <div class="config-row">
-              <label class="config-label" data-i18n="Launch Mode">Launch Mode</label>
-              <div class="config-toggle">
-                <div class="toggle-switch" id="toggle-mode" onclick="toggleMode()"></div>
-                <span class="toggle-label" id="toggle-mode-label" data-i18n="Full launch mode (restarts Codex)">Full launch mode (restarts Codex)</span>
-              </div>
+            <div class="flex items-start gap-4 border-b border-base-200 py-4">
+              <label class="w-36 shrink-0 pt-1 text-sm font-medium" data-i18n="Launch Mode">Launch Mode</label>
+              <label class="flex flex-1 cursor-pointer items-center gap-3">
+                <input type="checkbox" class="toggle toggle-accent" id="toggle-mode" />
+                <span class="text-sm" id="toggle-mode-label" data-i18n="Full launch mode (restarts Codex)">Full launch mode (restarts Codex)</span>
+              </label>
             </div>
 
-            <div class="config-row">
-              <label class="config-label" data-i18n="Auto-open Browser">Auto-open Browser</label>
-              <div class="config-toggle">
-                <div class="toggle-switch active" id="toggle-auto-open" onclick="toggleAutoOpen()"></div>
-                <span class="toggle-label" id="toggle-auto-open-label" data-i18n="Open browser automatically on start">Open browser automatically on start</span>
-              </div>
+            <div class="flex items-start gap-4 py-4">
+              <label class="w-36 shrink-0 pt-1 text-sm font-medium" data-i18n="Auto-open Browser">Auto-open Browser</label>
+              <label class="flex flex-1 cursor-pointer items-center gap-3">
+                <input type="checkbox" class="toggle toggle-accent" id="toggle-auto-open" checked />
+                <span class="text-sm" id="toggle-auto-open-label" data-i18n="Open browser automatically on start">Open browser automatically on start</span>
+              </label>
             </div>
-
           </section>
 
           <!-- Guard Section -->
           <section class="settings-section hidden" id="section-guard">
-            <h2 class="section-heading" data-i18n="Config Guard">Config Guard</h2>
+            <h2 class="mb-4 text-base font-semibold" data-i18n="Config Guard">Config Guard</h2>
 
-            <div class="config-row">
-              <label class="config-label" data-i18n="Master Switch">Master Switch</label>
-              <div class="switch-row" onclick="toggleGuard()">
-                <div class="switch-text">
-                  <span class="switch-label" data-i18n="Enable Codex config guard">Enable Codex config guard</span>
-                  <span class="switch-desc" data-i18n="Manage and lock ~/.codex config parameters; locked params are reverted automatically when changed (only while this app is running, every 60 seconds).">Manage and lock ~/.codex config parameters; locked params are reverted automatically when changed (only while this app is running, every 60 seconds).</span>
-                </div>
-                <div class="toggle-switch" id="settings-guard-toggle"></div>
-              </div>
+            <div class="flex items-start gap-4 border-b border-base-200 py-4">
+              <label class="w-36 shrink-0 pt-1 text-sm font-medium" data-i18n="Master Switch">Master Switch</label>
+              <label class="flex flex-1 cursor-pointer items-center justify-between gap-4 rounded-lg border border-base-300 p-3">
+                <span class="flex flex-col gap-0.5">
+                  <span class="text-sm" data-i18n="Enable Codex config guard">Enable Codex config guard</span>
+                  <span class="text-xs opacity-60" data-i18n="Manage and lock ~/.codex config parameters; locked params are reverted automatically when changed (only while this app is running, every 60 seconds).">Manage and lock ~/.codex config parameters; locked params are reverted automatically when changed (only while this app is running, every 60 seconds).</span>
+                </span>
+                <input type="checkbox" class="toggle toggle-accent" id="settings-guard-toggle" />
+              </label>
             </div>
 
-            <div class="config-row">
-              <label class="config-label" data-i18n="Config Files">Config Files</label>
-              <div style="flex:1;">
-                <div class="guard-files-header">
-                  <span style="font-size:12px;color:var(--muted-foreground);" data-i18n="List of guarded files (built-in files cannot be removed)">List of guarded files (built-in files cannot be removed)</span>
-                  <div class="guard-files-toggle" onclick="toggleGuardFileForm()" data-i18n="+ Add File">+ Add File</div>
+            <div class="flex items-start gap-4 py-4">
+              <label class="w-36 shrink-0 pt-1 text-sm font-medium" data-i18n="Config Files">Config Files</label>
+              <div class="flex-1">
+                <div class="mb-2 flex items-center justify-between">
+                  <span class="text-xs opacity-60" data-i18n="List of guarded files (built-in files cannot be removed)">List of guarded files (built-in files cannot be removed)</span>
+                  <button class="btn btn-secondary btn-sm" id="guard-file-form-toggle" data-i18n="+ Add File">+ Add File</button>
                 </div>
-                <div class="guard-files-list" id="settings-guard-files"></div>
+                <div class="flex flex-col gap-2" id="settings-guard-files"></div>
               </div>
             </div>
           </section>
 
           <!-- Integration Section -->
           <section class="settings-section hidden" id="section-integration">
-            <h2 class="section-heading" data-i18n="Integrations">Integrations</h2>
+            <h2 class="mb-4 text-base font-semibold" data-i18n="Integrations">Integrations</h2>
 
-            <div class="config-row">
-              <label class="config-label">FastCtx</label>
-              <div class="switch-row" id="fastctx-row" onclick="toggleFastctx()">
-                <div class="switch-text">
-                  <span class="switch-label" data-i18n="Integrate fastctx repo tools (MCP)">Integrate fastctx repo tools (MCP)</span>
-                  <span class="switch-desc" data-i18n="Provides structured read/grep/glob/replace/run tools for Codex. Integrate = fastctx apply; unapply = fastctx unapply (removes ~/.fastctx managed data; the npm package stays and can be re-integrated anytime).">Provides structured read/grep/glob/replace/run tools for Codex. Integrate = fastctx apply; unapply = fastctx unapply (removes ~/.fastctx managed data; the npm package stays and can be re-integrated anytime).</span>
+            <div class="flex items-start gap-4 border-b border-base-200 py-4">
+              <label class="w-36 shrink-0 pt-1 text-sm font-medium">FastCtx</label>
+              <label class="flex flex-1 cursor-pointer items-center justify-between gap-4 rounded-lg border border-base-300 p-3" id="fastctx-row">
+                <span class="flex flex-col gap-0.5">
+                  <span class="text-sm" data-i18n="Integrate fastctx repo tools (MCP)">Integrate fastctx repo tools (MCP)</span>
+                  <span class="text-xs opacity-60" data-i18n="Provides structured read/grep/glob/replace/run tools for Codex. Integrate = fastctx apply; unapply = fastctx unapply (removes ~/.fastctx managed data; the npm package stays and can be re-integrated anytime).">Provides structured read/grep/glob/replace/run tools for Codex. Integrate = fastctx apply; unapply = fastctx unapply (removes ~/.fastctx managed data; the npm package stays and can be re-integrated anytime).</span>
+                </span>
+                <input type="checkbox" class="toggle toggle-accent" id="toggle-fastctx" />
+              </label>
+            </div>
+
+            <div class="flex items-start gap-4 border-b border-base-200 py-4">
+              <label class="w-36 shrink-0 pt-1 text-sm font-medium" data-i18n="Status">Status</label>
+              <div class="flex-1">
+                <div class="text-sm" id="fastctx-status" data-i18n="Detecting…">Detecting…</div>
+                <div class="mt-1.5 hidden text-xs opacity-60" id="fastctx-install-hint">
+                  <span data-i18n="fastctx not detected. Please run">fastctx not detected. Please run</span> <span class="font-mono">npm install --global fastctx</span> <span data-i18n="first (requires Node.js 18+), then return to this page.">first (requires Node.js 18+), then return to this page.</span>
                 </div>
-                <div class="toggle-switch" id="toggle-fastctx"></div>
               </div>
             </div>
 
-            <div class="config-row">
-              <label class="config-label" data-i18n="Status">Status</label>
-              <div style="flex:1;">
-                <div id="fastctx-status" style="font-size:13px;" data-i18n="Detecting…">Detecting…</div>
-                <div id="fastctx-install-hint" class="hidden" style="margin-top:6px;font-size:12px;color:var(--muted-foreground);">
-                  <span data-i18n="fastctx not detected. Please run">fastctx not detected. Please run</span> <span class="mono">npm install --global fastctx</span> <span data-i18n="first (requires Node.js 18+), then return to this page.">first (requires Node.js 18+), then return to this page.</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="config-row">
-              <label class="config-label" data-i18n="Console">Console</label>
-              <div style="flex:1;">
-                <button class="btn btn-secondary btn-sm" id="btn-fastctx-console" onclick="openFastctxConsole()" data-i18n="Open fastctx Console">Open fastctx Console</button>
-                <span style="font-size:12px;color:var(--muted-foreground);margin-left:8px;" data-i18n="Output tier, background jobs and updates are managed in the fastctx console">Output tier, background jobs and updates are managed in the fastctx console</span>
+            <div class="flex items-start gap-4 py-4">
+              <label class="w-36 shrink-0 pt-1 text-sm font-medium" data-i18n="Console">Console</label>
+              <div class="flex flex-1 items-center gap-2">
+                <button class="btn btn-secondary btn-sm" id="btn-fastctx-console" data-i18n="Open fastctx Console">Open fastctx Console</button>
+                <span class="text-xs opacity-60" data-i18n="Output tier, background jobs and updates are managed in the fastctx console">Output tier, background jobs and updates are managed in the fastctx console</span>
               </div>
             </div>
           </section>
 
           <!-- About Section -->
           <section class="settings-section hidden" id="section-about">
-            <h2 class="section-heading" data-i18n="About">About</h2>
+            <h2 class="mb-4 text-base font-semibold" data-i18n="About">About</h2>
 
-            <div class="about-row">
-              <span class="about-label" data-i18n="App Version">App Version</span>
-              <span class="about-value mono" id="about-version">-</span>
+            <div class="flex items-start gap-4 border-b border-base-200 py-3">
+              <span class="w-36 shrink-0 text-sm font-medium" data-i18n="App Version">App Version</span>
+              <span class="font-mono text-sm" id="about-version">-</span>
             </div>
 
-            <div class="about-row">
-              <span class="about-label" data-i18n="Update Source Status">Update Source Status</span>
-              <span class="about-value" id="updater-health" data-i18n="Checking...">Checking...</span>
+            <div class="flex items-start gap-4 border-b border-base-200 py-3">
+              <span class="w-36 shrink-0 text-sm font-medium" data-i18n="Update Source Status">Update Source Status</span>
+              <span class="text-sm" id="updater-health" data-i18n="Checking...">Checking...</span>
             </div>
 
-            <div class="about-row hidden" id="updater-help-row">
-              <span class="about-label" data-i18n="Configuration Help">Configuration Help</span>
-              <span class="about-value">
-                <a class="about-link" onclick="openUpdaterHelp('docs'); return false;" data-i18n="Setup Guide">Setup Guide</a>
+            <div class="hidden flex items-start gap-4 border-b border-base-200 py-3" id="updater-help-row">
+              <span class="w-36 shrink-0 text-sm font-medium" data-i18n="Configuration Help">Configuration Help</span>
+              <span class="text-sm">
+                <a class="link link-hover cursor-pointer text-accent" id="link-updater-docs" data-i18n="Setup Guide">Setup Guide</a>
                 ·
-                <a class="about-link" onclick="openUpdaterHelp('template'); return false;" data-i18n="Config Template">Config Template</a>
+                <a class="link link-hover cursor-pointer text-accent" id="link-updater-template" data-i18n="Config Template">Config Template</a>
               </span>
             </div>
 
-            <div class="about-row">
-              <span class="about-label"></span>
-              <button class="btn btn-secondary btn-sm" id="btn-check-update" onclick="checkUpdate()" data-i18n="Check for Updates">Check for Updates</button>
+            <div class="flex items-start gap-4 border-b border-base-200 py-3">
+              <span class="w-36 shrink-0 text-sm font-medium"></span>
+              <button class="btn btn-secondary btn-sm" id="btn-check-update" data-i18n="Check for Updates">Check for Updates</button>
             </div>
 
-            <div class="about-row hidden" id="update-available-row">
-              <span class="about-label" data-i18n="Available Update">Available Update</span>
-              <div class="update-info">
-                <span class="about-value mono" id="update-version"></span>
-                <span class="update-notes" id="update-notes"></span>
+            <div class="hidden flex items-start gap-4 border-b border-base-200 py-3" id="update-available-row">
+              <span class="w-36 shrink-0 text-sm font-medium" data-i18n="Available Update">Available Update</span>
+              <div class="flex flex-col gap-1">
+                <span class="font-mono text-sm" id="update-version"></span>
+                <span class="text-xs whitespace-pre-wrap opacity-70" id="update-notes"></span>
               </div>
             </div>
 
-            <div class="about-row hidden" id="update-progress-row">
-              <span class="about-label" data-i18n="Update Progress">Update Progress</span>
-              <div class="update-progress">
+            <div class="hidden flex items-start gap-4 border-b border-base-200 py-3" id="update-progress-row">
+              <span class="w-36 shrink-0 text-sm font-medium" data-i18n="Update Progress">Update Progress</span>
+              <div class="flex items-center gap-3">
                 <div class="update-progress-track"><div class="update-progress-bar" id="update-progress-bar"></div></div>
-                <span class="update-progress-text" id="update-progress-text"></span>
+                <span class="text-xs" id="update-progress-text"></span>
               </div>
             </div>
 
-            <div class="about-row">
-              <span class="about-label">GitHub</span>
-              <a class="about-link" id="link-github" onclick="openGithub(); return false;" data-i18n="Open in Browser">Open in Browser</a>
+            <div class="flex items-start gap-4 py-3">
+              <span class="w-36 shrink-0 text-sm font-medium">GitHub</span>
+              <a class="link link-hover cursor-pointer text-sm text-accent" id="link-github" data-i18n="Open in Browser">Open in Browser</a>
             </div>
           </section>
 
           <!-- Save Footer -->
-          <div class="settings-footer" id="settings-footer">
-            <button class="btn btn-primary" id="btn-save-config" onclick="saveConfig()" data-i18n="Save Settings">Save Settings</button>
+          <div class="mt-4 flex justify-end border-t border-base-300 pt-4" id="settings-footer">
+            <button class="btn btn-primary" id="btn-save-config" data-i18n="Save Settings">Save Settings</button>
           </div>
         </div>
-      </main>
+      </div>
+    </main>
 
-      <!-- ============ Skill View ============ -->
-      <main class="skill-view hidden" id="skill-view">
-        <h2 class="section-heading">Codex Skill</h2>
-        <div class="skill-card">
-          <div class="skill-status-row">
-            <span class="status-badge stopped" id="skill-status-badge">
-              <span class="dot"></span>
-              <span id="skill-status-text" data-i18n="Detecting…">Detecting…</span>
-            </span>
-            <span class="skill-target mono">~/.codex/skills/manage-taskboard</span>
-          </div>
-          <p class="skill-status-detail" id="skill-status-detail"></p>
-          <p class="skill-desc">
-            <span data-i18n="Install the">Install the</span> <code>manage-taskboard</code> <span data-i18n="Skill into Codex. Once installed, you can create, view and manage Taskboard tasks directly in Codex. Installation creates a symlink at">Skill into Codex. Once installed, you can create, view and manage Taskboard tasks directly in Codex. Installation creates a symlink at</span> <code>~/.codex/skills/manage-taskboard</code>
-            <span data-i18n="pointing to the Taskboard repository, so the Skill stays in sync with Taskboard updates.">pointing to the Taskboard repository, so the Skill stays in sync with Taskboard updates.</span>
-          </p>
-          <div class="skill-install-area">
-            <button class="btn btn-primary" id="btn-install-skill" onclick="installSkill()" data-i18n="Install Skill">Install Skill</button>
-            <div class="skill-result mono" id="skill-result"></div>
-          </div>
+    <!-- ============ Skill View ============ -->
+    <main class="hidden flex-1 overflow-y-auto p-6" id="skill-view">
+      <h2 class="mb-4 text-base font-semibold">Codex Skill</h2>
+      <div class="rounded-box flex max-w-2xl flex-col gap-4 border border-base-300 bg-base-100 p-5">
+        <div class="flex items-center gap-3">
+          <span class="status-badge stopped" id="skill-status-badge">
+            <span class="dot"></span>
+            <span id="skill-status-text" data-i18n="Detecting…">Detecting…</span>
+          </span>
+          <span class="font-mono text-xs opacity-60">~/.codex/skills/manage-taskboard</span>
         </div>
-      </main>
-
-      <!-- ============ Guard View ============ -->
-      <main class="guard-view hidden" id="guard-view">
-        <h2 class="section-heading" data-i18n="Config Guard">Config Guard</h2>
-        <p class="guard-hint">
-          <span data-i18n="Apply = write the parameter value into its file (auto-backup to">Apply = write the parameter value into its file (auto-backup to</span> <code>~/.codex/dashi-backups/</code> <span data-i18n="before writing); Lock = verify every 60 seconds and revert drift automatically. Locked parameters are read-only; unlock before editing. The master switch and file management are in Settings → Guard.">before writing); Lock = verify every 60 seconds and revert drift automatically. Locked parameters are read-only; unlock before editing. The master switch and file management are in Settings → Guard.</span>
+        <p class="text-sm opacity-80" id="skill-status-detail"></p>
+        <p class="text-sm leading-6 opacity-80">
+          <span data-i18n="Install the">Install the</span> <code class="rounded bg-base-200 px-1 font-mono text-xs">manage-taskboard</code> <span data-i18n="Skill into Codex. Once installed, you can create, view and manage Taskboard tasks directly in Codex. Installation creates a symlink at">Skill into Codex. Once installed, you can create, view and manage Taskboard tasks directly in Codex. Installation creates a symlink at</span> <code class="rounded bg-base-200 px-1 font-mono text-xs">~/.codex/skills/manage-taskboard</code>
+          <span data-i18n="pointing to the Taskboard repository, so the Skill stays in sync with Taskboard updates.">pointing to the Taskboard repository, so the Skill stays in sync with Taskboard updates.</span>
         </p>
+        <div class="flex flex-col gap-2">
+          <div><button class="btn btn-primary" id="btn-install-skill" data-i18n="Install Skill">Install Skill</button></div>
+          <div class="font-mono text-xs whitespace-pre-wrap opacity-70" id="skill-result"></div>
+        </div>
+      </div>
+    </main>
 
-        <div id="guard-groups"></div>
+    <!-- ============ Guard View ============ -->
+    <main class="hidden flex-1 overflow-y-auto p-6" id="guard-view">
+      <h2 class="mb-2 text-base font-semibold" data-i18n="Config Guard">Config Guard</h2>
+      <p class="mb-4 max-w-3xl text-xs leading-5 opacity-60">
+        <span data-i18n="Apply = write the parameter value into its file (auto-backup to">Apply = write the parameter value into its file (auto-backup to</span> <code class="rounded bg-base-200 px-1 font-mono">~/.codex/dashi-backups/</code> <span data-i18n="before writing); Lock = verify every 60 seconds and revert drift automatically. Locked parameters are read-only; unlock before editing. The master switch and file management are in Settings → Guard.">before writing); Lock = verify every 60 seconds and revert drift automatically. Locked parameters are read-only; unlock before editing. The master switch and file management are in Settings → Guard.</span>
+      </p>
 
-          <div class="guard-add-section">
-            <div class="guard-add-toggle" onclick="toggleGuardAddForm()">
-              <span data-i18n="+ Add Custom Parameter">+ Add Custom Parameter</span>
-              <span id="guard-add-arrow">▾</span>
+      <div class="flex max-w-4xl flex-col gap-4" id="guard-groups"></div>
+
+      <div class="mt-4 max-w-4xl">
+        <button class="btn btn-secondary w-full justify-between" id="guard-add-toggle">
+          <span data-i18n="+ Add Custom Parameter">+ Add Custom Parameter</span>
+          <span id="guard-add-arrow">▾</span>
+        </button>
+        <div class="mt-3 hidden flex flex-col gap-3 rounded-box border border-base-300 bg-base-100 p-4" id="guard-add-form">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="mb-1 block text-xs font-medium">ID</label>
+              <div class="flex items-center">
+                <span class="rounded-l-field border border-r-0 border-base-300 bg-base-200 px-2 py-2 font-mono text-xs opacity-70">custom.</span>
+                <input type="text" class="input w-full rounded-l-none font-mono text-sm" id="guard-add-id" placeholder="my_param" />
+              </div>
             </div>
-            <div class="guard-add-form hidden" id="guard-add-form">
-              <div class="guard-form-row">
-                <div>
-                  <label class="guard-form-label">ID</label>
-                  <div style="display:flex;align-items:center;">
-                    <span class="guard-form-prefix">custom.</span>
-                    <input type="text" class="guard-form-input" id="guard-add-id" placeholder="my_param" />
-                  </div>
-                </div>
-                <div>
-                  <label class="guard-form-label" data-i18n="Type">Type</label>
-                  <select class="guard-form-select" id="guard-add-mode" onchange="onGuardAddModeChange()">
-                    <option value="toml_key" data-i18n="toml_key (TOML key value)">toml_key (TOML key value)</option>
-                    <option value="toml_absent" data-i18n="toml_absent (ensure absent)">toml_absent (ensure absent)</option>
-                    <option value="file_overwrite" data-i18n="file_overwrite (overwrite whole file)">file_overwrite (overwrite whole file)</option>
-                    <option value="markdown_block" data-i18n="markdown_block (marked block)">markdown_block (marked block)</option>
-                  </select>
-                </div>
-              </div>
-              <div class="guard-form-row">
-                <div>
-                  <label class="guard-form-label" data-i18n="Name">Name</label>
-                  <input type="text" class="guard-form-input" id="guard-add-label" placeholder="Display name" data-i18n-placeholder="Display name" />
-                </div>
-                <div>
-                  <label class="guard-form-label" data-i18n="Target File">Target File</label>
-                  <select class="guard-form-select" id="guard-add-file-select">
-                    <!-- 由 JS 动态填充 -->
-                  </select>
-                </div>
-              </div>
-              <div id="guard-add-path-row">
-                <label class="guard-form-label" data-i18n="TOML Path">TOML Path</label>
-                <input type="text" class="guard-form-input mono" id="guard-add-path" placeholder="e.g. features.foo.enabled" data-i18n-placeholder="e.g. features.foo.enabled" />
-              </div>
-              <div id="guard-add-value-type-row">
-                <label class="guard-form-label" data-i18n="Value Type">Value Type</label>
-                <select class="guard-form-select" id="guard-add-value-type" onchange="onGuardAddValueTypeChange()">
-                  <option value="bool">bool</option>
-                  <option value="int">int</option>
-                  <option value="string">string</option>
-                  <option value="text" data-i18n="text (multi-line text)">text (multi-line text)</option>
-                  <option value="none" data-i18n="none (no value, toml_absent only)">none (no value, toml_absent only)</option>
-                </select>
-              </div>
-              <div id="guard-add-default-row">
-                <label class="guard-form-label" data-i18n="Default Value">Default Value</label>
-                <input type="text" class="guard-form-input" id="guard-add-default" />
-              </div>
-              <div>
-                <label class="guard-form-label" data-i18n="Description (optional)">Description (optional)</label>
-                <input type="text" class="guard-form-input" id="guard-add-desc" placeholder="What this parameter does" data-i18n-placeholder="What this parameter does" />
-              </div>
-              <div style="display:flex;justify-content:flex-end;gap:8px;">
-                <button class="btn btn-secondary btn-sm" onclick="toggleGuardAddForm()" data-i18n="Cancel">Cancel</button>
-                <button class="btn btn-primary btn-sm" onclick="guardAddCustom()" data-i18n="Add">Add</button>
-              </div>
+            <div>
+              <label class="mb-1 block text-xs font-medium" data-i18n="Type">Type</label>
+              <select class="select w-full text-sm" id="guard-add-mode">
+                <option value="toml_key" data-i18n="toml_key (TOML key value)">toml_key (TOML key value)</option>
+                <option value="toml_absent" data-i18n="toml_absent (ensure absent)">toml_absent (ensure absent)</option>
+                <option value="file_overwrite" data-i18n="file_overwrite (overwrite whole file)">file_overwrite (overwrite whole file)</option>
+                <option value="markdown_block" data-i18n="markdown_block (marked block)">markdown_block (marked block)</option>
+              </select>
             </div>
           </div>
-
-          <div class="guard-advanced-link">
-            <button onclick="guardOpenSchemaFile()" data-i18n="Open schema file (manual editing for advanced users)">Open schema file (manual editing for advanced users)</button>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="mb-1 block text-xs font-medium" data-i18n="Name">Name</label>
+              <input type="text" class="input w-full text-sm" id="guard-add-label" placeholder="Display name" data-i18n-placeholder="Display name" />
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-medium" data-i18n="Target File">Target File</label>
+              <select class="select w-full text-sm" id="guard-add-file-select">
+                <!-- 由 JS 动态填充 -->
+              </select>
+            </div>
+          </div>
+          <div id="guard-add-path-row">
+            <label class="mb-1 block text-xs font-medium" data-i18n="TOML Path">TOML Path</label>
+            <input type="text" class="input w-full font-mono text-sm" id="guard-add-path" placeholder="e.g. features.foo.enabled" data-i18n-placeholder="e.g. features.foo.enabled" />
+          </div>
+          <div id="guard-add-value-type-row">
+            <label class="mb-1 block text-xs font-medium" data-i18n="Value Type">Value Type</label>
+            <select class="select w-full text-sm" id="guard-add-value-type">
+              <option value="bool">bool</option>
+              <option value="int">int</option>
+              <option value="string">string</option>
+              <option value="text" data-i18n="text (multi-line text)">text (multi-line text)</option>
+              <option value="none" data-i18n="none (no value, toml_absent only)">none (no value, toml_absent only)</option>
+            </select>
+          </div>
+          <div id="guard-add-default-row">
+            <label class="mb-1 block text-xs font-medium" data-i18n="Default Value">Default Value</label>
+            <input type="text" class="input w-full text-sm" id="guard-add-default" />
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-medium" data-i18n="Description (optional)">Description (optional)</label>
+            <input type="text" class="input w-full text-sm" id="guard-add-desc" placeholder="What this parameter does" data-i18n-placeholder="What this parameter does" />
+          </div>
+          <div class="flex justify-end gap-2">
+            <button class="btn btn-secondary btn-sm" id="guard-add-cancel" data-i18n="Cancel">Cancel</button>
+            <button class="btn btn-primary btn-sm" id="guard-add-submit" data-i18n="Add">Add</button>
           </div>
         </div>
-      </main>
-    </div>
-    <div class="toast-container" id="toast-container"></div>
+      </div>
+
+      <div class="mt-4 max-w-4xl text-center">
+        <button class="link link-hover text-xs text-accent" id="btn-guard-open-schema" data-i18n="Open schema file (manual editing for advanced users)">Open schema file (manual editing for advanced users)</button>
+      </div>
+    </main>
+
+    <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2" id="toast-container"></div>
 
     <!-- ============ 看守文件 添加/编辑弹窗 ============ -->
-    <div class="modal-overlay hidden" id="guard-file-modal" onclick="if(event.target===this)toggleGuardFileForm()">
+    <div class="modal-overlay hidden" id="guard-file-modal">
       <div class="modal-card">
-        <h3 class="modal-title" id="guard-file-modal-title" data-i18n="Add Guard File">Add Guard File</h3>
-        <div class="guard-form-row">
+        <h3 class="text-sm font-semibold" id="guard-file-modal-title" data-i18n="Add Guard File">Add Guard File</h3>
+        <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="guard-form-label" data-i18n="Name">Name</label>
-            <input type="text" class="guard-form-input" id="settings-guard-file-name" placeholder="e.g. my-config.toml" data-i18n-placeholder="e.g. my-config.toml" />
+            <label class="mb-1 block text-xs font-medium" data-i18n="Name">Name</label>
+            <input type="text" class="input w-full text-sm" id="settings-guard-file-name" placeholder="e.g. my-config.toml" data-i18n-placeholder="e.g. my-config.toml" />
           </div>
           <div>
-            <label class="guard-form-label" data-i18n="Format">Format</label>
-            <select class="guard-form-select" id="settings-guard-file-format">
+            <label class="mb-1 block text-xs font-medium" data-i18n="Format">Format</label>
+            <select class="select w-full text-sm" id="settings-guard-file-format">
               <option value="toml">TOML</option>
               <option value="json">JSON</option>
               <option value="md">Markdown</option>
@@ -1822,15 +490,15 @@
           </div>
         </div>
         <div>
-          <label class="guard-form-label" data-i18n="Path (relative to ~/.codex)">Path (relative to ~/.codex)</label>
-          <div style="display:flex;gap:8px;">
-            <input type="text" class="guard-form-input mono" id="settings-guard-file-path" placeholder="e.g. my-config.toml" data-i18n-placeholder="e.g. my-config.toml" style="flex:1;" />
-            <button class="btn btn-secondary btn-sm" onclick="guardPickFilePath()" data-i18n="Pick…">Pick…</button>
+          <label class="mb-1 block text-xs font-medium" data-i18n="Path (relative to ~/.codex)">Path (relative to ~/.codex)</label>
+          <div class="flex gap-2">
+            <input type="text" class="input w-full font-mono text-sm" id="settings-guard-file-path" placeholder="e.g. my-config.toml" data-i18n-placeholder="e.g. my-config.toml" />
+            <button class="btn btn-secondary btn-sm" id="btn-guard-pick-path" data-i18n="Pick…">Pick…</button>
           </div>
         </div>
-        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px;">
-          <button class="btn btn-secondary btn-sm" onclick="toggleGuardFileForm()" data-i18n="Cancel">Cancel</button>
-          <button class="btn btn-primary btn-sm" id="settings-guard-file-submit" onclick="guardSaveFileForm()" data-i18n="Add">Add</button>
+        <div class="mt-1 flex justify-end gap-2">
+          <button class="btn btn-secondary btn-sm" id="guard-file-cancel" data-i18n="Cancel">Cancel</button>
+          <button class="btn btn-primary btn-sm" id="settings-guard-file-submit" data-i18n="Add">Add</button>
         </div>
       </div>
     </div>

@@ -26,6 +26,7 @@ export const en = {
   "Appearance": "Appearance",
   "Network": "Network",
   "Mode": "Mode",
+  "Theme": "Theme",
   "Integrations": "Integrations",
   "About": "About",
   "Taskboard Path": "Taskboard Path",

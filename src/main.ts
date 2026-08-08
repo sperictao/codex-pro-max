@@ -6,6 +6,14 @@ import { open as openUrl } from "@tauri-apps/plugin-shell";
 import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
 import { initI18n, applyDomTranslations, applyLanguage, currentLanguage, t } from "./i18n";
 import type { ResolvedLanguage } from "./i18n";
+import {
+  THEME_FAMILIES,
+  getStoredFamily as resolveStoredFamily,
+  getStoredTheme as resolveStoredTheme,
+  resolveDataTheme as resolveThemeData,
+} from "./theme";
+import type { ThemeMode } from "./theme";
+import "./style.css";
 
 // ============ 类型定义 ============
 interface LauncherConfig {
@@ -124,8 +132,6 @@ interface DownloadProgress {
   maxAttempts: number;
 }
 
-type ThemeMode = "light" | "dark" | "system";
-
 // ============ 全局状态 ============
 let statusPolling: ReturnType<typeof setInterval> | null = null;
 let guardState: CodexGuardState = { enabled: false, params: {} };
@@ -149,35 +155,80 @@ function toast(message: string, type: "success" | "error" | "info" = "info"): vo
   }, 3000);
 }
 
-// ============ 主题管理 ============
+// ============ 主题管理（ADR 0007：族 × 模式 二维模型） ============
+// 选择器只列亮族；暗面由配对表决定，未配对落内置 dark。geist 族是视觉基准（DESIGN.md/DESIGN.DARK.md）
+
+const CHECK_SVG = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+
 function getStoredTheme(): ThemeMode {
-  const stored = localStorage.getItem("theme");
-  if (stored === "light" || stored === "dark" || stored === "system") {
-    return stored;
-  }
-  return "system";
+  return resolveStoredTheme(localStorage.getItem("theme"));
+}
+
+function getStoredFamily(): string {
+  return resolveStoredFamily(localStorage.getItem("theme-family"));
+}
+
+function resolveDataTheme(mode: ThemeMode, family: string): string {
+  return resolveThemeData(
+    mode,
+    family,
+    window.matchMedia("(prefers-color-scheme: dark)").matches,
+  );
 }
 
 function applyTheme(mode: ThemeMode): void {
-  const html = document.documentElement;
-  const isDark =
-    mode === "dark" ||
-    (mode === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-
-  if (isDark) {
-    html.classList.add("dark");
-  } else {
-    html.classList.remove("dark");
-  }
+  document.documentElement.dataset.theme = resolveDataTheme(mode, getStoredFamily());
 
   for (const m of ["light", "dark", "system"] as ThemeMode[]) {
-    document.getElementById(`theme-card-${m}`)?.classList.toggle("selected", m === mode);
+    const card = document.getElementById(`theme-card-${m}`);
+    card?.classList.toggle("selected", m === mode);
+    card?.setAttribute("aria-pressed", String(m === mode));
   }
+  renderThemeFamilySelection();
 }
 
 function setTheme(mode: ThemeMode): void {
   localStorage.setItem("theme", mode);
   applyTheme(mode);
+}
+
+function setThemeFamily(family: string): void {
+  localStorage.setItem("theme-family", family);
+  applyTheme(getStoredTheme());
+}
+
+// 色板卡：卡面自身 data-theme 局部生效，直接渲染该族亮主题
+function renderThemeFamilyGrid(): void {
+  const grid = document.getElementById("theme-family-grid");
+  if (!grid) return;
+  grid.innerHTML = Object.entries(THEME_FAMILIES)
+    .map(
+      ([id, f]) => `<button type="button" class="select-card" data-family="${id}" aria-pressed="false">
+        <span class="select-card-check">${CHECK_SVG}</span>
+        <span class="family-preview bg-base-100" data-theme="${f.light}">
+          <span class="fp-dots">
+            <span class="fp-dot bg-primary"></span>
+            <span class="fp-dot bg-secondary"></span>
+            <span class="fp-dot bg-accent"></span>
+            <span class="fp-dot bg-neutral"></span>
+          </span>
+          <span class="fp-bar w-full"></span>
+          <span class="fp-bar w-2/3"></span>
+        </span>
+        <span class="text-xs">${f.label}</span>
+      </button>`,
+    )
+    .join("");
+  renderThemeFamilySelection();
+}
+
+function renderThemeFamilySelection(): void {
+  const current = getStoredFamily();
+  document.querySelectorAll<HTMLElement>("#theme-family-grid [data-family]").forEach((el) => {
+    const selected = el.dataset.family === current;
+    el.classList.toggle("selected", selected);
+    el.setAttribute("aria-pressed", String(selected));
+  });
 }
 
 // ============ 语言管理 ============
@@ -227,23 +278,15 @@ function fillConfigUI(cfg: LauncherConfig): void {
   (document.getElementById("cfg-port") as HTMLInputElement).value = String(cfg.taskboard_port);
   (document.getElementById("cfg-cdp") as HTMLInputElement).value = String(cfg.cdp_port);
 
-  const modeToggle = document.getElementById("toggle-mode")!;
-  if (cfg.separate_window_mode) {
-    modeToggle.classList.add("active");
-  } else {
-    modeToggle.classList.remove("active");
-  }
+  const modeToggle = document.getElementById("toggle-mode") as HTMLInputElement;
+  modeToggle.checked = cfg.separate_window_mode;
   updateModeLabel();
 
-  const autoOpenToggle = document.getElementById("toggle-auto-open")!;
-  if (cfg.auto_open) {
-    autoOpenToggle.classList.add("active");
-  } else {
-    autoOpenToggle.classList.remove("active");
-  }
+  const autoOpenToggle = document.getElementById("toggle-auto-open") as HTMLInputElement;
+  autoOpenToggle.checked = cfg.auto_open;
   updateAutoOpenLabel();
 
-  document.getElementById("toggle-tray")!.classList.toggle("active", cfg.minimize_to_tray_on_close);
+  (document.getElementById("toggle-tray") as HTMLInputElement).checked = cfg.minimize_to_tray_on_close;
 
   guardState = cfg.codex_guard ?? { enabled: false, params: {} };
   renderGuardToggle();
@@ -253,8 +296,8 @@ function fillConfigUI(cfg: LauncherConfig): void {
 }
 
 function renderGuardToggle(): void {
-  const el = document.getElementById("settings-guard-toggle");
-  if (el) el.classList.toggle("active", guardState.enabled);
+  const el = document.getElementById("settings-guard-toggle") as HTMLInputElement | null;
+  if (el) el.checked = guardState.enabled;
   // 总开关关闭时隐藏顶部「看守」Tab
   const btn = document.getElementById("btn-guard");
   if (btn) btn.classList.toggle("hidden", !guardState.enabled);
@@ -275,27 +318,23 @@ function readConfigFromUI(): LauncherConfig {
     taskboard_host: (document.getElementById("cfg-host") as HTMLInputElement).value || "127.0.0.1",
     taskboard_port: parseInt((document.getElementById("cfg-port") as HTMLInputElement).value) || 47823,
     cdp_port: parseInt((document.getElementById("cfg-cdp") as HTMLInputElement).value) || 9231,
-    auto_open: document.getElementById("toggle-auto-open")!.classList.contains("active"),
-    separate_window_mode: document.getElementById("toggle-mode")!.classList.contains("active"),
-    minimize_to_tray_on_close: document.getElementById("toggle-tray")!.classList.contains("active"),
+    auto_open: (document.getElementById("toggle-auto-open") as HTMLInputElement).checked,
+    separate_window_mode: (document.getElementById("toggle-mode") as HTMLInputElement).checked,
+    minimize_to_tray_on_close: (document.getElementById("toggle-tray") as HTMLInputElement).checked,
     language: languageSetting,
     codex_guard: guardState,
   };
 }
 
-function toggleTrayMinimize(): void {
-  document.getElementById("toggle-tray")!.classList.toggle("active");
-  onConfigChange();
-}
-
 // 自启开关不落 LauncherConfig：OS 注册项是唯一事实来源（同 fastctx 接入状态的哲学）
+// checkbox 已先翻转，失败时回退
 async function toggleAutostart(): Promise<void> {
-  const el = document.getElementById("toggle-autostart")!;
-  const next = !el.classList.contains("active");
+  const el = document.getElementById("toggle-autostart") as HTMLInputElement;
+  const next = el.checked;
   try {
     await invoke("autostart_set", { enabled: next });
-    el.classList.toggle("active", next);
   } catch (e) {
+    el.checked = !next;
     toast(String(e), "error");
   }
 }
@@ -427,35 +466,22 @@ async function browseCodex(): Promise<void> {
   }
 }
 
-// ============ 模式切换 ============
-function toggleMode(): void {
-  const toggle = document.getElementById("toggle-mode")!;
-  toggle.classList.toggle("active");
-  updateModeLabel();
-  onConfigChange();
-}
-
+// checkbox 由 <label> 包裹自动翻转，change 事件只负责联动标签与校验；
+// 读取/写入统一走 .checked（不再操作 class）
 function updateModeLabel(): void {
-  const toggle = document.getElementById("toggle-mode")!;
+  const toggle = document.getElementById("toggle-mode") as HTMLInputElement;
   const label = document.getElementById("toggle-mode-label")!;
-  if (toggle.classList.contains("active")) {
+  if (toggle.checked) {
     label.textContent = t("Separate window mode (does not restart Codex)");
   } else {
     label.textContent = t("Full launch mode (restarts Codex)");
   }
 }
 
-function toggleAutoOpen(): void {
-  const toggle = document.getElementById("toggle-auto-open")!;
-  toggle.classList.toggle("active");
-  updateAutoOpenLabel();
-  onConfigChange();
-}
-
 function updateAutoOpenLabel(): void {
-  const toggle = document.getElementById("toggle-auto-open")!;
+  const toggle = document.getElementById("toggle-auto-open") as HTMLInputElement;
   const label = document.getElementById("toggle-auto-open-label")!;
-  if (toggle.classList.contains("active")) {
+  if (toggle.checked) {
     label.textContent = t("Open browser automatically on start");
   } else {
     label.textContent = t("Do not open browser automatically");
@@ -701,6 +727,7 @@ async function toggleGuard(): Promise<void> {
     renderGuardToggle();
     toast(enabled ? t("Config guard enabled") : t("Config guard disabled"), enabled ? "success" : "info");
   } catch (e) {
+    renderGuardToggle();
     toast(t("Toggle failed: {{error}}", { error: String(e) }), "error");
   }
 }
@@ -712,7 +739,7 @@ function escapeHtml(s: string): string {
 // ============ FastCtx 集成 ============
 // 接入/摘除委托 fastctx CLI（ADR 0003）；状态以 config.toml 为准实时检测，不持久化开关
 function renderFastctx(): void {
-  document.getElementById("toggle-fastctx")!.classList.toggle("active", fastctxState.integrated);
+  (document.getElementById("toggle-fastctx") as HTMLInputElement).checked = fastctxState.integrated;
   const status = document.getElementById("fastctx-status")!;
   const hint = document.getElementById("fastctx-install-hint")!;
   if (fastctxBusy) {
@@ -739,9 +766,13 @@ async function refreshFastctxStatus(): Promise<void> {
 }
 
 async function toggleFastctx(): Promise<void> {
-  if (fastctxBusy) return;
+  if (fastctxBusy) {
+    renderFastctx();
+    return;
+  }
   if (!fastctxState.installed) {
     toast(t("fastctx not detected; please run npm install --global fastctx first"), "error");
+    renderFastctx();
     return;
   }
   if (fastctxState.integrated) {
@@ -749,7 +780,10 @@ async function toggleFastctx(): Promise<void> {
       t("Unapply will stop fastctx processes and delete ~/.fastctx managed data (the npm package stays and can be re-integrated anytime). Codex configuration written by fastctx will be removed.\n\nProceed with unapply?"),
       { title: t("Unapply fastctx"), kind: "warning" },
     );
-    if (!ok) return;
+    if (!ok) {
+      renderFastctx();
+      return;
+    }
   }
   fastctxBusy = true;
   renderFastctx();
@@ -823,58 +857,58 @@ function renderGuardView(view: GuardView): void {
       let editor = "";
       const dis = p.locked ? "disabled" : "";
       if (p.valueType === "bool") {
-        editor = `<div class="guard-bool-row">
-          <div class="toggle-switch ${p.value === true ? "active" : ""} ${p.locked ? "disabled" : ""}"
-               onclick="guardToggleBool('${p.id}')"></div>
-          <span class="guard-bool-label">${p.value === true ? "true" : "false"} ${t("(recommended {{default}})", { default: String(p.default) })}</span>
+        editor = `<div class="flex items-center gap-2">
+          <input type="checkbox" class="toggle toggle-sm toggle-accent" data-change-action="guardToggleBool" data-id="${p.id}"
+                 ${p.value === true ? "checked" : ""} ${p.locked ? "disabled" : ""} />
+          <span class="text-xs opacity-70">${p.value === true ? "true" : "false"} ${t("(recommended {{default}})", { default: String(p.default) })}</span>
         </div>`;
       } else if (p.valueType === "int" || p.valueType === "string") {
         const t = p.valueType === "int" ? "number" : "text";
-        editor = `<input type="${t}" class="config-input mono guard-value-input" ${dis}
+        editor = `<input type="${t}" class="input w-full font-mono text-sm" ${dis}
                value="${escapeHtml(String(p.value ?? ""))}" data-guard-id="${p.id}"
-               onchange="guardSetValue('${p.id}', this)" />`;
+               data-change-action="guardSetValue" data-id="${p.id}" />`;
       } else if (p.valueType === "text") {
         editor = `<textarea class="guard-textarea" ${dis} data-guard-id="${p.id}"
-               onchange="guardSetValue('${p.id}', this)">${escapeHtml(String(p.value ?? ""))}</textarea>`;
+               data-change-action="guardSetValue" data-id="${p.id}">${escapeHtml(String(p.value ?? ""))}</textarea>`;
       } else {
-        editor = `<span class="guard-default-hint">${t("No editable value; applying performs \"{{action}}\"", { action: t(p.applyMode === "toml_absent" ? "delete" : "write") })}</span>`;
+        editor = `<span class="text-xs opacity-60">${t("No editable value; applying performs \"{{action}}\"", { action: t(p.applyMode === "toml_absent" ? "delete" : "write") })}</span>`;
       }
       const meta = p.locked
-        ? `<div class="guard-param-meta">${t("Last checked {{checked}} | Last auto-restored {{restored}}", { checked: fmtTs(p.lastChecked), restored: fmtTs(p.lastRestored) })}</div>`
+        ? `<div class="mt-1 text-xs opacity-50">${t("Last checked {{checked}} | Last auto-restored {{restored}}", { checked: fmtTs(p.lastChecked), restored: fmtTs(p.lastRestored) })}</div>`
         : "";
-      return `<div class="guard-param">
-        <div class="guard-param-head">
-          <span class="guard-param-label">${escapeHtml(p.label)}</span>
-          <span style="display:flex;align-items:center;gap:8px;">
-            ${p.custom ? `<button class="guard-param-delete" onclick="guardRemoveCustom('${p.id}')" title="${t("Delete custom parameter")}">${t("Delete")}</button>` : ""}
+      return `<div class="rounded-lg border border-base-300 bg-base-100 p-3">
+        <div class="flex items-center justify-between">
+          <span class="text-sm font-medium">${escapeHtml(p.label)}</span>
+          <span class="flex items-center gap-2">
+            ${p.custom ? `<button class="btn btn-error btn-outline btn-xs" data-action="guardRemoveCustom" data-id="${p.id}" title="${t("Delete custom parameter")}">${t("Delete")}</button>` : ""}
             <span class="status-badge ${s.cls}"><span class="dot"></span><span>${s.text}</span></span>
           </span>
         </div>
-        <div class="guard-param-desc">${escapeHtml(p.description)}</div>
-        ${p.path ? `<div class="guard-param-path mono">${escapeHtml(p.path)}</div>` : ""}
-        <div class="guard-param-actual ${p.status === "match" ? "ok" : "bad"}">
+        <div class="mt-1 text-xs opacity-70">${escapeHtml(p.description)}</div>
+        ${p.path ? `<div class="mt-1 font-mono text-xs opacity-50">${escapeHtml(p.path)}</div>` : ""}
+        <div class="guard-param-actual mt-1 font-mono text-xs ${p.status === "match" ? "ok" : "bad"}">
           ${t("Current: ")}${escapeHtml(p.actual ?? p.error ?? t("Unknown"))}
         </div>
-        ${editor}
-        <div class="guard-param-controls" style="margin-top: 8px;">
+        <div class="mt-2">${editor}</div>
+        <div class="mt-2 flex gap-2">
           <button class="btn btn-primary btn-sm" ${p.locked ? "disabled" : ""}
-                  onclick="guardApply('${p.id}')">${t("Apply")}</button>
+                  data-action="guardApply" data-id="${p.id}">${t("Apply")}</button>
           ${p.locked
-            ? `<button class="btn btn-secondary btn-sm" onclick="guardSetLocked('${p.id}', false)">${t("Unlock")}</button>`
+            ? `<button class="btn btn-secondary btn-sm" data-action="guardSetLocked" data-id="${p.id}" data-locked="false">${t("Unlock")}</button>`
             : `<button class="btn btn-secondary btn-sm" ${p.applied ? "" : "disabled"}
-                  onclick="guardSetLocked('${p.id}', true)">${t("Lock")}</button>`}
+                  data-action="guardSetLocked" data-id="${p.id}" data-locked="true">${t("Lock")}</button>`}
         </div>
         ${meta}
       </div>`;
     }).join("");
-    const addBtn = `<div class="guard-group-add">
-      <button onclick="openGuardAddFormFor('${g.id}', '${escapeHtml(g.name)}')">${t("+ Add Parameter")}</button>
+    const addBtn = `<div class="mt-2">
+      <button class="btn btn-secondary btn-xs" data-action="openGuardAddFormFor" data-id="${g.id}">${t("+ Add Parameter")}</button>
     </div>`;
-    return `<div class="guard-group" data-group-id="${g.id}">
-      <div class="guard-group-name">${escapeHtml(g.name)}</div>
-      <div class="guard-group-file mono">~/.codex/${escapeHtml(g.file)}</div>
-      ${g.error ? `<div class="guard-group-error">${escapeHtml(g.error)}</div>` : ""}
-      ${params}
+    return `<div class="rounded-box border border-base-300 bg-base-100 p-4" data-group-id="${g.id}">
+      <div class="text-sm font-semibold">${escapeHtml(g.name)}</div>
+      <div class="mb-2 font-mono text-xs opacity-50">~/.codex/${escapeHtml(g.file)}</div>
+      ${g.error ? `<div class="mb-2 text-xs text-error">${escapeHtml(g.error)}</div>` : ""}
+      <div class="flex flex-col gap-2">${params}</div>
       ${addBtn}
     </div>`;
   }).join("");
@@ -975,10 +1009,10 @@ function renderGuardFiles(): void {
     } else {
       const html = guardFiles.map((f) => {
         const delBtn = f.builtin
-          ? `<button class="guard-file-btn" disabled style="opacity:0.4;">${t("Built-in")}</button>`
-          : `<button class="guard-file-btn danger" onclick="guardRemoveFile('${f.id}')">${t("Delete")}</button>`;
+          ? `<button class="btn btn-secondary btn-xs" disabled>${t("Built-in")}</button>`
+          : `<button class="btn btn-error btn-outline btn-xs" data-action="guardRemoveFile" data-id="${f.id}">${t("Delete")}</button>`;
         const detectBtn = f.builtin
-          ? `<button class="guard-file-btn" onclick="guardDetectFile('${f.id}')">${t("Detect")}</button>`
+          ? `<button class="btn btn-secondary btn-xs" data-action="guardDetectFile" data-id="${f.id}">${t("Detect")}</button>`
           : "";
         const det = f.detection;
         const detText = det
@@ -988,16 +1022,16 @@ function renderGuardFiles(): void {
               ? t("Detection: path matches ({{at}})", { at: fmtTs(det.at) })
               : t("Detection: actually at {{path}} ({{at}})", { path: det.path, at: fmtTs(det.at) })
           : "";
-        return `<div class="guard-file-card" data-file-id="${f.id}">
-          <div class="guard-file-card-head">
-            <span class="guard-file-name">${escapeHtml(f.name)}</span>
-            <span class="guard-file-format">${f.format}</span>
+        return `<div class="rounded-lg border border-base-300 bg-base-100 p-3" data-file-id="${f.id}">
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-medium">${escapeHtml(f.name)}</span>
+            <span class="badge badge-sm">${f.format}</span>
           </div>
-          <div class="guard-file-path">~/.codex/${escapeHtml(f.file)}</div>
-          ${detText ? `<div class="guard-file-detect">${escapeHtml(detText)}</div>` : ""}
-          <div class="guard-file-actions">
+          <div class="mt-1 font-mono text-xs opacity-60">~/.codex/${escapeHtml(f.file)}</div>
+          ${detText ? `<div class="mt-1 text-xs opacity-60">${escapeHtml(detText)}</div>` : ""}
+          <div class="mt-2 flex gap-2">
             ${detectBtn}
-            <button class="guard-file-btn" onclick="guardEditFile('${f.id}')">${t("Edit")}</button>
+            <button class="btn btn-secondary btn-xs" data-action="guardEditFile" data-id="${f.id}">${t("Edit")}</button>
             ${delBtn}
           </div>
         </div>`;
@@ -1180,7 +1214,7 @@ function onGuardAddValueTypeChange(): void {
   } else if (vt !== "text" && defaultEl.tagName === "TEXTAREA") {
     const inp = document.createElement("input");
     inp.type = "text";
-    inp.className = "guard-form-input";
+    inp.className = "input w-full text-sm";
     inp.id = "guard-add-default";
     inp.value = defaultEl.value;
     defaultRowParent.replaceChild(inp, defaultEl);
@@ -1496,6 +1530,9 @@ async function setupEventListener(): Promise<void> {
 
 // ============ 初始化 ============
 async function init(): Promise<void> {
+  // 主题必须在首个 await 前同步应用，避免首屏按默认色绘制后再闪切。
+  applyTheme(getStoredTheme());
+
   // 初始化 i18n（先于一切 UI 渲染）：语言在 Rust 启动时已解析好
   try {
     const resolved = await invoke<string>("get_resolved_language");
@@ -1506,7 +1543,11 @@ async function init(): Promise<void> {
   document.documentElement.lang = currentLanguage();
   applyDomTranslations();
 
-  // 应用主题
+  // 事件接线（在所有 UI 交互之前）
+  wireEvents();
+
+  // 主题族网格 + 应用主题
+  renderThemeFamilyGrid();
   applyTheme(getStoredTheme());
 
   // 监听系统主题变化
@@ -1524,7 +1565,7 @@ async function init(): Promise<void> {
     // 自启状态从 OS 注册项实时读（不存配置）
     try {
       const autostart = await invoke<boolean>("autostart_is_enabled");
-      document.getElementById("toggle-autostart")!.classList.toggle("active", autostart);
+      (document.getElementById("toggle-autostart") as HTMLInputElement).checked = autostart;
     } catch { /* 读不到就当关 */ }
 
     // 进程事故通知需要系统授权（macOS），启动时静默请求一次
@@ -1581,56 +1622,119 @@ async function init(): Promise<void> {
   }
 }
 
-// ============ 暴露到全局 ============
-const w = window as unknown as Record<string, unknown>;
-w.toggleSettings = toggleSettings;
-w.showHome = showHome;
-w.showSkill = showSkill;
-w.setTheme = setTheme;
-w.setLanguage = setLanguage;
-w.toggleTrayMinimize = toggleTrayMinimize;
-w.toggleAutostart = toggleAutostart;
-w.openLogDir = openLogDir;
-w.switchSection = switchSection;
-w.browsePath = browsePath;
-w.browseNode = browseNode;
-w.browseCodex = browseCodex;
-w.useBundledTaskboard = useBundledTaskboard;
-w.toggleMode = toggleMode;
-w.toggleAutoOpen = toggleAutoOpen;
-w.onConfigChange = onConfigChange;
-w.saveConfig = saveConfig;
-w.startAll = startAll;
-w.stopAll = stopAll;
-w.startTaskboard = startTaskboard;
-w.stopTaskboard = stopTaskboard;
-w.startInjector = startInjector;
-w.stopInjector = stopInjector;
-w.openTaskboard = openTaskboard;
-w.installSkill = installSkill;
-w.showGuard = showGuard;
-w.toggleGuard = toggleGuard;
-w.guardToggleBool = guardToggleBool;
-w.guardSetValue = guardSetValue;
-w.guardApply = guardApply;
-w.guardSetLocked = guardSetLocked;
-w.toggleGuardAddForm = toggleGuardAddForm;
-w.onGuardAddModeChange = onGuardAddModeChange;
-w.onGuardAddValueTypeChange = onGuardAddValueTypeChange;
-w.guardAddCustom = guardAddCustom;
-w.guardRemoveCustom = guardRemoveCustom;
-w.guardOpenSchemaFile = guardOpenSchemaFile;
-w.toggleGuardFileForm = toggleGuardFileForm;
-w.guardSaveFileForm = guardSaveFileForm;
-w.guardEditFile = guardEditFile;
-w.guardDetectFile = guardDetectFile;
-w.guardPickFilePath = guardPickFilePath;
-w.guardRemoveFile = guardRemoveFile;
-w.openGuardAddFormFor = openGuardAddFormFor;
-w.checkUpdate = onUpdateButton;
-w.openUpdaterHelp = openUpdaterHelp;
-w.openGithub = openGithub;
-w.toggleFastctx = toggleFastctx;
-w.openFastctxConsole = openFastctxConsole;
+// ============ 事件接线（inline handler 已全部移除，CSP script-src 不再需要 unsafe-inline） ============
+function on(id: string, event: string, handler: (ev: Event) => void): void {
+  document.getElementById(id)?.addEventListener(event, handler);
+}
+
+// 动态渲染内容（看守参数/文件卡）的事件委托：data-action / data-change-action + data-id
+function delegate(containerId: string, event: "click" | "change", handlers: Record<string, (el: HTMLElement) => void>): void {
+  const attr = event === "change" ? "changeAction" : "action";
+  document.getElementById(containerId)?.addEventListener(event, (ev) => {
+    const el = (ev.target as HTMLElement).closest<HTMLElement>(`[data-${attr === "changeAction" ? "change-action" : "action"}]`);
+    if (!el) return;
+    const fn = handlers[el.dataset[attr]!];
+    if (fn) fn(el);
+  });
+}
+
+function wireEvents(): void {
+  // 顶部导航
+  on("btn-home", "click", showHome);
+  on("btn-skill", "click", showSkill);
+  on("btn-guard", "click", showGuard);
+  on("btn-settings", "click", toggleSettings);
+
+  // 主页
+  on("btn-start-all", "click", () => void startAll());
+  on("btn-stop-all", "click", () => void stopAll());
+  on("btn-start-tb", "click", () => void startTaskboard());
+  on("btn-stop-tb", "click", () => void stopTaskboard());
+  on("btn-open-tb", "click", () => void openTaskboard());
+  on("btn-start-inj", "click", () => void startInjector());
+  on("btn-stop-inj", "click", () => void stopInjector());
+
+  // 设置侧栏
+  for (const s of ["general", "appearance", "network", "mode", "guard", "integration", "about"]) {
+    on(`nav-${s}`, "click", () => switchSection(s));
+  }
+
+  // 语言/主题
+  for (const l of ["system", "en", "zh-CN"]) {
+    on(`lang-card-${l}`, "click", () => void setLanguage(l));
+  }
+  for (const m of ["system", "light", "dark"] as ThemeMode[]) {
+    on(`theme-card-${m}`, "click", () => setTheme(m));
+  }
+  document.getElementById("theme-family-grid")?.addEventListener("click", (ev) => {
+    const card = (ev.target as HTMLElement).closest<HTMLElement>("[data-family]");
+    if (card?.dataset.family) setThemeFamily(card.dataset.family);
+  });
+
+  // 通用设置
+  on("btn-browse-path", "click", () => void browsePath());
+  on("btn-browse-node", "click", () => void browseNode());
+  on("btn-browse-codex", "click", () => void browseCodex());
+  on("btn-use-bundled", "click", () => void useBundledTaskboard());
+  on("btn-open-logs", "click", () => void openLogDir());
+  for (const id of ["cfg-path", "cfg-node", "cfg-codex", "cfg-host", "cfg-port", "cfg-cdp"]) {
+    on(id, "input", onConfigChange);
+  }
+  on("toggle-tray", "change", onConfigChange);
+  on("toggle-autostart", "change", () => void toggleAutostart());
+  on("toggle-mode", "change", () => { updateModeLabel(); onConfigChange(); });
+  on("toggle-auto-open", "change", () => { updateAutoOpenLabel(); onConfigChange(); });
+
+  // 看守/集成
+  on("settings-guard-toggle", "change", () => void toggleGuard());
+  on("guard-file-form-toggle", "click", toggleGuardFileForm);
+  on("toggle-fastctx", "change", () => void toggleFastctx());
+  on("btn-fastctx-console", "click", () => void openFastctxConsole());
+
+  // 关于
+  on("link-updater-docs", "click", () => void openUpdaterHelp("docs"));
+  on("link-updater-template", "click", () => void openUpdaterHelp("template"));
+  on("btn-check-update", "click", () => void onUpdateButton());
+  on("link-github", "click", () => void openGithub());
+
+  // 保存
+  on("btn-save-config", "click", () => void saveConfig());
+
+  // Skill
+  on("btn-install-skill", "click", () => void installSkill());
+
+  // 看守视图（静态部分）
+  on("guard-add-toggle", "click", toggleGuardAddForm);
+  on("guard-add-cancel", "click", toggleGuardAddForm);
+  on("guard-add-submit", "click", () => void guardAddCustom());
+  on("guard-add-mode", "change", onGuardAddModeChange);
+  on("guard-add-value-type", "change", onGuardAddValueTypeChange);
+  on("btn-guard-open-schema", "click", () => void guardOpenSchemaFile());
+
+  // 文件弹窗
+  on("guard-file-cancel", "click", toggleGuardFileForm);
+  on("settings-guard-file-submit", "click", () => void guardSaveFileForm());
+  on("btn-guard-pick-path", "click", () => void guardPickFilePath());
+  document.getElementById("guard-file-modal")?.addEventListener("click", (ev) => {
+    if (ev.target === ev.currentTarget) toggleGuardFileForm();
+  });
+
+  // 动态内容委托
+  delegate("guard-view", "click", {
+    guardApply: (el) => void guardApply(el.dataset.id!),
+    guardSetLocked: (el) => void guardSetLocked(el.dataset.id!, el.dataset.locked === "true"),
+    guardRemoveCustom: (el) => void guardRemoveCustom(el.dataset.id!),
+    openGuardAddFormFor: (el) => openGuardAddFormFor(el.dataset.id!),
+  });
+  delegate("guard-view", "change", {
+    guardToggleBool: (el) => void guardToggleBool(el.dataset.id!),
+    guardSetValue: (el) => void guardSetValue(el.dataset.id!, el as HTMLInputElement),
+  });
+  delegate("settings-guard-files", "click", {
+    guardRemoveFile: (el) => void guardRemoveFile(el.dataset.id!),
+    guardDetectFile: (el) => void guardDetectFile(el.dataset.id!),
+    guardEditFile: (el) => guardEditFile(el.dataset.id!),
+  });
+}
 
 init();

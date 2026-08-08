@@ -99,3 +99,21 @@
 - 多开即事故：看守轮询会对同一批 codex 文件双写、taskboard 子进程重复 spawn 抢端口，故以单实例强制禁止，不靠用户自觉。
 - 壳通知不覆盖看守域：漂移恢复保持静默（沿用看守域「不弹通知」边界）；updater 流程不弹（用户手动发起，UI 已覆盖进度与结果）。
 - 日志只进文件不进 UI：消费方式是「出事再翻」，无应用内日志查看器，不告警、不上报。
+
+## 界面主题（Theming）
+
+启动器的横切关注：壳 UI 的色彩主题系统（Tailwind/daisyUI 重构后）。
+
+### 术语
+
+- **主题族（Theme Family）** — 亮暗成对的逻辑分组，选择器中的可选项。族内维护配对表 `{ light, dark }`，暗面未配对时回落内置 `dark`。
+- **模式（Theme Mode）** — 三选一：跟随系统 / 亮 / 暗。与主题族正交。
+- **解析主题（Resolved Theme）** — 族 × 模式解析出的具体 daisyUI 主题名（如 geist + 暗 → `geist-dark`），赋给 `<html data-theme>`；跟随系统时随 OS 切换重解析。
+- **geist 族** — 自定义主题族（`geist-light` / `geist-dark`），token 取自 `DESIGN.md` / `DESIGN.DARK.md`（Vercel Geist 设计系统），是默认族与视觉基准。
+- **色板卡（Swatch Card）** — 主题族选择器项：卡面自身带 `data-theme` 局部生效，直接渲染该族亮主题的色板缩略。
+
+### 语义边界
+
+- 主题选择器只列亮族：用户不直接选暗色主题，暗面永远由配对表决定（「每主题适配亮暗」的唯一语义）。
+- 主题持久化在 localStorage（`theme` 模式、`theme-family` 族），不进 LauncherConfig、不同步 Rust；语言在 LauncherConfig，两者互不影响。
+- 视觉基准以 geist 族为准：其余内置族是增值选项，组件样式不得为非 geist 族写特例。
