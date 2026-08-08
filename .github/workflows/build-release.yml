@@ -10,8 +10,28 @@ permissions:
   contents: write
 
 jobs:
+  # 发布前置校验：秒级失败，避免构建矩阵跑完才发现 release notes / 版本号问题
+  validate:
+    name: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Validate release prerequisites
+        run: |
+          args=""
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            args="--tag ${GITHUB_REF_NAME}"
+          fi
+          node scripts/check-release.mjs $args
+
   build:
     name: build-${{ matrix.artifact }}
+    needs: validate
     runs-on: ${{ matrix.os }}
     env:
       HAS_APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_CERTIFICATE_PASSWORD != '' && secrets.KEYCHAIN_PASSWORD != '' }}
