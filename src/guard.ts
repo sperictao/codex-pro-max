@@ -140,13 +140,13 @@ function renderGuardView(view: GuardView): void {
         ? `<div class="mt-1 text-xs opacity-50">${t("Last checked {{checked}} | Last auto-restored {{restored}}", { checked: fmtTs(p.lastChecked), restored: fmtTs(p.lastRestored) })}</div>`
         : "";
       return `<div class="guard-param-card rounded-lg border border-border bg-card text-card-foreground p-3">
-        <div class="flex flex-wrap items-center gap-2">
-          <span class="text-sm font-medium">${escapeHtml(p.label)}${p.description || p.path ? ` <span class="guard-param-help" tabindex="0">?<span class="guard-param-desc">${p.description ? `<span>${escapeHtml(p.description)}</span>` : ""}${p.path ? `<span class="guard-param-desc-path">${escapeHtml(p.path)}</span>` : ""}</span></span>` : ""}</span>
-          <span class="guard-param-actual ${p.status === "match" ? "ok" : "bad"}">${t("Current: ")}${escapeHtml(p.actual ?? p.error ?? t("Unknown"))}</span>
-          <span class="status-badge ${s.cls}"><span class="dot"></span><span>${s.text}</span></span>
-        </div>
-        <div class="mt-1 flex items-start justify-between gap-2">
+        <div class="flex items-start justify-between gap-2">
           <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-sm font-medium">${escapeHtml(p.label)}${p.description || p.path ? ` <span class="guard-param-help" tabindex="0">?<span class="guard-param-desc">${p.description ? `<span>${escapeHtml(p.description)}</span>` : ""}${p.path ? `<span class="guard-param-desc-path">${escapeHtml(p.path)}</span>` : ""}</span></span>` : ""}</span>
+              <span class="guard-param-actual ${p.status === "match" ? "ok" : "bad"}">${t("Current: ")}${escapeHtml(p.actual ?? p.error ?? t("Unknown"))}</span>
+              <span class="status-badge ${s.cls}"><span class="dot"></span><span>${s.text}</span></span>
+            </div>
             <div class="mt-2">${editor}</div>
             ${meta}
           </div>
