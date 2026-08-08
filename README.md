@@ -133,8 +133,8 @@ npm run build:updater      # generate updater artifacts
 | --- | --- |
 | [CONTEXT.md](CONTEXT.md) | Domain glossary (config guard + taskboard integration + FastCtx integration) |
 | [docs/design.md](docs/design.md) | Architecture and module design |
-| [DESIGN.md](DESIGN.md) / [DESIGN.DARK.md](DESIGN.DARK.md) | Geist light/dark token reference |
-| [docs/adr/0007](docs/adr/0007-tailwind-daisyui-geist-theming.md) | Tailwind/daisyUI theme-family and mode model |
+| [scripts/build-themes.mjs](scripts/build-themes.mjs) | Theme build: tweakcn registry → tokens + local fonts |
+| [docs/adr/0008](docs/adr/0008-tweakcn-token-theming.md) | tweakcn token theming (supersedes daisyUI ADR 0007) |
 | [docs/adr/0001](docs/adr/0001-codex-config-guard-boundaries.md) | Guard lifecycle and rollback boundaries |
 | [docs/adr/0002](docs/adr/0002-taskboard-submodule-packaging.md) | taskboard submodule integration and packaging whitelist |
 | [docs/adr/0003](docs/adr/0003-fastctx-delegate-to-cli.md) | FastCtx integration delegates to the fastctx CLI |

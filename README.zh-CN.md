@@ -133,8 +133,8 @@ npm run build:updater      # 生成 updater 产物
 | --- | --- |
 | [CONTEXT.md](CONTEXT.md) | 领域术语表（配置看守 + Taskboard 集成 + FastCtx 集成） |
 | [docs/design.md](docs/design.md) | 架构与模块设计 |
-| [DESIGN.md](DESIGN.md) / [DESIGN.DARK.md](DESIGN.DARK.md) | Geist 亮/暗 token 参考 |
-| [docs/adr/0007](docs/adr/0007-tailwind-daisyui-geist-theming.md) | Tailwind/daisyUI 主题族与模式模型 |
+| [scripts/build-themes.mjs](scripts/build-themes.mjs) | 主题构建：tweakcn registry → token + 本地字体 |
+| [docs/adr/0008](docs/adr/0008-tweakcn-token-theming.md) | tweakcn token 主题体系（取代 daisyUI 的 ADR 0007） |
 | [docs/adr/0001](docs/adr/0001-codex-config-guard-boundaries.md) | 看守的生命周期与回滚边界 |
 | [docs/adr/0002](docs/adr/0002-taskboard-submodule-packaging.md) | taskboard submodule 集成与打包白名单 |
 | [docs/adr/0003](docs/adr/0003-fastctx-delegate-to-cli.md) | FastCtx 集成委托 fastctx CLI 的决策 |
