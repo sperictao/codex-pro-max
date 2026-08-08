@@ -180,13 +180,8 @@
           <section class="settings-section hidden" id="section-appearance">
             <h2 class="mb-4 text-base font-semibold" data-i18n="Appearance">Appearance</h2>
 
-            <div class="mb-2 text-sm font-medium" data-i18n="Theme">Theme</div>
-            <div class="mb-6 grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6" id="theme-family-grid">
-              <!-- 由 JS 按主题族配对表渲染色板卡 -->
-            </div>
-
             <div class="mb-2 text-sm font-medium" data-i18n="Mode">Mode</div>
-            <div class="flex gap-3">
+            <div class="mb-6 flex gap-3">
               <button type="button" class="select-card" id="theme-card-system" aria-pressed="false">
                 <span class="select-card-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
                 <span class="mode-preview"><span class="mp-light h-full w-1/2"></span><span class="mp-dark h-full w-1/2"></span></span>
@@ -202,6 +197,11 @@
                 <span class="mode-preview"><span class="mp-dark h-full w-full"></span></span>
                 <span class="text-sm" data-i18n="Dark">Dark</span>
               </button>
+            </div>
+
+            <div class="mb-2 text-sm font-medium" data-i18n="Theme">Theme</div>
+            <div class="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6" id="theme-family-grid">
+              <!-- 由 JS 按主题族 manifest 渲染色板卡 -->
             </div>
 
             <p class="mt-4 text-xs opacity-60" data-i18n="Theme changes apply immediately. With Follow System, the theme switches automatically with the OS appearance.">Theme changes apply immediately. With Follow System, the theme switches automatically with the OS appearance.</p>
