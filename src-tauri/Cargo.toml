@@ -1,6 +1,6 @@
 [package]
 name = "dashi-taskboard-launcher"
-version = "0.9.1"
+version = "0.9.2"
 description = "One-click launcher for dashi-taskboard integrated with Codex"
 authors = ["dashi-taskboard-launcher"]
 edition = "2021"
