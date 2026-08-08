@@ -344,19 +344,6 @@
 .guard-form-textarea:focus-visible {
   box-shadow: 0 0 0 2px var(--ring);
 }
-/* 参数当前值：状态徽章同款胶囊，文本随匹配态着色 */
-.guard-param-actual {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 10px;
-  border-radius: 9999px;
-  font-size: 12px;
-  font-weight: 500;
-  font-family: var(--font-mono);
-  background-color: var(--muted);
-  color: var(--foreground);
-  border: 1px solid var(--border);
-}
 .guard-param-actual.ok { color: var(--status-ok); }
 .guard-param-actual.bad { color: var(--destructive); }
 /* 参数说明：标签旁 ? 图标，悬停/聚焦时弹出悬浮卡片 */
