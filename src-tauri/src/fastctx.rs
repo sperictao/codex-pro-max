@@ -30,22 +30,23 @@ pub struct ApplyResult {
     pub self_check_output: String,
 }
 
-/// 构造一条 fastctx CLI 调用。
-/// Windows 上 npm 全局包是 fastctx.cmd 批处理，CreateProcess 不能直接执行
-/// 批处理，必须经 cmd /c（由 cmd 做 PATHEXT 解析），且不弹控制台窗口
-fn fastctx_command(args: &[&str]) -> Command {
+/// 构造一条 CLI 调用。
+/// Windows 上 npm 全局包是 .cmd 批处理（npm 自身也是 npm.cmd），
+/// CreateProcess 不能直接执行批处理，必须经 cmd /c（由 cmd 做 PATHEXT
+/// 解析），且不弹控制台窗口
+fn cli_command(program: &str, args: &[&str]) -> Command {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         let mut cmd = Command::new("cmd");
-        cmd.arg("/c").arg("fastctx").args(args);
+        cmd.arg("/c").arg(program).args(args);
         cmd.creation_flags(CREATE_NO_WINDOW);
         cmd
     }
     #[cfg(not(windows))]
     {
-        let mut cmd = Command::new("fastctx");
+        let mut cmd = Command::new(program);
         cmd.args(args);
         cmd
     }
@@ -53,7 +54,7 @@ fn fastctx_command(args: &[&str]) -> Command {
 
 /// 跑一次 fastctx 子命令；失败统一成 stderr（空则 stdout）文本
 fn run_fastctx(args: &[&str]) -> Result<String, String> {
-    let output = fastctx_command(args)
+    let output = cli_command("fastctx", args)
         .output()
         .map_err(|e| trf("Cannot execute fastctx: {error} (please run npm install --global fastctx first)", &[("error", e.to_string())]))?;
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -87,7 +88,7 @@ fn read_integrated() -> Result<bool, String> {
 /// 检测：安装状态（PATH 探测）+ 接入状态（读 config.toml），每次实时，不落盘
 #[tauri::command]
 pub fn fastctx_detect() -> Result<FastctxStatus, String> {
-    let (installed, version) = match fastctx_command(&["--version"]).output() {
+    let (installed, version) = match cli_command("fastctx", &["--version"]).output() {
         Ok(o) if o.status.success() => {
             let v = String::from_utf8_lossy(&o.stdout).trim().to_string();
             (true, if v.is_empty() { None } else { Some(v) })
@@ -99,6 +100,21 @@ pub fn fastctx_detect() -> Result<FastctxStatus, String> {
         version,
         integrated: read_integrated()?,
     })
+}
+
+/// 安装：npm install --global fastctx（设置页开关在未检测到安装时自动触发）
+#[tauri::command]
+pub fn fastctx_install() -> Result<(), String> {
+    let output = cli_command("npm", &["install", "--global", "fastctx"])
+        .output()
+        .map_err(|e| trf("Cannot execute npm: {error} (please install Node.js first)", &[("error", e.to_string())]))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Err(if stderr.is_empty() { stdout } else { stderr })
+    }
 }
 
 /// 接入：fastctx apply --yes（默认 Standard 档）；成功后 status 自检，

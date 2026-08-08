@@ -159,6 +159,8 @@ function toast(message: string, type: "success" | "error" | "info" = "info"): vo
 // 选择器只列亮族；暗面由命名约定 <族id>-dark 决定。默认族 vercel 是视觉基准
 
 const CHECK_SVG = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+const LOCK_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
+const UNLOCK_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>`;
 
 function getStoredTheme(): ThemeMode {
   return resolveStoredTheme(localStorage.getItem("theme"));
@@ -769,11 +771,6 @@ async function toggleFastctx(): Promise<void> {
     renderFastctx();
     return;
   }
-  if (!fastctxState.installed) {
-    toast(t("fastctx not detected; please run npm install --global fastctx first"), "error");
-    renderFastctx();
-    return;
-  }
   if (fastctxState.integrated) {
     const ok = await ask(
       t("Unapply will stop fastctx processes and delete ~/.fastctx managed data (the npm package stays and can be re-integrated anytime). Codex configuration written by fastctx will be removed.\n\nProceed with unapply?"),
@@ -787,6 +784,11 @@ async function toggleFastctx(): Promise<void> {
   fastctxBusy = true;
   renderFastctx();
   try {
+    if (!fastctxState.installed) {
+      await invoke("fastctx_install");
+      toast(t("fastctx installed; integrating…"), "info");
+      fastctxState = await invoke<FastctxStatus>("fastctx_detect");
+    }
     if (fastctxState.integrated) {
       await invoke("fastctx_unapply");
       toast(t("fastctx unapplied; restart Codex sessions to take full effect"), "info");
@@ -808,7 +810,7 @@ async function toggleFastctx(): Promise<void> {
 
 async function openFastctxConsole(): Promise<void> {
   if (!fastctxState.installed) {
-    toast(t("fastctx not detected; please run npm install --global fastctx first"), "error");
+    toast(t("fastctx not detected; turn on the integration toggle to install it automatically"), "error");
     return;
   }
   try {
@@ -875,29 +877,29 @@ function renderGuardView(view: GuardView): void {
       const meta = p.locked
         ? `<div class="mt-1 text-xs opacity-50">${t("Last checked {{checked}} | Last auto-restored {{restored}}", { checked: fmtTs(p.lastChecked), restored: fmtTs(p.lastRestored) })}</div>`
         : "";
-      return `<div class="rounded-lg border border-border bg-card text-card-foreground p-3">
+      return `<div class="guard-param-card rounded-lg border border-border bg-card text-card-foreground p-3">
         <div class="flex items-center justify-between">
-          <span class="text-sm font-medium">${escapeHtml(p.label)}</span>
-          <span class="flex items-center gap-2">
+          <span class="text-sm font-medium">${escapeHtml(p.label)}${p.description || p.path ? ` <span class="guard-param-help" tabindex="0">?<span class="guard-param-desc">${p.description ? `<span>${escapeHtml(p.description)}</span>` : ""}${p.path ? `<span class="guard-param-desc-path">${escapeHtml(p.path)}</span>` : ""}</span></span>` : ""}</span>
+          <span class="status-badge ${s.cls}"><span class="dot"></span><span>${s.text}</span></span>
+        </div>
+        <div class="mt-1 flex items-start justify-between gap-2">
+          <div class="min-w-0 flex-1">
+            <div class="guard-param-actual font-mono text-xs ${p.status === "match" ? "ok" : "bad"}">
+              ${t("Current: ")}${escapeHtml(p.actual ?? p.error ?? t("Unknown"))}
+            </div>
+            <div class="mt-2">${editor}</div>
+            ${meta}
+          </div>
+          <span class="guard-param-actions flex w-[30%] shrink-0 flex-row flex-wrap items-center justify-end gap-1 self-center">
+            <input type="checkbox" class="text-switch" data-change-action="guardToggleApplied" data-id="${p.id}" data-state-text="${p.applied ? t("Enabled") : t("Disabled")}"
+                   ${p.applied ? "checked" : ""} ${p.locked ? "disabled" : ""} title="${p.applied ? t("Disable") : t("Enable")}" aria-label="${p.applied ? t("Disable") : t("Enable")}" />
+            ${p.locked
+              ? `<button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-1 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-6 px-2 text-xs" data-action="guardSetLocked" data-id="${p.id}" data-locked="false">${LOCK_SVG}${t("Unlock")}</button>`
+              : `<button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-1 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-6 px-2 text-xs" ${p.applied ? "" : "disabled"}
+                    data-action="guardSetLocked" data-id="${p.id}" data-locked="true">${UNLOCK_SVG}${t("Lock")}</button>`}
             ${p.custom ? `<button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-destructive/50 bg-background text-destructive hover:bg-destructive/10 h-6 px-2 text-xs" data-action="guardRemoveCustom" data-id="${p.id}" title="${t("Delete custom parameter")}">${t("Delete")}</button>` : ""}
-            <span class="status-badge ${s.cls}"><span class="dot"></span><span>${s.text}</span></span>
           </span>
         </div>
-        <div class="mt-1 text-xs opacity-70">${escapeHtml(p.description)}</div>
-        ${p.path ? `<div class="mt-1 font-mono text-xs opacity-50">${escapeHtml(p.path)}</div>` : ""}
-        <div class="guard-param-actual mt-1 font-mono text-xs ${p.status === "match" ? "ok" : "bad"}">
-          ${t("Current: ")}${escapeHtml(p.actual ?? p.error ?? t("Unknown"))}
-        </div>
-        <div class="mt-2">${editor}</div>
-        <div class="mt-2 flex gap-2">
-          <button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-8 px-3 text-xs" ${p.locked ? "disabled" : ""}
-                  data-action="guardApply" data-id="${p.id}">${t("Apply")}</button>
-          ${p.locked
-            ? `<button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-8 px-3 text-xs" data-action="guardSetLocked" data-id="${p.id}" data-locked="false">${t("Unlock")}</button>`
-            : `<button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-8 px-3 text-xs" ${p.applied ? "" : "disabled"}
-                  data-action="guardSetLocked" data-id="${p.id}" data-locked="true">${t("Lock")}</button>`}
-        </div>
-        ${meta}
       </div>`;
     }).join("");
     const addBtn = `<div class="mt-2">
@@ -952,6 +954,32 @@ async function guardApply(id: string): Promise<void> {
     toast(t("Applied"), "success");
   } catch (e) {
     toast(t("Apply failed: {{error}}", { error: String(e) }), "error");
+  }
+  await refreshGuardView(true);
+}
+
+async function guardToggleApplied(id: string): Promise<void> {
+  try {
+    const view = await invoke<GuardView>("guard_get_view");
+    const p = view.groups.flatMap((g) => g.params).find((x) => x.id === id);
+    if (!p) return;
+    if (p.applied) {
+      await guardDisable(id);
+    } else {
+      await guardApply(id);
+    }
+  } catch (e) {
+    toast(t("Operation failed: {{error}}", { error: String(e) }), "error");
+    await refreshGuardView(true);
+  }
+}
+
+async function guardDisable(id: string): Promise<void> {
+  try {
+    await invoke("guard_set_applied", { id, applied: false });
+    toast(t("Disabled"), "info");
+  } catch (e) {
+    toast(t("Operation failed: {{error}}", { error: String(e) }), "error");
   }
   await refreshGuardView(true);
 }
@@ -1721,12 +1749,14 @@ function wireEvents(): void {
   // 动态内容委托
   delegate("guard-view", "click", {
     guardApply: (el) => void guardApply(el.dataset.id!),
+    guardDisable: (el) => void guardDisable(el.dataset.id!),
     guardSetLocked: (el) => void guardSetLocked(el.dataset.id!, el.dataset.locked === "true"),
     guardRemoveCustom: (el) => void guardRemoveCustom(el.dataset.id!),
     openGuardAddFormFor: (el) => openGuardAddFormFor(el.dataset.id!),
   });
   delegate("guard-view", "change", {
     guardToggleBool: (el) => void guardToggleBool(el.dataset.id!),
+    guardToggleApplied: (el) => void guardToggleApplied(el.dataset.id!),
     guardSetValue: (el) => void guardSetValue(el.dataset.id!, el as HTMLInputElement),
   });
   delegate("settings-guard-files", "click", {

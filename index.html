@@ -295,7 +295,7 @@
               <div class="flex-1">
                 <div class="text-sm" id="fastctx-status" data-i18n="Detecting…">Detecting…</div>
                 <div class="mt-1.5 hidden text-xs opacity-60" id="fastctx-install-hint">
-                  <span data-i18n="fastctx not detected. Please run">fastctx not detected. Please run</span> <span class="font-mono">npm install --global fastctx</span> <span data-i18n="first (requires Node.js 18+), then return to this page.">first (requires Node.js 18+), then return to this page.</span>
+                  <span data-i18n="fastctx not detected; turning on the toggle will install it automatically via npm install --global fastctx (requires Node.js 18+).">fastctx not detected; turning on the toggle will install it automatically via</span> <span class="font-mono">npm install --global fastctx</span> <span data-i18n="(requires Node.js 18+).">(requires Node.js 18+).</span>
                 </div>
               </div>
             </div>
@@ -397,9 +397,9 @@
         <span data-i18n="Apply = write the parameter value into its file (auto-backup to">Apply = write the parameter value into its file (auto-backup to</span> <code class="rounded bg-muted px-1 font-mono">~/.codex/dashi-backups/</code> <span data-i18n="before writing); Lock = verify every 60 seconds and revert drift automatically. Locked parameters are read-only; unlock before editing. The master switch and file management are in Settings → Guard.">before writing); Lock = verify every 60 seconds and revert drift automatically. Locked parameters are read-only; unlock before editing. The master switch and file management are in Settings → Guard.</span>
       </p>
 
-      <div class="flex max-w-4xl flex-col gap-4" id="guard-groups"></div>
+      <div class="flex flex-col gap-4" id="guard-groups"></div>
 
-      <div class="mt-4 max-w-4xl">
+      <div class="mt-4">
         <button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 w-full justify-between px-4" id="guard-add-toggle">
           <span data-i18n="+ Add Custom Parameter">+ Add Custom Parameter</span>
           <span id="guard-add-arrow">▾</span>

@@ -134,6 +134,7 @@ fn zh_cn(key: &str) -> Option<&'static str> {
 
         // —— FastCtx 集成（fastctx.rs）——
         "Cannot execute fastctx: {error} (please run npm install --global fastctx first)" => "无法执行 fastctx: {error}（请先 npm install --global fastctx）",
+        "Cannot execute npm: {error} (please install Node.js first)" => "无法执行 npm: {error}（请先安装 Node.js）",
         "Failed to parse config.toml: {error}" => "config.toml 解析失败: {error}",
         "Cannot open console: {error}" => "无法打开控制台: {error}",
         "Cannot open console (please run fastctx in a terminal yourself): {error}" => "无法打开控制台（请自行在终端运行 fastctx）: {error}",
@@ -171,6 +172,7 @@ fn zh_cn(key: &str) -> Option<&'static str> {
         "Value type mismatch" => "值类型不匹配",
         "Parameter is locked; unlock it before modifying" => "参数已锁定，先解锁再修改",
         "Apply the parameter before locking it" => "请先启用该参数再锁定",
+        "Unlock the parameter before disabling it" => "请先解锁该参数再禁用",
         "Unsupported apply_mode: {mode}" => "不支持的 apply_mode: {mode}",
         "Unsupported value_type: {type}" => "不支持的 value_type: {type}",
         "label cannot be empty" => "label 不能为空",

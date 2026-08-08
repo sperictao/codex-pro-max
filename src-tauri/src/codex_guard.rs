@@ -795,6 +795,21 @@ pub fn guard_apply(id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn guard_set_applied(id: String, applied: bool) -> Result<(), String> {
+    if applied {
+        return guard_apply(id);
+    }
+    // 禁用只取消看守，不回滚已写入 ~/.codex/ 的值（与删除参数的语义一致）
+    let mut cfg = config::load_config()?;
+    let st = cfg.codex_guard.params.entry(id).or_default();
+    if st.locked {
+        return Err(tr("Unlock the parameter before disabling it"));
+    }
+    st.applied = false;
+    config::save_config(&cfg)
+}
+
+#[tauri::command]
 pub fn guard_set_locked(id: String, locked: bool) -> Result<(), String> {
     let schema = load_schema();
     let p = find_param(&schema, &id)?;
