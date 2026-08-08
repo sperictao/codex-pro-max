@@ -22,6 +22,11 @@ export const zhCN: Record<I18nKey, string> = {
   "Failed": "失败",
   "Starting...": "启动中...",
   "Stopping...": "停止中...",
+  "All services running": "所有服务运行中",
+  "Services stopped": "服务已停止",
+  "Services starting": "服务启动中",
+  "Partially running": "部分服务运行中",
+  "Service issue": "服务异常",
 
   // —— 设置：通用 ——
   "General": "通用",

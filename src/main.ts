@@ -93,6 +93,9 @@ interface ProcessInfo {
   message: string;
 }
 
+type ServiceKey = "taskboard" | "injector";
+type ServiceIndicatorState = "stopped" | "starting" | "running" | "failed";
+
 interface UpdaterConfigHealth {
   configured: boolean;
   message: string;
@@ -140,6 +143,10 @@ let fastctxState: FastctxStatus = { installed: false, version: null, integrated:
 let fastctxBusy = false;
 // 语言设置（"system" | "en" | "zh-CN"），fillConfigUI 灌入、语言卡片改写
 let languageSetting = "system";
+const serviceStatuses: Record<ServiceKey, ProcessInfo["status"]> = {
+  taskboard: "stopped",
+  injector: "stopped",
+};
 
 // ============ Toast 通知 ============
 function toast(message: string, type: "success" | "error" | "info" = "info"): void {
@@ -161,6 +168,12 @@ function toast(message: string, type: "success" | "error" | "info" = "info"): vo
 const CHECK_SVG = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
 const LOCK_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
 const UNLOCK_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>`;
+const SERVICE_INDICATOR_SYMBOLS: Record<ServiceIndicatorState, string> = {
+  running: `<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4L19 6" /></svg>`,
+  stopped: `<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18 18 6M6 6l12 12" /></svg>`,
+  starting: `<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 5.5c-.8-.5-1.9 0-1.9 1v11c0 1 1.1 1.6 1.9 1.1l8.5-5.5c.8-.5.8-1.7 0-2.2L8.5 5.5z" /></svg>`,
+  failed: `<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18 18 6M6 6l12 12" /></svg>`,
+};
 
 function getStoredTheme(): ThemeMode {
   return resolveStoredTheme(localStorage.getItem("theme"));
@@ -1500,6 +1513,7 @@ async function refreshStatus(): Promise<void> {
 function updateStatusUI(info: ProcessInfo): void {
   const isTaskboard = info.name === "taskboard-server";
   const prefix = isTaskboard ? "taskboard" : "injector";
+  serviceStatuses[prefix] = info.status;
 
   const badge = document.getElementById(`badge-${prefix}`)!;
   const msg = document.getElementById(`msg-${prefix}`)!;
@@ -1528,6 +1542,46 @@ function updateStatusUI(info: ProcessInfo): void {
     const openBtn = document.getElementById("btn-open-tb")! as HTMLButtonElement;
     openBtn.disabled = info.status !== "running";
   }
+
+  updateServiceStatusIndicator();
+}
+
+function updateServiceStatusIndicator(): void {
+  const statuses = Object.values(serviceStatuses);
+  const hasTransition = statuses.some((status) => status === "starting" || status === "stopping");
+  const hasRunning = statuses.some((status) => status === "running");
+  let state: ServiceIndicatorState;
+  let stateText: string;
+  if (statuses.includes("failed")) {
+    state = "failed";
+    stateText = "Service issue";
+  } else if (hasTransition) {
+    state = "starting";
+    stateText = hasRunning ? "Partially running" : "Services starting";
+  } else if (statuses.every((status) => status === "running")) {
+    state = "running";
+    stateText = "All services running";
+  } else if (hasRunning) {
+    state = "starting";
+    stateText = "Partially running";
+  } else {
+    state = "stopped";
+    stateText = "Services stopped";
+  }
+
+  const icon = document.getElementById("service-status-indicator-icon")!;
+  const symbol = document.getElementById("service-status-indicator-symbol")!;
+  const text = document.getElementById("service-status-indicator-text")!;
+  const nextIconClass = `status-indicator-icon ${state}`;
+  const nextTextClass = `status-indicator-text ${state}`;
+  const nextText = t(stateText);
+  if (icon.className !== nextIconClass) icon.className = nextIconClass;
+  if (symbol.dataset.state !== state) {
+    symbol.innerHTML = SERVICE_INDICATOR_SYMBOLS[state];
+    symbol.dataset.state = state;
+  }
+  if (text.className !== nextTextClass) text.className = nextTextClass;
+  if (text.textContent !== nextText) text.textContent = nextText;
 }
 
 function updateGlobalButtons(statuses: ProcessInfo[]): void {

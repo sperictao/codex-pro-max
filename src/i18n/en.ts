@@ -20,6 +20,11 @@ export const en = {
   "Failed": "Failed",
   "Starting...": "Starting...",
   "Stopping...": "Stopping...",
+  "All services running": "All services running",
+  "Services stopped": "Services stopped",
+  "Services starting": "Services starting",
+  "Partially running": "Partially running",
+  "Service issue": "Service issue",
 
   // —— 设置：通用 ——
   "General": "General",

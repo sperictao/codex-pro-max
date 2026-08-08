@@ -19,6 +19,16 @@
 
     <!-- ============ Main View ============ -->
     <main class="flex-1 overflow-y-auto p-6" id="main-view">
+      <div class="status-indicator" id="service-status-indicator" role="status" aria-live="polite">
+        <div class="status-indicator-icon-container">
+          <div class="status-indicator-icon stopped" id="service-status-indicator-icon" aria-hidden="true">
+            <div class="status-indicator-symbol" id="service-status-indicator-symbol">
+              <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18 18 6M6 6l12 12" /></svg>
+            </div>
+          </div>
+        </div>
+        <div class="status-indicator-text stopped" id="service-status-indicator-text" data-i18n="Services stopped">Services stopped</div>
+      </div>
       <div class="mb-3 text-sm font-semibold" data-i18n="Service Status">Service Status</div>
       <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div class="rounded-xl border border-border bg-card text-card-foreground flex flex-col gap-3 p-4">

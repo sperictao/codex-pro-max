@@ -73,6 +73,95 @@
 .status-badge.starting .dot,
 .status-badge.stopping .dot { background-color: var(--status-warn); }
 
+/* 首页服务汇总状态：参考 AllPeriod 的 status-indicator，状态由服务卡片实时驱动 */
+.status-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 32px;
+  text-align: center;
+}
+.status-indicator-icon-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 180px;
+  height: 180px;
+  margin-bottom: 16px;
+  border-radius: 50%;
+}
+.status-indicator-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 170px;
+  height: 170px;
+  border-radius: 50%;
+  color: #fff;
+  transition: transform 200ms ease, box-shadow 300ms ease, background 300ms ease;
+  animation: service-status-pulse 5s ease-in-out infinite;
+}
+.status-indicator-icon:hover {
+  animation-play-state: paused;
+  transform: scale(1.05);
+}
+.status-indicator-symbol {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.2));
+}
+.status-indicator-symbol svg {
+  display: block;
+  width: 88px;
+  height: 88px;
+}
+.status-indicator-icon.running {
+  background: radial-gradient(circle at 35% 30%, #78f59c 0%, #34c759 58%, #168d34 100%);
+  box-shadow: 0 10px 28px rgba(52, 199, 89, 0.3);
+}
+.status-indicator-icon.stopped {
+  background: radial-gradient(circle at 35% 30%, #c9c9cf 0%, #8e8e93 60%, #636366 100%);
+  box-shadow: 0 10px 28px rgba(99, 99, 102, 0.24);
+}
+.status-indicator-icon.starting {
+  background: radial-gradient(circle at 35% 30%, #ffe88a 0%, #ffcc00 58%, #ff9500 100%);
+  box-shadow: 0 10px 28px rgba(255, 149, 0, 0.3);
+}
+.status-indicator-icon.failed {
+  background: radial-gradient(circle at 35% 30%, #ff8d86 0%, #ff3b30 58%, #c82920 100%);
+  box-shadow: 0 10px 28px rgba(255, 59, 48, 0.3);
+}
+.status-indicator-text {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.35;
+  transition: color 200ms ease;
+}
+.status-indicator-text.running { color: var(--status-ok); }
+.status-indicator-text.stopped { color: var(--muted-foreground); }
+.status-indicator-text.starting { color: var(--status-warn); }
+.status-indicator-text.failed { color: var(--destructive); }
+
+@keyframes service-status-pulse {
+  0%, 100% { transform: scale(0.95); }
+  50% { transform: scale(1.05); }
+}
+
+@media (max-width: 520px) {
+  .status-indicator-icon-container { width: 132px; height: 132px; }
+  .status-indicator-icon { width: 124px; height: 124px; }
+  .status-indicator-symbol svg { width: 64px; height: 64px; }
+  .status-indicator-text { font-size: 20px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-indicator-icon { animation: none; transition: none; }
+}
+
 /* 校验提示 */
 .config-validate { font-size: 12px; align-self: center; white-space: nowrap; }
 .config-validate.ok { color: var(--status-ok); }
