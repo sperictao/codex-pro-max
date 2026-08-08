@@ -117,9 +117,9 @@
    亮/暗固定色——预览的是模式本身，不随主题族 */
 .mode-preview {
   display: flex;
-  width: 72px;
-  height: 44px;
-  border-radius: 6px;
+  width: 120px;
+  height: 72px;
+  border-radius: 8px;
   overflow: hidden;
   border: 1px solid var(--border);
 }
@@ -129,15 +129,15 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 3px;
-  padding: 5px 6px;
+  gap: 4px;
+  padding: 8px 10px;
 }
 .mode-preview .mp-light { background: #fafafa; }
 .mode-preview .mp-dark { background: #0a0a0a; }
-.mode-preview .mp-title { height: 4px; width: 45%; border-radius: 2px; }
-.mode-preview .mp-line { height: 3px; width: 100%; border-radius: 2px; }
+.mode-preview .mp-title { height: 5px; width: 45%; border-radius: 2px; }
+.mode-preview .mp-line { height: 4px; width: 100%; border-radius: 2px; }
 .mode-preview .mp-line.mp-short { width: 65%; }
-.mode-preview .mp-btn { height: 5px; width: 32%; border-radius: 9999px; margin-top: 1px; }
+.mode-preview .mp-btn { height: 7px; width: 32%; border-radius: 9999px; margin-top: 2px; }
 .mode-preview .mp-light .mp-title { background: rgba(0, 0, 0, 0.4); }
 .mode-preview .mp-light .mp-line { background: rgba(0, 0, 0, 0.12); }
 .mode-preview .mp-light .mp-btn { background: #171717; }
