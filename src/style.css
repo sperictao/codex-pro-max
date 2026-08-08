@@ -113,7 +113,8 @@
 }
 .select-card.selected .select-card-check { display: inline-flex; }
 
-/* 模式卡预览：亮/暗固定色（预览的是模式本身，不随主题） */
+/* 模式卡预览：迷你 UI 骨架（标题条 + 文本行 + 主按钮药丸）。
+   亮/暗固定色——预览的是模式本身，不随主题族 */
 .mode-preview {
   display: flex;
   width: 72px;
@@ -122,8 +123,27 @@
   overflow: hidden;
   border: 1px solid var(--border);
 }
+.mode-preview .mp-pane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 5px 6px;
+}
 .mode-preview .mp-light { background: #fafafa; }
 .mode-preview .mp-dark { background: #0a0a0a; }
+.mode-preview .mp-title { height: 4px; width: 45%; border-radius: 2px; }
+.mode-preview .mp-line { height: 3px; width: 100%; border-radius: 2px; }
+.mode-preview .mp-line.mp-short { width: 65%; }
+.mode-preview .mp-btn { height: 5px; width: 32%; border-radius: 9999px; margin-top: 1px; }
+.mode-preview .mp-light .mp-title { background: rgba(0, 0, 0, 0.4); }
+.mode-preview .mp-light .mp-line { background: rgba(0, 0, 0, 0.12); }
+.mode-preview .mp-light .mp-btn { background: #171717; }
+.mode-preview .mp-dark .mp-title { background: rgba(255, 255, 255, 0.5); }
+.mode-preview .mp-dark .mp-line { background: rgba(255, 255, 255, 0.16); }
+.mode-preview .mp-dark .mp-btn { background: #ededed; }
 
 /* 主题族色板卡预览：自身 data-theme 局部生效，直接渲染该族亮主题 token */
 .family-preview {
