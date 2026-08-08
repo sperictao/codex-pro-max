@@ -19,11 +19,6 @@
 
     <!-- ============ Main View ============ -->
     <main class="flex-1 overflow-y-auto p-6" id="main-view">
-      <div class="mb-6 flex gap-3">
-        <button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-6" id="btn-start-all" data-i18n="Start All">Start All</button>
-        <button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-destructive text-destructive-foreground hover:bg-destructive/90 h-10 px-6" id="btn-stop-all" disabled data-i18n="Stop All">Stop All</button>
-      </div>
-
       <div class="mb-3 text-sm font-semibold" data-i18n="Service Status">Service Status</div>
       <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div class="rounded-xl border border-border bg-card text-card-foreground flex flex-col gap-3 p-4">
@@ -56,6 +51,11 @@
             <button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-8 px-3 text-xs" id="btn-stop-inj" disabled data-i18n="Stop">Stop</button>
           </div>
         </div>
+      </div>
+
+      <div class="mt-6 flex justify-center gap-4">
+        <button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-base font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-12 w-64" id="btn-start-all" data-i18n="Start All">Start All</button>
+        <button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-base font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-destructive text-destructive-foreground hover:bg-destructive/90 h-12 w-64" id="btn-stop-all" disabled data-i18n="Stop All">Stop All</button>
       </div>
     </main>
 
