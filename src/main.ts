@@ -1203,24 +1203,21 @@ async function guardRemoveFile(id: string): Promise<void> {
 // ============ 自定义参数管理 ============
 function openGuardAddFormFor(fileId: string): void {
   guardAddParamFileId = fileId;
-  const form = document.getElementById("guard-add-form")!;
-  form.classList.remove("hidden");
   const fileSelect = document.getElementById("guard-add-file-select") as HTMLSelectElement | null;
   if (fileSelect) {
     fileSelect.value = fileId;
   }
-  form.scrollIntoView({ behavior: "smooth", block: "center" });
+  openGuardAddModal();
 }
 
-function toggleGuardAddForm(): void {
-  const form = document.getElementById("guard-add-form")!;
-  const arrow = document.getElementById("guard-add-arrow")!;
-  form.classList.toggle("hidden");
-  arrow.textContent = form.classList.contains("hidden") ? "▾" : "▴";
-  if (!form.classList.contains("hidden")) {
-    onGuardAddModeChange();
-    onGuardAddValueTypeChange();
-  }
+function openGuardAddModal(): void {
+  document.getElementById("guard-add-modal")!.classList.remove("hidden");
+  onGuardAddModeChange();
+  onGuardAddValueTypeChange();
+}
+
+function closeGuardAddModal(): void {
+  document.getElementById("guard-add-modal")!.classList.add("hidden");
 }
 
 function onGuardAddModeChange(): void {
@@ -1322,7 +1319,7 @@ async function guardAddCustom(): Promise<void> {
     (document.getElementById("guard-add-desc") as HTMLInputElement).value = "";
     defaultEl.value = "";
     guardAddParamFileId = null;
-    toggleGuardAddForm();
+    closeGuardAddModal();
     await refreshGuardView(true);
   } catch (e) {
     toast(t("Add failed: {{error}}", { error: String(e) }), "error");
@@ -1785,12 +1782,15 @@ function wireEvents(): void {
   on("btn-install-skill", "click", () => void installSkill());
 
   // 看守视图（静态部分）
-  on("guard-add-toggle", "click", toggleGuardAddForm);
-  on("guard-add-cancel", "click", toggleGuardAddForm);
+  on("guard-add-toggle", "click", openGuardAddModal);
+  on("guard-add-cancel", "click", closeGuardAddModal);
   on("guard-add-submit", "click", () => void guardAddCustom());
   on("guard-add-mode", "change", onGuardAddModeChange);
   on("guard-add-value-type", "change", onGuardAddValueTypeChange);
   on("btn-guard-open-schema", "click", () => void guardOpenSchemaFile());
+  document.getElementById("guard-add-modal")?.addEventListener("click", (ev) => {
+    if (ev.target === ev.currentTarget) closeGuardAddModal();
+  });
 
   // 文件弹窗
   on("guard-file-cancel", "click", toggleGuardFileForm);

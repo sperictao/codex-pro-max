@@ -123,6 +123,7 @@ export const en = {
   "Apply = write the parameter value into its file (auto-backup to": "Apply = write the parameter value into its file (auto-backup to",
   "before writing); Lock = verify every 60 seconds and revert drift automatically. Locked parameters are read-only; unlock before editing. The master switch and file management are in Settings → Guard.": "before writing); Lock = verify every 60 seconds and revert drift automatically. Locked parameters are read-only; unlock before editing. The master switch and file management are in Settings → Guard.",
   "+ Add Custom Parameter": "+ Add Custom Parameter",
+  "Add Custom Parameter": "Add Custom Parameter",
   "Type": "Type",
   "toml_key (TOML key value)": "toml_key (TOML key value)",
   "toml_absent (ensure absent)": "toml_absent (ensure absent)",

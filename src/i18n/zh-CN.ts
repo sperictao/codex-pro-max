@@ -125,6 +125,7 @@ export const zhCN: Record<I18nKey, string> = {
   "Apply = write the parameter value into its file (auto-backup to": "启用 = 把参数值写入对应文件（写入前自动备份到",
   "before writing); Lock = verify every 60 seconds and revert drift automatically. Locked parameters are read-only; unlock before editing. The master switch and file management are in Settings → Guard.": "）；锁定 = 每 60 秒校验，漂移自动改回。锁定的参数只读，先解锁再改。总开关与文件管理在「设置 → 看守」中。",
   "+ Add Custom Parameter": "＋ 添加自定义参数",
+  "Add Custom Parameter": "添加自定义参数",
   "Type": "类型",
   "toml_key (TOML key value)": "toml_key（TOML 键值）",
   "toml_absent (ensure absent)": "toml_absent（确保不存在）",
