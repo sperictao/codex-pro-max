@@ -17,9 +17,11 @@
 
 ## ✨ 功能亮点
 
-- 🟢 **Taskboard 服务** — 拉起/停止 [dashi-taskboard](https://github.com/chuspeeism/dashi-taskboard) 的 Node 服务，健康检查、状态可视化
+- 🟢 **Taskboard 服务** — 拉起/停止 [dashi-taskboard](https://github.com/chuspeeism/dashi-taskboard) 的 Node 服务，健康检查，首页聚合状态指示；内置 dashboard、列表、甘特图视图
 - 💉 **Codex 注入器** — 以独立 CDP 端口启动 Codex 桌面端并注入 Taskboard 面板（macOS / Windows 商店版均可识别）
 - 🔒 **Codex 配置看守** — 对 `~/.codex/` 下配置文件做 schema 驱动的参数托管、锁定与漂移自动恢复（词汇与边界见 [CONTEXT.md](CONTEXT.md)）
+- 🧰 **FastCtx 集成** — 一键安装 [FastCtx](https://github.com/yc-duan/fastctx) MCP 运行时并接入/摘除 Codex，全程委托 `fastctx` CLI
+- 🎨 **主题** — 42 个 tweakcn 主题族，原生支持亮 / 暗 / 跟随系统；28 种界面字体应用内自托管，完全离线
 - 🔄 **应用自更新** — 内置 Tauri Updater，检查更新、下载、重启一条龙
 
 ---
@@ -107,9 +109,10 @@ tag 推送触发 CI 五路构建（macOS aarch64 / x86_64 / universal、Windows�
 | --- | --- |
 | 桌面框架 | Tauri 2.x（Rust） |
 | 前端 | TypeScript 5 + Vite 6（单页 UI） |
-| UI 与主题 | Tailwind CSS v4 + daisyUI v5；Geist Sans/Mono 可变字体（自托管） |
+| UI 与主题 | Tailwind CSS v4 + tweakcn（shadcn token）主题体系；42 个主题族、28 种自托管字体（[ADR 0008](docs/adr/0008-tweakcn-token-theming.md)） |
 | taskboard 集成 | git submodule（fork 仓库消费上游） |
 | 配置看守 | schema 驱动，TOML / Markdown 区块 / 整文件三种比对模式 |
+| FastCtx 集成 | 委托 `fastctx` CLI（设置页支持一键 npm 全局安装） |
 | 自更新 | Tauri Updater + GitHub Releases |
 
 ---
@@ -147,7 +150,7 @@ npm run build:updater      # 生成 updater 产物
 
 - [dashi-taskboard](https://github.com/chuspeeism/dashi-taskboard) — 内置的任务看板，以 git submodule 集成于 `vendor/dashi-taskboard` 并随安装包分发（见 [ADR 0002](docs/adr/0002-taskboard-submodule-packaging.md)）。上游未声明许可；打包遵循 [CONTEXT.md](CONTEXT.md) 所述的上游 → fork（`sperictao/dashi-taskboard`）→ PR 协作流。启动器侧集成代码为我们自己的工作；看板本体为上游作者的作品。
 - [FastCtx](https://github.com/yc-duan/fastctx) — 可选集成，采用 [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) 许可。本启动器**不**再分发、不内嵌 FastCtx，仅在运行时调用用户自行安装的 `fastctx` CLI。本仓库中的全部集成代码均为我们自己的工作与独自的责任，不代表 FastCtx 作者的认可，FastCtx 作者亦不承担由此产生的任何责任。FastCtx 内嵌 Pdfium，其第三方许可见 FastCtx 的 `THIRD_PARTY_LICENSES.md`（仅在再分发 FastCtx 二进制时相关）。
-- [Geist](https://vercel.com/font)（通过 `@fontsource-variable/geist` 与 `@fontsource-variable/geist-mono` 引入）— 随应用打包的可变字体，采用 SIL Open Font License 1.1（OFL-1.1）许可。
+- 界面字体 — 28 种 Google Fonts 字族（latin / latin-ext 子集）随应用自托管，由 [scripts/build-themes.mjs](scripts/build-themes.mjs) 从 tweakcn registry 构建；各字族许可（多为 OFL）见其 Google Fonts 页面。
 
 ---
 
