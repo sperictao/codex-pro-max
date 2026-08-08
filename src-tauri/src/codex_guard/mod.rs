@@ -1,6 +1,8 @@
 //! Codex 配置看守：schema 驱动的 ~/.codex 参数托管、锁定与漂移恢复。
 //! 词汇与语义边界见仓库 CONTEXT.md 与 docs/adr/0001。
 
+mod backup;
+mod files;
 mod markdown_block;
 mod schema;
 mod toml_ops;
@@ -14,6 +16,8 @@ use toml_edit::DocumentMut;
 use crate::config;
 use crate::i18n::{tr, trf};
 
+use backup::write_with_backup;
+use files::{builtin_files, detect_file_path, find_file, load_files, save_files};
 use markdown_block::{block_begin, block_end, extract_block, upsert_block};
 use schema::{
     default_for_lang, load_disk_schema, load_schema, pick_i18n, save_disk_schema, schema_file_path,
@@ -166,7 +170,7 @@ pub struct GuardView {
 
 // ============ 路径与基础工具 ============
 
-fn codex_home() -> Result<PathBuf, String> {
+pub(crate) fn codex_home() -> Result<PathBuf, String> {
     Ok(config::home_dir()?.join(".codex"))
 }
 
@@ -174,104 +178,11 @@ fn codex_file(rel: &str) -> Result<PathBuf, String> {
     Ok(codex_home()?.join(rel))
 }
 
-fn now_secs() -> u64 {
+pub(crate) fn now_secs() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
-}
-
-// ============ 文件管理 ============
-
-fn builtin_files() -> Vec<GuardFile> {
-    vec![
-        GuardFile {
-            id: "builtin.config-toml".to_string(),
-            name: "config.toml".to_string(),
-            file: "config.toml".to_string(),
-            format: "toml".to_string(),
-            builtin: true,
-            detection: None,
-        },
-        GuardFile {
-            id: "builtin.agents-md".to_string(),
-            name: "AGENTS.md".to_string(),
-            file: "AGENTS.md".to_string(),
-            format: "md".to_string(),
-            builtin: true,
-            detection: None,
-        },
-        GuardFile {
-            id: "builtin.default-toml".to_string(),
-            name: "default.toml".to_string(),
-            file: "agents/default.toml".to_string(),
-            format: "toml".to_string(),
-            builtin: true,
-            detection: None,
-        },
-    ]
-}
-
-/// 加载文件列表；若配置为空则初始化内置文件并持久化
-pub fn load_files() -> Result<Vec<GuardFile>, String> {
-    let mut cfg = config::load_config()?;
-    if cfg.codex_guard.files.is_empty() {
-        cfg.codex_guard.files = builtin_files();
-        config::save_config(&cfg)?;
-    }
-    Ok(cfg.codex_guard.files.clone())
-}
-
-fn save_files(files: &[GuardFile]) -> Result<(), String> {
-    let mut cfg = config::load_config()?;
-    cfg.codex_guard.files = files.to_vec();
-    config::save_config(&cfg)
-}
-
-fn find_file(files: &[GuardFile], id: &str) -> Option<GuardFile> {
-    files.iter().find(|f| f.id == id).cloned()
-}
-
-// ============ 备份 ============
-
-/// 写入前备份目标文件到 ~/.codex/dashi-backups/，每个文件保留 20 份
-fn backup(rel_file: &str, target: &Path) -> Result<(), String> {
-    if !target.exists() {
-        return Ok(());
-    }
-    let dir = codex_home()?.join("dashi-backups");
-    std::fs::create_dir_all(&dir).map_err(|e| trf("Failed to create backup directory: {error}", &[("error", e.to_string())]))?;
-    let flat = rel_file.replace(['/', '\\'], "_");
-    let dest = dir.join(format!("{}.{}.bak", flat, now_secs()));
-    std::fs::copy(target, &dest).map_err(|e| trf("Backup failed: {error}", &[("error", e.to_string())]))?;
-
-    // 只保留 20 份：文件名即时间戳，字典序可排
-    let mut olds: Vec<PathBuf> = std::fs::read_dir(&dir)
-        .map_err(|e| trf("Failed to read backup directory: {error}", &[("error", e.to_string())]))?
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with(&format!("{}.", flat)) && n.ends_with(".bak"))
-        })
-        .collect();
-    olds.sort();
-    while olds.len() > 20 {
-        let _ = std::fs::remove_file(olds.remove(0));
-    }
-    Ok(())
-}
-
-fn write_with_backup(rel_file: &str, target: &Path, content: &str) -> Result<(), String> {
-    backup(rel_file, target)?;
-    if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| trf("Failed to create directory: {error}", &[("error", e.to_string())]))?;
-    }
-    std::fs::write(target, content).map_err(|e| trf("Failed to write {path}: {error}", &[
-        ("path", target.display().to_string()),
-        ("error", e.to_string()),
-    ]))
 }
 
 // ============ 检查与写入 ============
@@ -807,25 +718,6 @@ pub fn guard_remove_file(id: String) -> Result<(), String> {
 
 // ============ 路径检测 ============
 
-// ponytail: 只搜顶层 + 一层子目录；配置散得更深再升级递归
-fn detect_file_path_in(home: &Path, rel: &str) -> Option<String> {
-    if home.join(rel).exists() {
-        return Some(rel.to_string());
-    }
-    let name = Path::new(rel).file_name()?.to_string_lossy().to_string();
-    for e in std::fs::read_dir(home).ok()?.flatten() {
-        let dir = e.path();
-        if dir.is_dir() && dir.join(&name).exists() {
-            return Some(format!("{}/{}", e.file_name().to_string_lossy(), name));
-        }
-    }
-    None
-}
-
-fn detect_file_path(rel: &str) -> Option<String> {
-    detect_file_path_in(&codex_home().ok()?, rel)
-}
-
 /// 检测文件实际路径并落盘记录；之后直接读记录，不重复扫盘
 #[tauri::command]
 pub fn guard_detect_file(id: String) -> Result<GuardFile, String> {
@@ -855,43 +747,4 @@ pub fn guard_relativize_picked_path(abs_path: String) -> Result<String, String> 
     let rel = rel.to_string_lossy().replace('\\', "/");
     validate_file_path(&rel)?;
     Ok(rel)
-}
-
-// ============ 自校验 ============
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn builtin_files_has_three_entries() {
-        let files = builtin_files();
-        assert_eq!(files.len(), 3);
-        for f in &files {
-            assert!(f.builtin, "{} 应该是内置文件", f.id);
-            assert!(f.id.starts_with("builtin."));
-            validate_guard_file(f).unwrap();
-        }
-    }
-
-    #[test]
-    fn detect_file_path_finds_config_and_shallow_nested() {
-        let home = std::env::temp_dir().join(format!("dashi-detect-test-{}", std::process::id()));
-        std::fs::create_dir_all(home.join("agents")).unwrap();
-        std::fs::write(home.join("config.toml"), "").unwrap();
-        std::fs::write(home.join("agents/default.toml"), "").unwrap();
-
-        // 原位置命中
-        assert_eq!(detect_file_path_in(&home, "config.toml"), Some("config.toml".into()));
-        assert_eq!(
-            detect_file_path_in(&home, "agents/default.toml"),
-            Some("agents/default.toml".into())
-        );
-        // 配置写顶层但实际在子目录 → 浅搜命中
-        assert_eq!(detect_file_path_in(&home, "default.toml"), Some("agents/default.toml".into()));
-        // 不存在 → None
-        assert_eq!(detect_file_path_in(&home, "nope.toml"), None);
-
-        std::fs::remove_dir_all(&home).ok();
-    }
 }
