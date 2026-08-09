@@ -43,7 +43,7 @@
 
 ## 🚀 开发环境
 
-要求：Node ≥ 22.5、Rust stable、系统 Tauri 依赖（见 [Tauri 官方前置条件](https://v2.tauri.app/start/prerequisites/)）。
+要求：Node ≥ 22.5、Rust ≥ 1.89.0、系统 Tauri 依赖（见 [Tauri 官方前置条件](https://v2.tauri.app/start/prerequisites/)）。
 
 ```bash
 # submodule 必需：vendor/dashi-taskboard 是 git submodule
@@ -123,7 +123,7 @@ tag 推送触发 CI 五路构建（macOS aarch64 / x86_64 / universal、Windows�
 npm run tauri dev          # 开发模式（前端 + Rust 后端）
 npm run tauri build        # 生产打包
 npm run build              # 仅构建前端（tsc + vite build）
-npm test                   # 主题解析测试
+npm test                   # 前端与构建包装器测试
 npm run build:taskboard    # 构建内置 taskboard 的 web UI 到 dist/web
 npm run build:updater      # 生成 updater 产物
 ```

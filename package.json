@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "test": "node scripts/test-theme.mjs",
+    "test": "node scripts/test-theme.mjs && node scripts/test-build-updater.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "build:updater": "node scripts/build-updater.mjs",

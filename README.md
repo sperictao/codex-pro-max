@@ -43,7 +43,7 @@ Grab the installer for your platform from [Releases](https://github.com/spericta
 
 ## 🚀 Development
 
-Requirements: Node ≥ 22.5, Rust stable, and the system Tauri dependencies (see [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)).
+Requirements: Node ≥ 22.5, Rust ≥ 1.89.0, and the system Tauri dependencies (see [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)).
 
 ```bash
 # submodules required: vendor/dashi-taskboard is a git submodule
@@ -123,7 +123,7 @@ Pushing the tag triggers five CI builds (macOS aarch64 / x86_64 / universal, Win
 npm run tauri dev          # dev mode (frontend + Rust backend)
 npm run tauri build        # production bundle
 npm run build              # frontend only (tsc + vite build)
-npm test                   # theme parser tests
+npm test                   # frontend and build-wrapper tests
 npm run build:taskboard    # build the bundled taskboard web UI into dist/web
 npm run build:updater      # generate updater artifacts
 ```

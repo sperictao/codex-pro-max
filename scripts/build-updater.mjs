@@ -67,6 +67,8 @@ function main(argv = process.argv.slice(2)) {
     "--config",
     updaterConfigPath,
     ...normalizeForwardedArgs(argv),
+    "--",
+    "--locked",
   ];
 
   // Windows 上 spawnSync 找不到 npm，需要 shell 模式
