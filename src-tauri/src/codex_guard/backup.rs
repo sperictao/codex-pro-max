@@ -4,14 +4,14 @@ use std::path::{Path, PathBuf};
 
 use crate::i18n::trf;
 
-use super::{codex_home, now_secs};
+use super::{now_secs, AppPaths};
 
 /// 写入前备份目标文件到 ~/.codex/dashi-backups/，每个文件保留 20 份
-fn backup(rel_file: &str, target: &Path) -> Result<(), String> {
+fn backup(paths: &AppPaths, rel_file: &str, target: &Path) -> Result<(), String> {
     if !target.exists() {
         return Ok(());
     }
-    let dir = codex_home()?.join("dashi-backups");
+    let dir = paths.backup_root().to_path_buf();
     std::fs::create_dir_all(&dir).map_err(|e| trf("Failed to create backup directory: {error}", &[("error", e.to_string())]))?;
     let flat = rel_file.replace(['/', '\\'], "_");
     let dest = dir.join(format!("{}.{}.bak", flat, now_secs()));
@@ -35,8 +35,8 @@ fn backup(rel_file: &str, target: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn write_with_backup(rel_file: &str, target: &Path, content: &str) -> Result<(), String> {
-    backup(rel_file, target)?;
+pub(crate) fn write_with_backup(paths: &AppPaths, rel_file: &str, target: &Path, content: &str) -> Result<(), String> {
+    backup(paths, rel_file, target)?;
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent).map_err(|e| trf("Failed to create directory: {error}", &[("error", e.to_string())]))?;
     }

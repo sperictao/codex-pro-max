@@ -5,6 +5,7 @@ use tokio::sync::Mutex;
 use std::process::Stdio;
 
 use crate::i18n::{tr, trf};
+use crate::codex_guard::AppPaths;
 
 /// 为 Command 添加跨平台无窗口设置
 /// Windows: CREATE_NO_WINDOW 防止弹出终端窗口
@@ -79,12 +80,13 @@ impl ManagedProcess {
 pub struct ProcessManager {
     pub taskboard: Arc<Mutex<ManagedProcess>>,
     pub injector: Arc<Mutex<ManagedProcess>>,
+    paths: AppPaths,
 }
 
 /// 解析 node 可执行文件路径
 /// ponytail: GUI 应用（Finder 启动）PATH 只有 /usr/bin:/bin，裸 "node" 会 ENOENT；
 /// 空配置时先探测常见安装位置，探测不到再退回 PATH 查找
-pub fn resolve_node(node_path: &str) -> String {
+pub fn resolve_node(paths: &AppPaths, node_path: &str) -> String {
     if !node_path.is_empty() {
         return node_path.to_string();
     }
@@ -94,9 +96,7 @@ pub fn resolve_node(node_path: &str) -> String {
             "/opt/homebrew/bin/node".to_string(),
             "/usr/local/bin/node".to_string(),
         ];
-        if let Ok(home) = std::env::var("HOME") {
-            candidates.push(format!("{}/.local/bin/node", home));
-        }
+        candidates.push(paths.home_root().join(".local/bin/node").to_string_lossy().to_string());
         candidates.push("/usr/bin/node".to_string());
         for c in candidates {
             if std::path::Path::new(&c).exists() {
@@ -297,17 +297,12 @@ async fn ensure_codex_cdp(app_path: &str, port: u16, new_instance: bool) -> Resu
     })
 }
 
-impl Default for ProcessManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl ProcessManager {
-    pub fn new() -> Self {
+    pub(crate) fn new(paths: AppPaths) -> Self {
         Self {
             taskboard: Arc::new(Mutex::new(ManagedProcess::new("taskboard-server"))),
             injector: Arc::new(Mutex::new(ManagedProcess::new("codex-injector"))),
+            paths,
         }
     }
 
@@ -339,7 +334,7 @@ impl ProcessManager {
         tb.status = ProcessStatus::Starting;
         tb.message = tr("Starting Taskboard server...");
 
-        let node = resolve_node(node_path);
+        let node = resolve_node(&self.paths, node_path);
         let server_script = format!("{}/server/index.mjs", taskboard_path);
 
         let mut cmd = Command::new(&node);
@@ -453,7 +448,7 @@ impl ProcessManager {
 
         inj.message = tr("Starting Codex injector...");
 
-        let node = resolve_node(node_path);
+        let node = resolve_node(&self.paths, node_path);
         let injector_script = format!("{}/scripts/codex-injector.mjs", taskboard_path);
 
         let mut cmd = Command::new(&node);
@@ -563,13 +558,16 @@ impl ProcessManager {
 #[cfg(test)]
 mod tests {
     use super::resolve_node;
+    use crate::codex_guard::AppPaths;
 
     #[test]
     fn resolves_existing_node() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::for_test(temp.path());
         // 显式路径原样返回
-        assert_eq!(resolve_node("/custom/node"), "/custom/node");
+        assert_eq!(resolve_node(&paths, "/custom/node"), "/custom/node");
         // 空配置：探测到的路径必须真实存在（或退回 PATH 查找）
-        let node = resolve_node("");
+        let node = resolve_node(&paths, "");
         if node != "node" {
             assert!(std::path::Path::new(&node).exists(), "探测结果不存在: {}", node);
         }

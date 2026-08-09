@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
+use crate::codex_guard::atomic_store::{AtomicFileWriter, PlatformAtomicFileWriter};
+use crate::codex_guard::{AppPaths, GuardParam};
 
 /// 启动器配置，持久化到 ~/.dashi-taskboard-launcher/config.json
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,27 +106,139 @@ impl Default for LauncherConfig {
     }
 }
 
-/// 跨平台获取用户主目录
-pub fn home_dir() -> Result<PathBuf, String> {
-    // Unix 使用 HOME，Windows 使用 USERPROFILE
-    #[cfg(unix)]
-    {
-        std::env::var("HOME")
-            .map(PathBuf::from)
-            .map_err(|_| crate::i18n::tr("Cannot get HOME environment variable"))
-    }
-    #[cfg(windows)]
-    {
-        std::env::var("USERPROFILE")
-            .map(PathBuf::from)
-            .map_err(|_| crate::i18n::tr("Cannot get USERPROFILE environment variable"))
-    }
+#[derive(Clone)]
+pub(crate) struct ConfigStore {
+    paths: AppPaths,
+    lock: Arc<Mutex<()>>,
+    writer: Arc<dyn AtomicFileWriter>,
 }
 
-/// 获取配置文件路径
-pub fn config_file_path() -> Result<PathBuf, String> {
-    let home = home_dir()?;
-    Ok(home.join(".dashi-taskboard-launcher").join("config.json"))
+impl ConfigStore {
+    pub(crate) fn new(paths: AppPaths) -> Self {
+        Self {
+            paths,
+            lock: Arc::new(Mutex::new(())),
+            writer: Arc::new(PlatformAtomicFileWriter),
+        }
+    }
+
+    #[cfg(test)]
+    fn with_writer(paths: AppPaths, writer: Arc<dyn AtomicFileWriter>) -> Self {
+        Self {
+            paths,
+            lock: Arc::new(Mutex::new(())),
+            writer,
+        }
+    }
+
+    pub(crate) fn load_launcher(&self) -> Result<LauncherConfig, String> {
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|_| "config store lock is poisoned".to_string())?;
+        self.load_launcher_unlocked()
+    }
+
+    pub(crate) fn update_launcher<R>(
+        &self,
+        update: impl FnOnce(&mut LauncherConfig) -> Result<R, String>,
+    ) -> Result<R, String> {
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|_| "config store lock is poisoned".to_string())?;
+        let mut config = self.load_launcher_unlocked()?;
+        let result = update(&mut config)?;
+        let bytes = serde_json::to_vec_pretty(&config)
+            .map_err(|error| crate::i18n::trf("Failed to serialize config: {error}", &[("error", error.to_string())]))?;
+        self.writer.replace(&self.paths.config_file(), &bytes)?;
+        Ok(result)
+    }
+
+    pub(crate) fn load_guard_schema(&self) -> Result<Vec<GuardParam>, String> {
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|_| "config store lock is poisoned".to_string())?;
+        self.load_guard_schema_unlocked()
+    }
+
+    pub(crate) fn update_guard_schema<R>(
+        &self,
+        update: impl FnOnce(&mut Vec<GuardParam>) -> Result<R, String>,
+    ) -> Result<R, String> {
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|_| "config store lock is poisoned".to_string())?;
+        let mut schema = self.load_guard_schema_unlocked()?;
+        let result = update(&mut schema)?;
+        let bytes = serde_json::to_vec_pretty(&schema)
+            .map_err(|error| crate::i18n::trf("Failed to serialize schema: {error}", &[("error", error.to_string())]))?;
+        self.writer.replace(&self.paths.guard_schema_file(), &bytes)?;
+        Ok(result)
+    }
+
+    pub(crate) fn ensure_guard_schema_file(&self, default_bytes: &[u8]) -> Result<(), String> {
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|_| "config store lock is poisoned".to_string())?;
+        match std::fs::metadata(self.paths.guard_schema_file()) {
+            Ok(_) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                self.writer.replace(&self.paths.guard_schema_file(), default_bytes)
+            }
+            Err(error) => Err(crate::i18n::trf(
+                "Failed to read schema file: {error}",
+                &[("error", error.to_string())],
+            )),
+        }
+    }
+
+    fn load_launcher_unlocked(&self) -> Result<LauncherConfig, String> {
+        let path = self.paths.config_file();
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(LauncherConfig::default());
+            }
+            Err(error) => {
+                return Err(crate::i18n::trf(
+                    "Failed to read config file: {error}",
+                    &[("error", error.to_string())],
+                ));
+            }
+        };
+        let mut config: LauncherConfig = serde_json::from_slice(&bytes).map_err(|error| {
+            crate::i18n::trf(
+                "Failed to parse config file: {error}",
+                &[("error", error.to_string())],
+            )
+        })?;
+        config.taskboard_path = strip_unc(&config.taskboard_path);
+        Ok(config)
+    }
+
+    fn load_guard_schema_unlocked(&self) -> Result<Vec<GuardParam>, String> {
+        let path = self.paths.guard_schema_file();
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => {
+                return Err(crate::i18n::trf(
+                    "Failed to read schema file: {error}",
+                    &[("error", error.to_string())],
+                ));
+            }
+        };
+        serde_json::from_slice(&bytes).map_err(|error| {
+            crate::i18n::trf(
+                "Failed to parse schema file: {error}",
+                &[("error", error.to_string())],
+            )
+        })
+    }
 }
 
 /// 剥掉 Windows `\\?\` 扩展路径前缀。
@@ -142,21 +257,6 @@ pub fn strip_unc(s: &str) -> String {
     s.to_string()
 }
 
-/// 加载配置文件，不存在则返回默认值
-pub fn load_config() -> Result<LauncherConfig, String> {
-    let path = config_file_path()?;
-    if !path.exists() {
-        return Ok(LauncherConfig::default());
-    }
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| crate::i18n::trf("Failed to read config file: {error}", &[("error", e.to_string())]))?;
-    let mut config: LauncherConfig = serde_json::from_str(&content)
-        .map_err(|e| crate::i18n::trf("Failed to parse config file: {error}", &[("error", e.to_string())]))?;
-    // 兼容旧配置里已存的 \\?\ 前缀路径
-    config.taskboard_path = strip_unc(&config.taskboard_path);
-    Ok(config)
-}
-
 /// 用新设置字段更新现有配置，保留 codex_guard 等非设置页字段不变
 /// 防止设置页保存时把内存中过时的看守状态写回
 pub fn merge_settings(current: &mut LauncherConfig, settings: &LauncherConfig) {
@@ -172,24 +272,21 @@ pub fn merge_settings(current: &mut LauncherConfig, settings: &LauncherConfig) {
     current.language = settings.language.clone();
 }
 
-/// 保存配置文件
-pub fn save_config(config: &LauncherConfig) -> Result<(), String> {
-    let path = config_file_path()?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| crate::i18n::trf("Failed to create config directory: {error}", &[("error", e.to_string())]))?;
-    }
-    let content = serde_json::to_string_pretty(config)
-        .map_err(|e| crate::i18n::trf("Failed to serialize config: {error}", &[("error", e.to_string())]))?;
-    std::fs::write(&path, content)
-        .map_err(|e| crate::i18n::trf("Failed to write config file: {error}", &[("error", e.to_string())]))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::codex_guard::CodexGuardState;
+    use crate::codex_guard::{AppPaths, CodexGuardState};
     use std::collections::HashMap;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Barrier;
+
+    struct FailingWriter;
+
+    impl AtomicFileWriter for FailingWriter {
+        fn replace(&self, _target: &std::path::Path, _bytes: &[u8]) -> Result<(), String> {
+            Err("injected replace failure".to_string())
+        }
+    }
 
     fn sample_guard_state() -> CodexGuardState {
         use crate::codex_guard::GuardParamState;
@@ -283,5 +380,107 @@ mod tests {
         let cfg = LauncherConfig::default();
         assert_eq!(cfg.codex_guard.enabled, false);
         assert!(cfg.codex_guard.params.is_empty());
+    }
+
+    #[test]
+    fn corrupt_launcher_config_blocks_update_without_changing_bytes() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::for_test(temp.path());
+        std::fs::create_dir_all(paths.launcher_root()).unwrap();
+        let original = b"{ not valid json";
+        std::fs::write(paths.config_file(), original).unwrap();
+        let store = ConfigStore::new(paths.clone());
+        let closure_ran = AtomicBool::new(false);
+
+        let result = store.update_launcher(|config| {
+            closure_ran.store(true, Ordering::SeqCst);
+            config.language = "en".to_string();
+            Ok(())
+        });
+
+        assert!(result.is_err());
+        assert!(!closure_ran.load(Ordering::SeqCst));
+        assert_eq!(std::fs::read(paths.config_file()).unwrap(), original);
+    }
+
+    #[test]
+    fn corrupt_guard_schema_blocks_update_without_changing_bytes() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::for_test(temp.path());
+        std::fs::create_dir_all(paths.launcher_root()).unwrap();
+        let original = b"[ not valid json";
+        std::fs::write(paths.guard_schema_file(), original).unwrap();
+        let store = ConfigStore::new(paths.clone());
+        let closure_ran = AtomicBool::new(false);
+
+        let result = store.update_guard_schema(|schema| {
+            closure_ran.store(true, Ordering::SeqCst);
+            schema.clear();
+            Ok(())
+        });
+
+        assert!(result.is_err());
+        assert!(!closure_ran.load(Ordering::SeqCst));
+        assert_eq!(std::fs::read(paths.guard_schema_file()).unwrap(), original);
+    }
+
+    #[test]
+    fn failed_replace_preserves_old_launcher_bytes() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::for_test(temp.path());
+        std::fs::create_dir_all(paths.launcher_root()).unwrap();
+        let mut old_config = LauncherConfig::default();
+        old_config.language = "zh-CN".to_string();
+        let original = serde_json::to_vec_pretty(&old_config).unwrap();
+        std::fs::write(paths.config_file(), &original).unwrap();
+        let store = ConfigStore::with_writer(paths.clone(), Arc::new(FailingWriter));
+
+        let result = store.update_launcher(|config| {
+            config.language = "en".to_string();
+            Ok(())
+        });
+
+        assert_eq!(result.unwrap_err(), "injected replace failure");
+        assert_eq!(std::fs::read(paths.config_file()).unwrap(), original);
+    }
+
+    #[test]
+    fn concurrent_updates_preserve_both_launcher_fields() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::for_test(temp.path());
+        let store = ConfigStore::new(paths);
+        let barrier = Arc::new(Barrier::new(3));
+
+        let settings_store = store.clone();
+        let settings_barrier = barrier.clone();
+        let settings = std::thread::spawn(move || {
+            settings_barrier.wait();
+            settings_store
+                .update_launcher(|config| {
+                    config.language = "en".to_string();
+                    Ok(())
+                })
+                .unwrap();
+        });
+
+        let guard_store = store.clone();
+        let guard_barrier = barrier.clone();
+        let guard = std::thread::spawn(move || {
+            guard_barrier.wait();
+            guard_store
+                .update_launcher(|config| {
+                    config.codex_guard.enabled = true;
+                    Ok(())
+                })
+                .unwrap();
+        });
+
+        barrier.wait();
+        settings.join().unwrap();
+        guard.join().unwrap();
+
+        let config = store.load_launcher().unwrap();
+        assert_eq!(config.language, "en");
+        assert!(config.codex_guard.enabled);
     }
 }

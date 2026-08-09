@@ -110,6 +110,23 @@ node scripts/run-rust-tests.mjs --manifest-path src-tauri/Cargo.toml --filter co
 一个精确测试名，再执行并施加 60 秒硬超时；任何 0 tests 都失败。CI 冷编译使用
 `cargo test --no-run --locked`，不把编译时间算入 60 秒测试预算。
 
+### Step 1 实施结果（2026-08-10）
+
+- 已完成 `AppPaths` 注入：生产代码只在 `main.rs` 的 composition root 读取
+  `HOME/USERPROFILE`，Config、Guard、FastCtx、skill 与 Node 探测都使用共享路径对象；
+  集成测试用源码静态门锁定该约束。
+- 已完成 `ConfigStore` 收口：Launcher 配置、Guard schema 与 Guard 文件列表通过同一共享
+  互斥更新；损坏文件 fail closed，读取默认文件列表不再写磁盘。
+- 已完成单文件原子替换壳：同目录唯一临时文件写入并 flush 后替换目标，保留既有权限并
+  拒绝只读目标；Unix 使用 rename，Windows 使用 replace-existing + write-through API。
+  跨文件事务、journal 与恢复仍留在 Step 5。
+- 已完成跨平台 Rust test runner：list-before-run、0 tests 失败、执行阶段 60 秒超时、临时
+  HOME/USERPROFILE 隔离并保留真实 CARGO_HOME/RUSTUP_HOME；Quality 的三平台 MSRV 矩阵已接入。
+- 验证通过：Rust 1.89.0 `--locked --no-run`、Clippy `-D warnings`、39 个单元测试与 1 个
+  集成测试、runner 自测 3 项、前端测试与生产构建、workflow YAML 解析、`git diff --check`。
+
+Step 1 已完成；Plan 001 继续保持 `IN PROGRESS`，Step 1.5 尚未开始。
+
 ## Step 1.5：建立 Rust 单一来源的 Guard IPC 合同
 
 - 使用与最终 MSRV、Tauri 版本通过 Step 0 验证的精确版本 `specta/tauri-specta` 生成

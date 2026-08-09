@@ -2,11 +2,12 @@
 
 use serde::Serialize;
 
-use crate::config;
+use crate::config::ConfigStore;
 
 use super::engine::{check, expected_of};
-use super::files::{builtin_files, load_files};
+use super::files::load_files;
 use super::schema::load_schema;
+use super::AppPaths;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,10 +50,10 @@ pub struct GuardView {
     pub groups: Vec<GroupView>,
 }
 
-pub fn build_view() -> Result<GuardView, String> {
-    let cfg = config::load_config().unwrap_or_default();
-    let schema = load_schema();
-    let files = load_files().unwrap_or_else(|_| builtin_files());
+pub fn build_view(store: &ConfigStore, paths: &AppPaths) -> Result<GuardView, String> {
+    let cfg = store.load_launcher()?;
+    let schema = load_schema(store)?;
+    let files = load_files(store)?;
 
     let mut groups: Vec<GroupView> = Vec::new();
     for f in &files {
@@ -62,7 +63,7 @@ pub fn build_view() -> Result<GuardView, String> {
         for p in schema.iter().filter(|p| p.file == f.file) {
             let state = cfg.codex_guard.params.get(&p.id);
             let expected = expected_of(p, state);
-            let c = check(p, &expected);
+            let c = check(paths, p, &expected);
             if group_error.is_none() && c.error.is_some() {
                 group_error = c.error.clone();
             }

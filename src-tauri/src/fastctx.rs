@@ -5,8 +5,9 @@
 use serde::Serialize;
 use std::process::Command;
 
-use crate::config;
 use crate::i18n::trf;
+use crate::AppState;
+use tauri::State;
 
 /// 安装检测 + 接入状态
 #[derive(Debug, Serialize)]
@@ -77,8 +78,8 @@ fn integrated_in(content: &str) -> Result<bool, String> {
         .is_some())
 }
 
-fn read_integrated() -> Result<bool, String> {
-    let path = config::home_dir()?.join(".codex").join("config.toml");
+fn read_integrated(paths: &crate::codex_guard::AppPaths) -> Result<bool, String> {
+    let path = paths.codex_file("config.toml");
     match std::fs::read_to_string(&path) {
         Ok(c) => integrated_in(&c),
         Err(_) => Ok(false), // 文件缺失 = 未接入
@@ -87,7 +88,7 @@ fn read_integrated() -> Result<bool, String> {
 
 /// 检测：安装状态（PATH 探测）+ 接入状态（读 config.toml），每次实时，不落盘
 #[tauri::command]
-pub fn fastctx_detect() -> Result<FastctxStatus, String> {
+pub fn fastctx_detect(state: State<'_, AppState>) -> Result<FastctxStatus, String> {
     let (installed, version) = match cli_command("fastctx", &["--version"]).output() {
         Ok(o) if o.status.success() => {
             let v = String::from_utf8_lossy(&o.stdout).trim().to_string();
@@ -98,7 +99,7 @@ pub fn fastctx_detect() -> Result<FastctxStatus, String> {
     Ok(FastctxStatus {
         installed,
         version,
-        integrated: read_integrated()?,
+        integrated: read_integrated(&state.paths)?,
     })
 }
 

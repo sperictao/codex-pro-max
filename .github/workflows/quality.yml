@@ -85,11 +85,15 @@ jobs:
         run: npm run ensure:taskboard
       - name: Test updater build wrapper
         run: node scripts/test-build-updater.mjs
+      - name: Test Rust runner
+        run: npm run test:rust-runner
       - name: Verify locked dependency graph
         run: cargo metadata --manifest-path src-tauri/Cargo.toml --locked --no-deps --format-version 1
       - name: Check all Rust targets
         run: cargo check --manifest-path src-tauri/Cargo.toml --all-targets --locked
       - name: Compile Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked --no-run
-      - name: Run Rust tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Run all Rust tests
+        run: node scripts/run-rust-tests.mjs --manifest-path src-tauri/Cargo.toml --timeout 60
+      - name: Run Guard paths contract target
+        run: node scripts/run-rust-tests.mjs --manifest-path src-tauri/Cargo.toml --test guard_paths_contract --timeout 60

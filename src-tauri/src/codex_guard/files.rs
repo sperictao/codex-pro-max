@@ -2,9 +2,9 @@
 
 use std::path::Path;
 
-use crate::config;
+use crate::config::ConfigStore;
 
-use super::GuardFile;
+use super::{AppPaths, GuardFile};
 
 pub(crate) fn builtin_files() -> Vec<GuardFile> {
     vec![
@@ -35,20 +35,30 @@ pub(crate) fn builtin_files() -> Vec<GuardFile> {
     ]
 }
 
-/// 加载文件列表；若配置为空则初始化内置文件并持久化
-pub(crate) fn load_files() -> Result<Vec<GuardFile>, String> {
-    let mut cfg = config::load_config()?;
-    if cfg.codex_guard.files.is_empty() {
-        cfg.codex_guard.files = builtin_files();
-        config::save_config(&cfg)?;
-    }
-    Ok(cfg.codex_guard.files.clone())
+/// 加载有效文件列表；空持久状态只在内存投影内置文件，不产生写副作用。
+pub(crate) fn load_files(store: &ConfigStore) -> Result<Vec<GuardFile>, String> {
+    let cfg = store.load_launcher()?;
+    Ok(if cfg.codex_guard.files.is_empty() {
+        builtin_files()
+    } else {
+        cfg.codex_guard.files
+    })
 }
 
-pub(crate) fn save_files(files: &[GuardFile]) -> Result<(), String> {
-    let mut cfg = config::load_config()?;
-    cfg.codex_guard.files = files.to_vec();
-    config::save_config(&cfg)
+pub(crate) fn update_files<R>(
+    store: &ConfigStore,
+    update: impl FnOnce(&mut Vec<GuardFile>) -> Result<R, String>,
+) -> Result<R, String> {
+    store.update_launcher(|config| {
+        let mut files = if config.codex_guard.files.is_empty() {
+            builtin_files()
+        } else {
+            std::mem::take(&mut config.codex_guard.files)
+        };
+        let result = update(&mut files)?;
+        config.codex_guard.files = files;
+        Ok(result)
+    })
 }
 
 pub(crate) fn find_file(files: &[GuardFile], id: &str) -> Option<GuardFile> {
@@ -70,14 +80,15 @@ fn detect_file_path_in(home: &Path, rel: &str) -> Option<String> {
     None
 }
 
-pub(crate) fn detect_file_path(rel: &str) -> Option<String> {
-    detect_file_path_in(&super::codex_home().ok()?, rel)
+pub(crate) fn detect_file_path(paths: &AppPaths, rel: &str) -> Option<String> {
+    detect_file_path_in(paths.codex_root(), rel)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::codex_guard::validate::validate_guard_file;
+    use crate::config::ConfigStore;
 
     #[test]
     fn builtin_files_has_three_entries() {
@@ -92,7 +103,8 @@ mod tests {
 
     #[test]
     fn detect_file_path_finds_config_and_shallow_nested() {
-        let home = std::env::temp_dir().join(format!("dashi-detect-test-{}", std::process::id()));
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().join("codex");
         std::fs::create_dir_all(home.join("agents")).unwrap();
         std::fs::write(home.join("config.toml"), "").unwrap();
         std::fs::write(home.join("agents/default.toml"), "").unwrap();
@@ -107,7 +119,17 @@ mod tests {
         assert_eq!(detect_file_path_in(&home, "default.toml"), Some("agents/default.toml".into()));
         // 不存在 → None
         assert_eq!(detect_file_path_in(&home, "nope.toml"), None);
+    }
 
-        std::fs::remove_dir_all(&home).ok();
+    #[test]
+    fn load_files_projects_builtins_without_writing_config() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::for_test(temp.path());
+        let store = ConfigStore::new(paths.clone());
+
+        let files = load_files(&store).unwrap();
+
+        assert_eq!(files.len(), 3);
+        assert!(!paths.config_file().exists());
     }
 }

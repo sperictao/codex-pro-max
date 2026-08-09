@@ -2,10 +2,12 @@
 //! 词汇与语义边界见仓库 CONTEXT.md 与 docs/adr/0001。
 
 mod backup;
+pub(crate) mod atomic_store;
 mod commands;
 mod engine;
 mod files;
 mod markdown_block;
+mod paths;
 mod poll;
 mod schema;
 mod toml_ops;
@@ -14,13 +16,10 @@ mod view;
 
 pub use commands::*;
 pub use poll::poll_loop;
+pub(crate) use paths::AppPaths;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
-
-use crate::config;
-
 use schema::pick_i18n;
 
 // ============ schema 与状态类型 ============
@@ -118,16 +117,6 @@ pub struct DetectRecord {
     /// 检测到的相对 ~/.codex 路径；None = 未找到该文件
     pub path: Option<String>,
     pub at: u64,
-}
-
-// ============ 路径与基础工具（模块共享 kernel） ============
-
-pub(crate) fn codex_home() -> Result<PathBuf, String> {
-    Ok(config::home_dir()?.join(".codex"))
-}
-
-pub(crate) fn codex_file(rel: &str) -> Result<PathBuf, String> {
-    Ok(codex_home()?.join(rel))
 }
 
 pub(crate) fn now_secs() -> u64 {

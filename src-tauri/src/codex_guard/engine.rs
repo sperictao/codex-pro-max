@@ -12,7 +12,7 @@ use super::toml_ops::{
     get_toml_path, json_to_toml, remove_toml_path, render_toml_value, set_toml_path,
     toml_matches_json,
 };
-use super::{codex_file, GuardParam, GuardParamState};
+use super::{AppPaths, GuardParam, GuardParamState};
 
 pub struct CheckResult {
     pub status: String, // match | drift | missing | error
@@ -37,11 +37,8 @@ fn err(msg: String) -> CheckResult {
 }
 
 /// 比对某参数的期望状态与实际状态。TOML 解析失败只报错误，绝不重写文件。
-pub(crate) fn check(param: &GuardParam, expected: &serde_json::Value) -> CheckResult {
-    let file = match codex_file(&param.file) {
-        Ok(f) => f,
-        Err(e) => return err(e),
-    };
+pub(crate) fn check(paths: &AppPaths, param: &GuardParam, expected: &serde_json::Value) -> CheckResult {
+    let file = paths.codex_file(&param.file);
     let content = match std::fs::read_to_string(&file) {
         Ok(c) => Some(c),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -106,8 +103,8 @@ pub(crate) fn check(param: &GuardParam, expected: &serde_json::Value) -> CheckRe
 }
 
 /// 把期望值写入 codex 文件（写入前备份）
-pub(crate) fn apply(param: &GuardParam, expected: &serde_json::Value) -> Result<(), String> {
-    let file = codex_file(&param.file)?;
+pub(crate) fn apply(paths: &AppPaths, param: &GuardParam, expected: &serde_json::Value) -> Result<(), String> {
+    let file = paths.codex_file(&param.file);
     match param.apply_mode.as_str() {
         "toml_key" => {
             let content = std::fs::read_to_string(&file).unwrap_or_default();
@@ -115,7 +112,7 @@ pub(crate) fn apply(param: &GuardParam, expected: &serde_json::Value) -> Result<
                 .parse::<DocumentMut>()
                 .map_err(|e| trf("TOML parse failed; nothing written: {error}", &[("error", e.to_string())]))?;
             set_toml_path(&mut doc, &param.path, json_to_toml(expected)?)?;
-            write_with_backup(&param.file, &file, &doc.to_string())
+            write_with_backup(paths, &param.file, &file, &doc.to_string())
         }
         "toml_absent" => {
             let content = match std::fs::read_to_string(&file) {
@@ -127,12 +124,12 @@ pub(crate) fn apply(param: &GuardParam, expected: &serde_json::Value) -> Result<
                 .parse::<DocumentMut>()
                 .map_err(|e| trf("TOML parse failed; nothing written: {error}", &[("error", e.to_string())]))?;
             remove_toml_path(&mut doc, &param.path);
-            write_with_backup(&param.file, &file, &doc.to_string())
+            write_with_backup(paths, &param.file, &file, &doc.to_string())
         }
         "file_overwrite" => {
             let mut content = expected.as_str().unwrap_or("").trim().to_string();
             content.push('\n');
-            write_with_backup(&param.file, &file, &content)
+            write_with_backup(paths, &param.file, &file, &content)
         }
         "markdown_block" => {
             let content = std::fs::read_to_string(&file).unwrap_or_default();
@@ -142,7 +139,7 @@ pub(crate) fn apply(param: &GuardParam, expected: &serde_json::Value) -> Result<
                 &block_end(&param.id),
                 expected.as_str().unwrap_or(""),
             );
-            write_with_backup(&param.file, &file, &new_content)
+            write_with_backup(paths, &param.file, &file, &new_content)
         }
         other => Err(trf("Unknown apply_mode: {mode}", &[("mode", other.to_string())])),
     }

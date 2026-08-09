@@ -13,12 +13,31 @@ mod i18n;
 mod process_manager;
 mod updater;
 
-use config::LauncherConfig;
+use config::{ConfigStore, LauncherConfig};
+use codex_guard::AppPaths;
 use process_manager::{ProcessManager, ProcessInfo, resolve_node};
 
 /// 应用共享状态
-pub struct AppState {
-    pub pm: Arc<ProcessManager>,
+pub(crate) struct AppState {
+    pub(crate) pm: Arc<ProcessManager>,
+    pub(crate) paths: AppPaths,
+    pub(crate) config_store: ConfigStore,
+}
+
+/// 生产 composition root 唯一允许读取用户主目录环境变量的位置。
+fn resolve_home_root() -> Result<std::path::PathBuf, String> {
+    #[cfg(unix)]
+    {
+        std::env::var("HOME")
+            .map(std::path::PathBuf::from)
+            .map_err(|_| i18n::tr("Cannot get HOME environment variable"))
+    }
+    #[cfg(windows)]
+    {
+        std::env::var("USERPROFILE")
+            .map(std::path::PathBuf::from)
+            .map_err(|_| i18n::tr("Cannot get USERPROFILE environment variable"))
+    }
 }
 
 /// 进程事故通知需要的全局 AppHandle（setup 时填充）
@@ -96,8 +115,8 @@ fn get_bundled_taskboard_path(app: tauri::AppHandle) -> Option<String> {
 
 /// 加载配置
 #[tauri::command]
-async fn load_config() -> Result<LauncherConfig, String> {
-    config::load_config()
+async fn load_config(state: State<'_, AppState>) -> Result<LauncherConfig, String> {
+    state.config_store.load_launcher()
 }
 
 /// 当前解析语言（"en" | "zh-CN"），前端初始化 i18next 时取
@@ -120,17 +139,21 @@ fn set_language(app: tauri::AppHandle, setting: String) -> Result<(), String> {
 
 /// 保存配置（全量覆盖，仅前端已知字段的场景使用）
 #[tauri::command]
-async fn save_config(config: LauncherConfig) -> Result<(), String> {
-    config::save_config(&config)
+async fn save_config(state: State<'_, AppState>, config: LauncherConfig) -> Result<(), String> {
+    state.config_store.update_launcher(|current| {
+        config::merge_settings(current, &config);
+        Ok(())
+    })
 }
 
 /// 仅更新设置类字段，保留 codex_guard 等看守状态不变
 /// 防止设置页保存时把内存中过时的看守状态写回，导致 apply/lock 被回滚
 #[tauri::command]
-async fn update_settings(config: LauncherConfig) -> Result<(), String> {
-    let mut current = config::load_config()?;
-    config::merge_settings(&mut current, &config);
-    config::save_config(&current)
+async fn update_settings(state: State<'_, AppState>, config: LauncherConfig) -> Result<(), String> {
+    state.config_store.update_launcher(|current| {
+        config::merge_settings(current, &config);
+        Ok(())
+    })
 }
 
 /// 检测 dashi-taskboard 项目路径是否有效
@@ -145,8 +168,8 @@ async fn validate_taskboard_path(path: String) -> Result<bool, String> {
 
 /// 检测 Node.js 是否可用并返回版本
 #[tauri::command]
-async fn check_node_version(node_path: String) -> Result<String, String> {
-    let node = resolve_node(&node_path);
+async fn check_node_version(state: State<'_, AppState>, node_path: String) -> Result<String, String> {
+    let node = resolve_node(&state.paths, &node_path);
     let mut cmd = std::process::Command::new(&node);
     cmd.arg("--version");
     // Windows 上不弹出终端窗口
@@ -178,15 +201,12 @@ fn is_codex_exe(name: &str) -> bool {
 }
 
 /// Codex/ChatGPT 桌面端常见安装位置，按优先级排序
-fn codex_app_candidates() -> Vec<String> {
+fn codex_app_candidates(paths: &AppPaths) -> Vec<String> {
     #[cfg(target_os = "macos")]
     let v = vec![
         "/Applications/ChatGPT.app".to_string(),
         "/Applications/Codex.app".to_string(),
-        format!(
-            "{}/Applications/ChatGPT.app",
-            std::env::var("HOME").unwrap_or_default()
-        ),
+        paths.home_root().join("Applications/ChatGPT.app").to_string_lossy().to_string(),
     ];
     #[cfg(target_os = "windows")]
     let v = {
@@ -323,8 +343,8 @@ pub(crate) fn launch_store_app(amid: &str, args: &str) -> Result<(), String> {
 
 /// 自动探测 Codex 桌面应用，返回第一个真实存在的路径
 #[tauri::command]
-fn detect_codex_app() -> Option<String> {
-    let found = codex_app_candidates()
+fn detect_codex_app(state: State<'_, AppState>) -> Option<String> {
+    let found = codex_app_candidates(&state.paths)
         .into_iter()
         .find(|p| std::path::Path::new(p).exists());
     // 商店版无文件路径，返回 msix: 哨兵，ensure_codex_cdp 按此前缀走 COM 激活
@@ -336,7 +356,7 @@ fn detect_codex_app() -> Option<String> {
 /// 检测 Codex 桌面应用是否存在
 /// 支持检查指定路径 + 搜索常见安装位置
 #[tauri::command]
-async fn check_codex_app(app_path: String) -> Result<bool, String> {
+async fn check_codex_app(state: State<'_, AppState>, app_path: String) -> Result<bool, String> {
     // 1. 检查用户指定的路径
     if !app_path.is_empty() && std::path::Path::new(&app_path).exists() {
         return Ok(true);
@@ -349,7 +369,7 @@ async fn check_codex_app(app_path: String) -> Result<bool, String> {
     }
 
     // 2. 搜索常见安装位置
-    for candidate in codex_app_candidates() {
+    for candidate in codex_app_candidates(&state.paths) {
         if std::path::Path::new(&candidate).exists() {
             return Ok(true);
         }
@@ -523,18 +543,6 @@ async fn stop_injector(state: State<'_, AppState>) -> Result<(), String> {
     state.pm.stop_injector().await
 }
 
-/// 跨平台获取用户主目录
-fn home_dir() -> Result<String, String> {
-    #[cfg(unix)]
-    {
-        std::env::var("HOME").map_err(|_| i18n::tr("Cannot get HOME environment variable"))
-    }
-    #[cfg(windows)]
-    {
-        std::env::var("USERPROFILE").map_err(|_| i18n::tr("Cannot get USERPROFILE environment variable"))
-    }
-}
-
 /// 在浏览器中打开 Taskboard
 #[tauri::command]
 async fn open_taskboard(config: LauncherConfig) -> Result<(), String> {
@@ -570,9 +578,8 @@ struct SkillStatus {
 
 /// 检测 manage-taskboard Skill 的安装状态
 #[tauri::command]
-async fn check_skill_status(taskboard_path: String) -> Result<SkillStatus, String> {
-    let home = home_dir()?;
-    let target = std::path::Path::new(&home).join(".codex/skills/manage-taskboard");
+async fn check_skill_status(state: State<'_, AppState>, taskboard_path: String) -> Result<SkillStatus, String> {
+    let target = state.paths.manage_taskboard_skill_dir();
     let source = std::path::Path::new(&taskboard_path).join("skills/manage-taskboard");
     let target_path = target.display().to_string();
 
@@ -625,10 +632,9 @@ async fn check_skill_status(taskboard_path: String) -> Result<SkillStatus, Strin
 
 /// 安装 Codex Skill（创建符号链接）
 #[tauri::command]
-async fn install_skill(taskboard_path: String) -> Result<String, String> {
-    let home = home_dir()?;
+async fn install_skill(state: State<'_, AppState>, taskboard_path: String) -> Result<String, String> {
     let skill_source = std::path::Path::new(&taskboard_path).join("skills/manage-taskboard");
-    let skill_target = std::path::Path::new(&home).join(".codex/skills/manage-taskboard");
+    let skill_target = state.paths.manage_taskboard_skill_dir();
 
     // 检查源路径
     if !skill_source.exists() {
@@ -638,7 +644,7 @@ async fn install_skill(taskboard_path: String) -> Result<String, String> {
     }
 
     // 创建目标目录
-    let skills_dir = std::path::Path::new(&home).join(".codex/skills");
+    let skills_dir = state.paths.codex_skills_root();
     std::fs::create_dir_all(&skills_dir)
         .map_err(|e| i18n::trf("Failed to create skills directory: {error}", &[("error", e.to_string())]))?;
 
@@ -672,11 +678,12 @@ async fn install_skill(taskboard_path: String) -> Result<String, String> {
 /// 运行 taskctl 命令
 #[tauri::command]
 async fn run_taskctl(
+    state: State<'_, AppState>,
     taskboard_path: String,
     node_path: String,
     args: Vec<String>,
 ) -> Result<String, String> {
-    let node = resolve_node(&node_path);
+    let node = resolve_node(&state.paths, &node_path);
     let taskctl_script = format!("{}/cli/taskctl.mjs", taskboard_path);
 
     let mut cmd = std::process::Command::new(&node);
@@ -766,8 +773,10 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         "start-all" => {
             let app_handle = app.clone();
             tauri::async_runtime::spawn(async move {
-                let pm = app_handle.state::<AppState>().pm.clone();
-                match config::load_config() {
+                let state = app_handle.state::<AppState>();
+                let pm = state.pm.clone();
+                let store = state.config_store.clone();
+                match store.load_launcher() {
                     Ok(cfg) => {
                         if let Err(e) = run_start_all(&pm, &app_handle, &cfg).await {
                             log::error!("托盘一键启动失败: {}", e);
@@ -820,6 +829,12 @@ pub fn run() {
         default_hook(info);
     }));
 
+    let app_paths = AppPaths::from_home(
+        resolve_home_root().expect("cannot resolve the user home directory"),
+    );
+    let process_manager = Arc::new(ProcessManager::new(app_paths.clone()));
+    let config_store = ConfigStore::new(app_paths.clone());
+
     tauri::Builder::default()
         // single-instance 必须最先注册：第二实例在此退出，其余插件不重复初始化
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -856,14 +871,17 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState {
-            pm: Arc::new(ProcessManager::new()),
+            pm: process_manager,
+            paths: app_paths,
+            config_store,
         })
         .manage(updater::PendingUpdateState::default())
         .setup(|app| {
             log::info!("Dashi Taskboard Launcher 启动中...");
             let _ = APP_HANDLE.set(app.handle().clone());
             // 启动即解析界面语言（system → 具体语言），托盘与后续所有产串处都读它
-            let setting = config::load_config()
+            let state = app.state::<AppState>();
+            let setting = state.config_store.load_launcher()
                 .map(|c| c.language)
                 .unwrap_or_else(|_| "system".to_string());
             i18n::set_current(i18n::resolve_language(&setting));
@@ -899,12 +917,16 @@ pub fn run() {
                 }
                 show_main_window(app.handle());
             }
-            tauri::async_runtime::spawn(codex_guard::poll_loop());
+            tauri::async_runtime::spawn(codex_guard::poll_loop(
+                state.config_store.clone(),
+                state.paths.clone(),
+            ));
             Ok(())
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let minimize_to_tray = config::load_config()
+                let state = window.app_handle().state::<AppState>();
+                let minimize_to_tray = state.config_store.load_launcher()
                     .map(|c| c.minimize_to_tray_on_close)
                     .unwrap_or(false);
                 if minimize_to_tray {

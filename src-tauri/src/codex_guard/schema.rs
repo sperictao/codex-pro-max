@@ -1,11 +1,8 @@
 //! schema：内置 + 磁盘托管参数的加载、合并与按界面语言取值
 
-use std::path::PathBuf;
+use crate::config::ConfigStore;
 
-use crate::config;
-use crate::i18n::trf;
-
-use super::GuardParam;
+use super::{AppPaths, GuardParam};
 
 const BUILTIN_SCHEMA: &str = include_str!("guard_schema.json");
 
@@ -27,37 +24,18 @@ pub(crate) fn default_for_lang<'a>(p: &'a GuardParam, lang: &str) -> &'a serde_j
     }
 }
 
-pub(crate) fn schema_file_path() -> Result<PathBuf, String> {
-    Ok(config::home_dir()?
-        .join(".dashi-taskboard-launcher")
-        .join("codex-guard-schema.json"))
+pub(crate) fn schema_file_path(paths: &AppPaths) -> std::path::PathBuf {
+    paths.guard_schema_file()
 }
 
 /// 加载 schema：磁盘同 id 覆盖内置（用户定制内置参数），磁盘独有条目保留；
 /// 例外：label_en/description_en/default_en 是随二进制发布的英文资源、不算用户数据，
 /// 始终以内置为准——否则旧版本释放到磁盘的中文副本会永久滞留（i18n 实机踩坑）
-pub(crate) fn load_schema() -> Vec<GuardParam> {
+pub(crate) fn load_schema(store: &ConfigStore) -> Result<Vec<GuardParam>, String> {
     let builtin: Vec<GuardParam> =
         serde_json::from_str(BUILTIN_SCHEMA).expect("内置 guard schema 必须可解析");
-
-    let path = match schema_file_path() {
-        Ok(p) => p,
-        Err(_) => return builtin,
-    };
-    if !path.exists() {
-        // 首次运行释放默认 schema，方便用户自行扩展
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        let _ = std::fs::write(&path, BUILTIN_SCHEMA);
-        return builtin;
-    }
-    let disk: Vec<GuardParam> = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|c| serde_json::from_str(&c).ok())
-        .unwrap_or_default();
-
-    merge_schema(builtin, disk)
+    let disk = store.load_guard_schema()?;
+    Ok(merge_schema(builtin, disk))
 }
 
 /// 合并内置与磁盘 schema（纯函数，便于测试）
@@ -77,29 +55,15 @@ fn merge_schema(builtin: Vec<GuardParam>, disk: Vec<GuardParam>) -> Vec<GuardPar
     merged
 }
 
-/// 加载磁盘上的用户 schema（不含内置合并）
-pub(crate) fn load_disk_schema() -> Result<Vec<GuardParam>, String> {
-    let path = schema_file_path()?;
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| trf("Failed to read schema file: {error}", &[("error", e.to_string())]))?;
-    let schema: Vec<GuardParam> = serde_json::from_str(&content)
-        .map_err(|e| trf("Failed to parse schema file: {error}", &[("error", e.to_string())]))?;
-    Ok(schema)
+pub(crate) fn update_disk_schema<R>(
+    store: &ConfigStore,
+    update: impl FnOnce(&mut Vec<GuardParam>) -> Result<R, String>,
+) -> Result<R, String> {
+    store.update_guard_schema(update)
 }
 
-pub(crate) fn save_disk_schema(schema: &[GuardParam]) -> Result<(), String> {
-    let path = schema_file_path()?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| trf("Failed to create schema directory: {error}", &[("error", e.to_string())]))?;
-    }
-    let content = serde_json::to_string_pretty(schema)
-        .map_err(|e| trf("Failed to serialize schema: {error}", &[("error", e.to_string())]))?;
-    std::fs::write(&path, content)
-        .map_err(|e| trf("Failed to write schema file: {error}", &[("error", e.to_string())]))
+pub(crate) fn ensure_schema_file(store: &ConfigStore) -> Result<(), String> {
+    store.ensure_guard_schema_file(BUILTIN_SCHEMA.as_bytes())
 }
 
 #[cfg(test)]
