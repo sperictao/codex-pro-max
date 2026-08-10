@@ -50,6 +50,8 @@ jobs:
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --locked -- -D warnings
       - name: Test
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Check generated Guard contracts
+        run: npm run check:contracts
 
   rust-msrv-targeted:
     name: rust-msrv-targeted-${{ matrix.os }}
@@ -97,3 +99,7 @@ jobs:
         run: node scripts/run-rust-tests.mjs --manifest-path src-tauri/Cargo.toml --timeout 60
       - name: Run Guard paths contract target
         run: node scripts/run-rust-tests.mjs --manifest-path src-tauri/Cargo.toml --test guard_paths_contract --timeout 60
+      - name: Run Guard command registry contract target
+        run: node scripts/run-rust-tests.mjs --manifest-path src-tauri/Cargo.toml --test guard_command_registry --timeout 60
+      - name: Check generated Guard contracts
+        run: npm run check:contracts

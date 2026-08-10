@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "test": "node scripts/test-theme.mjs && node scripts/test-build-updater.mjs",
+    "test": "node scripts/test-theme.mjs && node scripts/test-build-updater.mjs && node scripts/test-guard-contracts.mjs",
+    "check:contracts": "node scripts/check-guard-contracts.mjs",
     "test:rust-runner": "node scripts/test-run-rust-tests.mjs",
     "preview": "vite preview",
     "tauri": "tauri",

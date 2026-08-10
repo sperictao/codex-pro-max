@@ -1,18 +1,12 @@
 // 跨域共享状态与配置词汇（ADR 0009：依赖单向，域模块 → state/工具）
 // 只有被两个以上域引用的状态才住这里；域内状态留在各自模块
 
-export interface GuardParamState {
-  value: unknown | null;
-  applied: boolean;
-  locked: boolean;
-  last_checked?: number | null;
-  last_restored?: number | null;
-}
+import type {
+  CodexGuardState as GeneratedCodexGuardState,
+} from "./generated/guard-contracts";
 
-export interface CodexGuardState {
-  enabled: boolean;
-  params: Record<string, GuardParamState>;
-}
+export type { GuardParamState } from "./generated/guard-contracts";
+export type CodexGuardState = Required<Pick<GeneratedCodexGuardState, "enabled" | "params">>;
 
 export interface LauncherConfig {
   taskboard_path: string;

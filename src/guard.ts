@@ -1,61 +1,37 @@
 // guard：看守视图渲染与参数操作、看守文件管理、自定义参数管理
 
-import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog, ask } from "@tauri-apps/plugin-dialog";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
 import { t } from "./i18n";
 import { toast, escapeHtml, fmtTs } from "./core";
 import { state } from "./state";
 import { showHome } from "./nav";
+import type { GuardFile, GuardParam, GuardView, JsonValue } from "./generated/guard-contracts";
+import {
+  guardAddCustomParam as contractAddCustomParam,
+  guardAddFile as contractAddFile,
+  guardApply as contractApply,
+  guardDetectFile as contractDetectFile,
+  guardGetFiles as contractGetFiles,
+  guardGetSchemaFilePath as contractGetSchemaFilePath,
+  guardGetView as contractGetView,
+  guardRelativizePickedPath as contractRelativizePickedPath,
+  guardRemoveCustomParam as contractRemoveCustomParam,
+  guardRemoveFile as contractRemoveFile,
+  guardSetApplied as contractSetApplied,
+  guardSetEnabled as contractSetEnabled,
+  guardSetLocked as contractSetLocked,
+  guardSetValue as contractSetValue,
+  guardUpdateFile as contractUpdateFile,
+} from "./generated/guard-contract-runtime";
 
-interface GuardParamView {
-  id: string;
-  label: string;
-  description: string;
-  applyMode: string;
-  valueType: string;
-  path: string;
-  default: unknown;
-  value: unknown;
-  applied: boolean;
-  locked: boolean;
-  actual: string | null;
-  status: "match" | "drift" | "missing" | "error";
-  error: string | null;
-  lastChecked: number | null;
-  lastRestored: number | null;
-  custom: boolean;
-}
-
-interface GuardGroupView {
-  id: string;
-  name: string;
-  file: string;
-  format: string;
-  builtin: boolean;
-  error: string | null;
-  params: GuardParamView[];
-}
-
-interface GuardFileView {
-  id: string;
-  name: string;
-  file: string;
-  format: string;
-  builtin: boolean;
-  detection: { path: string | null; at: number } | null;
-}
-
-interface GuardView {
-  enabled: boolean;
-  groups: GuardGroupView[];
-}
+type GuardFileView = GuardFile;
 
 // ============ 总开关 ============
 export async function toggleGuard(): Promise<void> {
   const enabled = !state.guardState.enabled;
   try {
-    await invoke("guard_set_enabled", { enabled });
+    await contractSetEnabled(enabled);
     state.guardState.enabled = enabled;
     renderGuardToggle();
     toast(enabled ? t("Config guard enabled") : t("Config guard disabled"), enabled ? "success" : "info");
@@ -87,7 +63,7 @@ export async function refreshGuardView(force = false): Promise<void> {
   const viewEl = document.getElementById("guard-view");
   if (!viewEl || viewEl.classList.contains("hidden")) return;
   try {
-    const view = await invoke<GuardView>("guard_get_view");
+    const view = await contractGetView();
     const json = JSON.stringify(view);
     if (!force && json === lastGuardJson) return;
     // 用户正在输入时不重渲染，避免抢走焦点/清空草稿
@@ -181,10 +157,10 @@ export async function guardToggleBool(id: string): Promise<void> {
   const st = state.guardState.params[id];
   if (st?.locked) return;
   try {
-    const view = await invoke<GuardView>("guard_get_view");
+    const view = await contractGetView();
     const p = view.groups.flatMap((g) => g.params).find((x) => x.id === id);
     if (!p) return;
-    await invoke("guard_set_value", { id, value: p.value !== true });
+    await contractSetValue(id, p.value !== true);
     await refreshGuardView(true);
   } catch (e) {
     toast(t("Change failed: {{error}}", { error: String(e) }), "error");
@@ -193,7 +169,7 @@ export async function guardToggleBool(id: string): Promise<void> {
 
 export async function guardSetValue(id: string, input: HTMLInputElement | HTMLTextAreaElement): Promise<void> {
   try {
-    const view = await invoke<GuardView>("guard_get_view");
+    const view = await contractGetView();
     const p = view.groups.flatMap((g) => g.params).find((x) => x.id === id);
     if (!p) return;
     const value = p.valueType === "int" ? parseInt(input.value, 10) : input.value;
@@ -202,7 +178,7 @@ export async function guardSetValue(id: string, input: HTMLInputElement | HTMLTe
       await refreshGuardView(true);
       return;
     }
-    await invoke("guard_set_value", { id, value });
+    await contractSetValue(id, value as JsonValue);
     await refreshGuardView(true);
   } catch (e) {
     toast(t("Save failed: {{error}}", { error: String(e) }), "error");
@@ -212,7 +188,7 @@ export async function guardSetValue(id: string, input: HTMLInputElement | HTMLTe
 
 export async function guardApply(id: string): Promise<void> {
   try {
-    await invoke("guard_apply", { id });
+    await contractApply(id);
     toast(t("Applied"), "success");
   } catch (e) {
     toast(t("Apply failed: {{error}}", { error: String(e) }), "error");
@@ -222,7 +198,7 @@ export async function guardApply(id: string): Promise<void> {
 
 export async function guardToggleApplied(id: string): Promise<void> {
   try {
-    const view = await invoke<GuardView>("guard_get_view");
+    const view = await contractGetView();
     const p = view.groups.flatMap((g) => g.params).find((x) => x.id === id);
     if (!p) return;
     if (p.applied) {
@@ -238,7 +214,7 @@ export async function guardToggleApplied(id: string): Promise<void> {
 
 export async function guardDisable(id: string): Promise<void> {
   try {
-    await invoke("guard_set_applied", { id, applied: false });
+    await contractSetApplied(id, false);
     toast(t("Disabled"), "info");
   } catch (e) {
     toast(t("Operation failed: {{error}}", { error: String(e) }), "error");
@@ -248,7 +224,7 @@ export async function guardDisable(id: string): Promise<void> {
 
 export async function guardSetLocked(id: string, locked: boolean): Promise<void> {
   try {
-    await invoke("guard_set_locked", { id, locked });
+    await contractSetLocked(id, locked);
     toast(locked ? t("Locked") : t("Unlocked"), locked ? "success" : "info");
   } catch (e) {
     toast(t("Operation failed: {{error}}", { error: String(e) }), "error");
@@ -262,7 +238,7 @@ let guardAddParamFileId: string | null = null;
 
 export async function refreshGuardFiles(): Promise<void> {
   try {
-    guardFiles = await invoke<GuardFileView[]>("guard_get_files");
+    guardFiles = await contractGetFiles();
     renderGuardFiles();
     // 首次（无检测记录）自动检测一次并落盘；之后直接读记录，不重复扫盘
     for (const f of guardFiles) {
@@ -366,7 +342,7 @@ export async function guardPickFilePath(): Promise<void> {
   try {
     const selected = await openDialog({ multiple: false });
     if (typeof selected !== "string") return;
-    const rel = await invoke<string>("guard_relativize_picked_path", { absPath: selected });
+    const rel = await contractRelativizePickedPath(selected);
     (document.getElementById("settings-guard-file-path") as HTMLInputElement).value = rel;
     // 顺手带入文件名与格式
     const nameEl = document.getElementById("settings-guard-file-name") as HTMLInputElement;
@@ -389,10 +365,10 @@ export async function guardSaveFileForm(): Promise<void> {
   if (!file) { toast(t("Please enter a file path"), "error"); return; }
   try {
     if (editingFileId) {
-      await invoke("guard_update_file", { id: editingFileId, name, file });
+      await contractUpdateFile(editingFileId, name, file);
       toast(t("Updated"), "success");
     } else {
-      await invoke("guard_add_file", { name, file, format });
+      await contractAddFile(name, file, format);
       toast(t("File added"), "success");
     }
     (document.getElementById("settings-guard-file-name") as HTMLInputElement).value = "";
@@ -409,7 +385,7 @@ export async function guardDetectFile(id: string, auto = false): Promise<void> {
   const f = guardFiles.find((x) => x.id === id);
   if (!f) return;
   try {
-    const updated = await invoke<GuardFileView>("guard_detect_file", { id });
+    const updated = await contractDetectFile(id);
     guardFiles = guardFiles.map((x) => (x.id === id ? updated : x));
     renderGuardFiles();
     const detected = updated.detection?.path ?? null;
@@ -421,7 +397,7 @@ export async function guardDetectFile(id: string, auto = false): Promise<void> {
         { title: t("Update Guard Path"), kind: "warning" }
       );
       if (ok) {
-        await invoke("guard_update_file", { id, name: updated.name, file: detected });
+        await contractUpdateFile(id, updated.name, detected);
         toast(t("Updated to the detected path"), "success");
         await refreshGuardFiles();
         await refreshGuardView(true);
@@ -441,7 +417,7 @@ export async function guardRemoveFile(id: string): Promise<void> {
     return;
   }
   try {
-    await invoke("guard_remove_file", { id });
+    await contractRemoveFile(id);
     toast(t("Deleted"), "success");
     await refreshGuardFiles();
     await refreshGuardView(true);
@@ -508,7 +484,7 @@ export function onGuardAddValueTypeChange(): void {
   }
 }
 
-function parseDefaultValue(value: string, effectiveType: string): unknown {
+function parseDefaultValue(value: string, effectiveType: string): JsonValue {
   switch (effectiveType) {
     case "bool":
       return value === "true";
@@ -549,18 +525,18 @@ export async function guardAddCustom(): Promise<void> {
   try {
     const effectiveType = (mode === "file_overwrite" || mode === "markdown_block") ? "text" : valueType;
     const defaultVal = parseDefaultValue(defaultRaw, effectiveType);
-    const param = {
+    const param: GuardParam = {
       id,
       label,
       description: desc,
       file: "",
-      applyMode: mode,
+      apply_mode: mode,
       path,
-      valueType: effectiveType,
+      value_type: effectiveType,
       default: defaultVal,
       custom: true,
     };
-    await invoke("guard_add_custom_param", { param, fileId });
+    await contractAddCustomParam(param, fileId);
     toast(t("Custom parameter added"), "success");
     // 清空表单并收起
     (document.getElementById("guard-add-id") as HTMLInputElement).value = "";
@@ -581,7 +557,7 @@ export async function guardRemoveCustom(id: string): Promise<void> {
     return;
   }
   try {
-    await invoke("guard_remove_custom_param", { id });
+    await contractRemoveCustomParam(id);
     toast(t("Deleted"), "success");
     await refreshGuardView(true);
   } catch (e) {
@@ -591,13 +567,13 @@ export async function guardRemoveCustom(id: string): Promise<void> {
 
 export async function guardOpenSchemaFile(): Promise<void> {
   try {
-    const path = await invoke<string>("guard_get_schema_file_path");
+    const path = await contractGetSchemaFilePath();
     // shell 插件的 open 可以打开文件所在目录/文件
     await openUrl(path);
   } catch (e) {
     // 回退：复制路径到剪贴板
     try {
-      const path = await invoke<string>("guard_get_schema_file_path");
+      const path = await contractGetSchemaFilePath();
       await navigator.clipboard.writeText(path);
       toast(t("Path copied to clipboard: {{path}}", { path }), "info");
     } catch {

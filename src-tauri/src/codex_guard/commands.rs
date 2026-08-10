@@ -24,11 +24,13 @@ fn find_param(schema: &[GuardParam], id: &str) -> Result<GuardParam, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn guard_get_view(state: State<'_, AppState>) -> Result<GuardView, String> {
     build_view(&state.config_store, &state.paths)
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn guard_set_enabled(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
     state.config_store.update_launcher(|config| {
         config.codex_guard.enabled = enabled;
@@ -37,6 +39,7 @@ pub fn guard_set_enabled(state: State<'_, AppState>, enabled: bool) -> Result<()
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn guard_set_value(state: State<'_, AppState>, id: String, value: serde_json::Value) -> Result<(), String> {
     let schema = load_schema(&state.config_store)?;
     let p = find_param(&schema, &id)?;
@@ -73,11 +76,13 @@ fn guard_apply_inner(state: &AppState, id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn guard_apply(state: State<'_, AppState>, id: String) -> Result<(), String> {
     guard_apply_inner(&state, id)
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn guard_set_applied(state: State<'_, AppState>, id: String, applied: bool) -> Result<(), String> {
     if applied {
         return guard_apply_inner(&state, id);
@@ -94,6 +99,7 @@ pub fn guard_set_applied(state: State<'_, AppState>, id: String, applied: bool) 
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn guard_set_locked(state: State<'_, AppState>, id: String, locked: bool) -> Result<(), String> {
     let schema = load_schema(&state.config_store)?;
     let p = find_param(&schema, &id)?;
@@ -121,6 +127,7 @@ pub fn guard_set_locked(state: State<'_, AppState>, id: String, locked: bool) ->
 // ============ 自定义参数管理 ============
 
 #[tauri::command]
+#[specta::specta]
 pub fn guard_add_custom_param(
     state: State<'_, AppState>,
     mut param: GuardParam,
@@ -146,6 +153,7 @@ pub fn guard_add_custom_param(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn guard_remove_custom_param(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let normalized = normalize_custom_id(&id);
 
@@ -168,6 +176,7 @@ pub fn guard_remove_custom_param(state: State<'_, AppState>, id: String) -> Resu
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn guard_get_schema_file_path(state: State<'_, AppState>) -> Result<String, String> {
     ensure_schema_file(&state.config_store)?;
     Ok(schema_file_path(&state.paths).to_string_lossy().to_string())
@@ -176,11 +185,13 @@ pub fn guard_get_schema_file_path(state: State<'_, AppState>) -> Result<String, 
 // ============ 文件管理命令 ============
 
 #[tauri::command]
+#[specta::specta]
 pub fn guard_get_files(state: State<'_, AppState>) -> Result<Vec<GuardFile>, String> {
     load_files(&state.config_store)
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn guard_add_file(state: State<'_, AppState>, name: String, file: String, format: String) -> Result<GuardFile, String> {
     // 从 name 推导 id slug（简单处理：非字母数字替换为 -，去首尾 -，小写）
     let slug = name
@@ -219,6 +230,7 @@ pub fn guard_add_file(state: State<'_, AppState>, name: String, file: String, fo
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn guard_update_file(state: State<'_, AppState>, id: String, name: String, file: String) -> Result<GuardFile, String> {
     let files = load_files(&state.config_store)?;
     let idx = files
@@ -267,6 +279,7 @@ pub fn guard_update_file(state: State<'_, AppState>, id: String, name: String, f
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn guard_remove_file(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let target_file = update_files(&state.config_store, |files| {
         let idx = files
@@ -305,6 +318,7 @@ pub fn guard_remove_file(state: State<'_, AppState>, id: String) -> Result<(), S
 
 /// 检测文件实际路径并落盘记录；之后直接读记录，不重复扫盘
 #[tauri::command]
+#[specta::specta]
 pub fn guard_detect_file(state: State<'_, AppState>, id: String) -> Result<GuardFile, String> {
     update_files(&state.config_store, |files| {
         let file = files
@@ -321,6 +335,7 @@ pub fn guard_detect_file(state: State<'_, AppState>, id: String) -> Result<Guard
 
 /// 把文件选择器选中的绝对路径换算为相对 ~/.codex 的路径（越界拒绝）
 #[tauri::command]
+#[specta::specta]
 pub fn guard_relativize_picked_path(state: State<'_, AppState>, abs_path: String) -> Result<String, String> {
     let home = state.paths.codex_root();
     let rel = std::path::Path::new(&abs_path)

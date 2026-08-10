@@ -69,7 +69,7 @@ Codex 配置看守（词汇与边界见 [../CONTEXT.md](../CONTEXT.md) 与 [adr/
 - **状态**：`LauncherConfig.codex_guard`（enabled + 每参数 value/applied/locked/last_checked/last_restored）
 - **轮询**：`poll_loop` tokio 任务，60s 固定间隔，仅看守文件列表内且锁定的参数；漂移即备份后改回
 - **备份**：任何写入前复制目标文件到 `~/.codex/dashi-backups/`，每文件保留 20 份
-- **命令**：`guard_get_view` / `guard_set_enabled` / `guard_set_value` / `guard_apply` / `guard_set_locked` / `guard_add_custom_param` / `guard_remove_custom_param` / `guard_get_schema_file_path` / `guard_get_files` / `guard_add_file` / `guard_update_file` / `guard_remove_file` / `guard_detect_file`（路径检测：只搜顶层+一层子目录，结果落盘为检测记录，之后直接读记录不重复扫）
+- **命令**：`guard_get_view` / `guard_set_enabled` / `guard_set_value` / `guard_apply` / `guard_set_applied` / `guard_set_locked` / `guard_add_custom_param` / `guard_remove_custom_param` / `guard_get_schema_file_path` / `guard_get_files` / `guard_add_file` / `guard_update_file` / `guard_remove_file` / `guard_detect_file` / `guard_relativize_picked_path`（路径检测：只搜顶层+一层子目录，结果落盘为检测记录，之后直接读记录不重复扫）
 
 ### 3.5 taskboard 集成与打包
 

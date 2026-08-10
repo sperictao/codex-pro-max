@@ -9,7 +9,7 @@ use super::files::load_files;
 use super::schema::load_schema;
 use super::AppPaths;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ParamView {
     pub id: String,
@@ -31,7 +31,7 @@ pub struct ParamView {
     pub custom: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct GroupView {
     pub id: String,
@@ -43,9 +43,11 @@ pub struct GroupView {
     pub params: Vec<ParamView>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct GuardView {
+    #[serde(rename = "schemaVersion")]
+    pub schema_version: u16,
     pub enabled: bool,
     pub groups: Vec<GroupView>,
 }
@@ -98,6 +100,7 @@ pub fn build_view(store: &ConfigStore, paths: &AppPaths) -> Result<GuardView, St
         });
     }
     Ok(GuardView {
+        schema_version: super::contracts::GUARD_CONTRACT_SCHEMA_VERSION,
         enabled: cfg.codex_guard.enabled,
         groups,
     })

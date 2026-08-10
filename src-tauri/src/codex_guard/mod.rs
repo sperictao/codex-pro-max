@@ -4,6 +4,7 @@
 mod backup;
 pub(crate) mod atomic_store;
 mod commands;
+pub(crate) mod contracts;
 mod engine;
 mod files;
 mod markdown_block;
@@ -25,7 +26,7 @@ use schema::pick_i18n;
 // ============ schema 与状态类型 ============
 
 /// schema 中的一条托管参数
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct GuardParam {
     pub id: String,
     pub label: String,
@@ -69,7 +70,7 @@ impl GuardParam {
 }
 
 /// 单个参数的托管状态，持久化在 LauncherConfig.codex_guard.params
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
 pub struct GuardParamState {
     /// 用户改后的值；None = 用 schema 推荐值
     #[serde(default)]
@@ -84,7 +85,7 @@ pub struct GuardParamState {
     pub last_restored: Option<u64>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
 pub struct CodexGuardState {
     #[serde(default)]
     pub enabled: bool,
@@ -96,7 +97,7 @@ pub struct CodexGuardState {
 }
 
 /// 看守目标文件
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct GuardFile {
     pub id: String,
     pub name: String,
@@ -112,7 +113,7 @@ pub struct GuardFile {
 }
 
 /// 一次路径检测的结果记录
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct DetectRecord {
     /// 检测到的相对 ~/.codex 路径；None = 未找到该文件
     pub path: Option<String>,

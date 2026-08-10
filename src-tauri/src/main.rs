@@ -999,6 +999,16 @@ pub fn run() {
 }
 
 fn main() {
+    let mut args = std::env::args_os().skip(1);
+    if args.next().as_deref() == Some(std::ffi::OsStr::new("--generate-guard-contracts")) {
+        let output = args
+            .next()
+            .map(std::path::PathBuf::from)
+            .expect("--generate-guard-contracts requires an output path");
+        codex_guard::contracts::export_to(output)
+            .unwrap_or_else(|error| panic!("failed to generate Guard contracts: {error}"));
+        return;
+    }
     run();
 }
 
