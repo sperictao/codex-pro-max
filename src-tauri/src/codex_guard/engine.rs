@@ -591,15 +591,6 @@ pub(crate) fn prepare_single_plan(
     expected: &serde_json::Value,
 ) -> Result<(PathBuf, Option<Vec<u8>>, PlannedFileWrite), String> {
     validate_mode_format(param, format)?;
-    let relative_file =
-        validate_target_path(paths, &param.file).map_err(|error| error.to_string())?;
-    let file = paths.codex_file(&relative_file);
-    let original = read_existing(&file)?;
-    let managed_file = ManagedFile {
-        relative_file: relative_file.clone(),
-        format,
-        original_exists: original.is_some(),
-    };
     let member = ManagedMember {
         id: param.id.clone(),
         apply_mode: param.apply_mode.clone(),
@@ -607,9 +598,31 @@ pub(crate) fn prepare_single_plan(
         value_type: param.value_type.clone(),
         expected: expected.clone(),
     };
+    prepare_file_plan(paths, &param.file, format, std::slice::from_ref(&member))
+}
+
+/// 读取同一物理文件一次，并为多个托管成员生成一个候选文件。
+///
+/// 轮询和单参数命令都通过这里进入 `plan_file_write`，避免同一文件的成员
+/// 各自解析、各自写入而留下中间状态。
+pub(crate) fn prepare_file_plan(
+    paths: &AppPaths,
+    relative_file: &str,
+    format: GuardFileFormat,
+    members: &[ManagedMember],
+) -> Result<(PathBuf, Option<Vec<u8>>, PlannedFileWrite), String> {
+    let relative_file =
+        validate_target_path(paths, relative_file).map_err(|error| error.to_string())?;
+    let file = paths.codex_file(&relative_file);
+    let original = read_existing(&file)?;
+    let managed_file = ManagedFile {
+        relative_file: relative_file.clone(),
+        format,
+        original_exists: original.is_some(),
+    };
     let plan = plan_file_write(
         &managed_file,
-        std::slice::from_ref(&member),
+        members,
         original.as_deref().unwrap_or_default(),
     )
     .map_err(|diagnostics| format_validation_error(&diagnostics))?;
@@ -619,8 +632,7 @@ pub(crate) fn prepare_single_plan(
         && plan.original_exists == original.is_some()
         && plan.original_sha256 == sha256_hex(original_bytes)
         && plan.candidate_sha256 == sha256_hex(&plan.candidate)
-        && plan.post_checks.len() == 1
-        && plan.post_checks[0].id == param.id;
+        && plan.post_checks.len() == members.len();
     if !plan_is_consistent {
         return Err(tr("Guard write plan is inconsistent"));
     }
@@ -628,6 +640,7 @@ pub(crate) fn prepare_single_plan(
 }
 
 /// 通过纯计划器生成单文件候选，再交给批量事务执行器。
+#[cfg(test)]
 pub(crate) fn execute_single_plan(
     paths: &AppPaths,
     param: &GuardParam,
