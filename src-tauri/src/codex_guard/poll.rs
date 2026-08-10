@@ -24,10 +24,8 @@ fn poll_once(
     paths: &AppPaths,
     coordinator: &GuardCoordinator,
 ) -> Result<(), String> {
-    let _write = match coordinator.try_write() {
-        Ok(guard) => guard,
-        Err(error) if error == "guard_busy" => return Ok(()),
-        Err(error) => return Err(error),
+    let Some(_write) = coordinator.try_poll_write()? else {
+        return Ok(());
     };
     let snapshot = store.load_launcher()?;
     if !snapshot.codex_guard.enabled

@@ -44,6 +44,30 @@ impl GuardCoordinator {
         }
     }
 
+    /// 普通主动写入的门：恢复未完成时 fail closed；恢复重试命令使用裸 `try_write`。
+    pub(crate) fn try_guard_write(&self) -> Result<MutexGuard<'_, ()>, String> {
+        let guard = self.try_write()?;
+        if self.recovery_blocked() {
+            drop(guard);
+            return Err("recovery_blocked".to_string());
+        }
+        Ok(guard)
+    }
+
+    /// 轮询不排队，也不在恢复阻断期间尝试写入。
+    pub(crate) fn try_poll_write(&self) -> Result<Option<MutexGuard<'_, ()>>, String> {
+        let guard = match self.write.try_lock() {
+            Ok(guard) => guard,
+            Err(TryLockError::WouldBlock) => return Ok(None),
+            Err(TryLockError::Poisoned(_)) => return Err("guard_lock_poisoned".to_string()),
+        };
+        if self.recovery_blocked() {
+            drop(guard);
+            return Ok(None);
+        }
+        Ok(Some(guard))
+    }
+
     pub(crate) fn recovery_status(&self) -> GuardRecoveryStatus {
         self.recovery
             .lock()
@@ -52,6 +76,13 @@ impl GuardCoordinator {
                 blocked: true,
                 code: Some("recovery_state_unavailable".to_string()),
             })
+    }
+
+    fn recovery_blocked(&self) -> bool {
+        self.recovery
+            .lock()
+            .map(|status| status.blocked)
+            .unwrap_or(true)
     }
 
     pub(crate) fn mark_recovery_blocked(&self, code: &str) {
@@ -105,6 +136,19 @@ mod tests {
         );
         coordinator.clear_recovery();
         assert!(!coordinator.recovery_status().blocked);
+    }
+
+    #[test]
+    fn ordinary_writes_fail_closed_until_recovery_is_clear() {
+        let coordinator = GuardCoordinator::new();
+        coordinator.mark_recovery_blocked("recovery_failed");
+        assert_eq!(
+            coordinator.try_guard_write().unwrap_err(),
+            "recovery_blocked"
+        );
+        assert!(coordinator.try_poll_write().unwrap().is_none());
+        coordinator.clear_recovery();
+        assert!(coordinator.try_guard_write().is_ok());
     }
 
     #[test]

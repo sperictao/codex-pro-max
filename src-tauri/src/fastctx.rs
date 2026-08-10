@@ -139,7 +139,7 @@ pub fn fastctx_install() -> Result<(), String> {
 /// 自检失败只回报不视为接入失败（ADR 0003：警告不回滚）
 #[tauri::command]
 pub fn fastctx_apply(state: State<'_, AppState>) -> Result<ApplyResult, String> {
-    let _write = state.guard_coordinator.try_write()?;
+    let _write = state.guard_coordinator.try_guard_write()?;
     run_fastctx(&["apply", "--yes"])?;
     match run_fastctx(&["status"]) {
         Ok(out) => Ok(ApplyResult {
@@ -157,7 +157,7 @@ pub fn fastctx_apply(state: State<'_, AppState>) -> Result<ApplyResult, String> 
 /// 受管数据；npm 全局包保留，可重新接入）
 #[tauri::command]
 pub fn fastctx_unapply(state: State<'_, AppState>) -> Result<(), String> {
-    let _write = state.guard_coordinator.try_write()?;
+    let _write = state.guard_coordinator.try_guard_write()?;
     run_fastctx(&["unapply", "--yes"])?;
     Ok(())
 }

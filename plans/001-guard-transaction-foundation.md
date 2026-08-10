@@ -337,6 +337,8 @@ DONE。
 - 已新增进程内 `GuardCoordinator`，所有 Guard 主动写命令、`save_config`、
   `update_settings`、Guard schema/file mutation、FastCtx apply/unapply 和 poll 都先走同一
   个非排队 `try_write`；用户忙时返回稳定 `guard_busy`，轮询忙时跳过本轮，不积压旧意图。
+- 已补上恢复 fail-closed 门：普通主动写入在未完成事务恢复时返回稳定 `recovery_blocked`，
+  轮询直接跳过；只有 `guard_retry_recovery` 使用裸锁来执行恢复，成功后才解除阻断。
 - 启动恢复结果进入协调器状态；新增 `guard_get_recovery_status` 与
   `guard_retry_recovery`，只返回 `blocked` 和白名单 code。恢复重试成功后按需启动唯一的
   poll 任务，失败不透传 journal/路径/底层错误。

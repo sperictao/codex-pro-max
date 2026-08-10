@@ -141,7 +141,7 @@ fn set_language(app: tauri::AppHandle, setting: String) -> Result<(), String> {
 /// 保存配置（全量覆盖，仅前端已知字段的场景使用）
 #[tauri::command]
 async fn save_config(state: State<'_, AppState>, config: LauncherConfig) -> Result<(), String> {
-    let _write = state.guard_coordinator.try_write()?;
+    let _write = state.guard_coordinator.try_guard_write()?;
     state.config_store.update_launcher(|current| {
         config::merge_settings(current, &config);
         Ok(())
@@ -152,7 +152,7 @@ async fn save_config(state: State<'_, AppState>, config: LauncherConfig) -> Resu
 /// 防止设置页保存时把内存中过时的看守状态写回，导致 apply/lock 被回滚
 #[tauri::command]
 async fn update_settings(state: State<'_, AppState>, config: LauncherConfig) -> Result<(), String> {
-    let _write = state.guard_coordinator.try_write()?;
+    let _write = state.guard_coordinator.try_guard_write()?;
     state.config_store.update_launcher(|current| {
         config::merge_settings(current, &config);
         Ok(())

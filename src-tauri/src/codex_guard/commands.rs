@@ -92,7 +92,7 @@ pub fn guard_retry_recovery(state: State<'_, AppState>) -> Result<(), String> {
 #[tauri::command]
 #[specta::specta]
 pub fn guard_set_enabled(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
-    let _write = state.guard_coordinator.try_write()?;
+    let _write = state.guard_coordinator.try_guard_write()?;
     if enabled {
         let files = load_files(&state.config_store)?;
         let schema = load_schema(&state.config_store)?;
@@ -111,7 +111,7 @@ pub fn guard_set_value(
     id: String,
     value: serde_json::Value,
 ) -> Result<(), String> {
-    let _write = state.guard_coordinator.try_write()?;
+    let _write = state.guard_coordinator.try_guard_write()?;
     let schema = load_schema(&state.config_store)?;
     let p = find_param(&schema, &id)?;
     let type_ok = match p.value_type.as_str() {
@@ -157,7 +157,7 @@ fn guard_apply_inner(state: &AppState, id: String) -> Result<(), String> {
 #[tauri::command]
 #[specta::specta]
 pub fn guard_apply(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    let _write = state.guard_coordinator.try_write()?;
+    let _write = state.guard_coordinator.try_guard_write()?;
     guard_apply_inner(&state, id)
 }
 
@@ -168,7 +168,7 @@ pub fn guard_set_applied(
     id: String,
     applied: bool,
 ) -> Result<(), String> {
-    let _write = state.guard_coordinator.try_write()?;
+    let _write = state.guard_coordinator.try_guard_write()?;
     if applied {
         return guard_apply_inner(&state, id);
     }
@@ -190,7 +190,7 @@ pub fn guard_set_locked(
     id: String,
     locked: bool,
 ) -> Result<(), String> {
-    let _write = state.guard_coordinator.try_write()?;
+    let _write = state.guard_coordinator.try_guard_write()?;
     let schema = load_schema(&state.config_store)?;
     let files = load_files(&state.config_store)?;
     validate_configuration(&state.paths, &files, &schema)?;
@@ -235,7 +235,7 @@ pub fn guard_add_custom_param(
     mut param: GuardParam,
     file_id: String,
 ) -> Result<(), String> {
-    let _write = state.guard_coordinator.try_write()?;
+    let _write = state.guard_coordinator.try_guard_write()?;
     let files = load_files(&state.config_store)?;
     let f = find_file(&files, &file_id)
         .ok_or_else(|| trf("Target file not found: {id}", &[("id", file_id.clone())]))?;
@@ -267,7 +267,7 @@ pub fn guard_add_custom_param(
 #[tauri::command]
 #[specta::specta]
 pub fn guard_remove_custom_param(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    let _write = state.guard_coordinator.try_write()?;
+    let _write = state.guard_coordinator.try_guard_write()?;
     let normalized = normalize_custom_id(&id);
 
     let files = load_files(&state.config_store)?;
@@ -306,7 +306,7 @@ pub fn guard_remove_custom_param(state: State<'_, AppState>, id: String) -> Resu
 #[tauri::command]
 #[specta::specta]
 pub fn guard_get_schema_file_path(state: State<'_, AppState>) -> Result<String, String> {
-    let _write = state.guard_coordinator.try_write()?;
+    let _write = state.guard_coordinator.try_guard_write()?;
     ensure_schema_file(&state.config_store)?;
     Ok(schema_file_path(&state.paths).to_string_lossy().to_string())
 }
@@ -330,7 +330,7 @@ pub fn guard_add_file(
     file: String,
     format: GuardFileFormat,
 ) -> Result<GuardFile, String> {
-    let _write = state.guard_coordinator.try_write()?;
+    let _write = state.guard_coordinator.try_guard_write()?;
     // 从 name 推导 id slug（简单处理：非字母数字替换为 -，去首尾 -，小写）
     let slug = name
         .to_lowercase()
@@ -383,7 +383,7 @@ pub fn guard_update_file(
     name: String,
     file: String,
 ) -> Result<GuardFile, String> {
-    let _write = state.guard_coordinator.try_write()?;
+    let _write = state.guard_coordinator.try_guard_write()?;
     let files = load_files(&state.config_store)?;
     let idx = files
         .iter()
@@ -458,7 +458,7 @@ pub fn guard_update_file(
 #[tauri::command]
 #[specta::specta]
 pub fn guard_remove_file(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    let _write = state.guard_coordinator.try_write()?;
+    let _write = state.guard_coordinator.try_guard_write()?;
     let files = load_files(&state.config_store)?;
     let idx = files
         .iter()
@@ -520,7 +520,7 @@ pub fn guard_remove_file(state: State<'_, AppState>, id: String) -> Result<(), S
 #[tauri::command]
 #[specta::specta]
 pub fn guard_detect_file(state: State<'_, AppState>, id: String) -> Result<GuardFile, String> {
-    let _write = state.guard_coordinator.try_write()?;
+    let _write = state.guard_coordinator.try_guard_write()?;
     let files = load_files(&state.config_store)?;
     let schema = load_schema(&state.config_store)?;
     validate_configuration(&state.paths, &files, &schema)?;
