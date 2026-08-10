@@ -917,10 +917,21 @@ pub fn run() {
                 }
                 show_main_window(app.handle());
             }
-            tauri::async_runtime::spawn(codex_guard::poll_loop(
-                state.config_store.clone(),
-                state.paths.clone(),
-            ));
+            let recovery_ready = match codex_guard::recover_pending_transactions(&state.paths) {
+                Ok(()) => true,
+                Err(error) => {
+                    // Recovery 失败时保留 journal 并阻断自动漂移写入，避免在不确定的
+                    // 文件状态上继续叠加 poll 副作用；用户仍可打开界面处理问题。
+                    log::error!("codex guard 事务恢复失败，已暂停轮询: {}", error);
+                    false
+                }
+            };
+            if recovery_ready {
+                tauri::async_runtime::spawn(codex_guard::poll_loop(
+                    state.config_store.clone(),
+                    state.paths.clone(),
+                ));
+            }
             Ok(())
         })
         .on_window_event(|window, event| {

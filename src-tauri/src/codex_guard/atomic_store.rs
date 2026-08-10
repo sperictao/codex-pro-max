@@ -48,13 +48,16 @@ impl AtomicFileWriter for PlatformAtomicFileWriter {
                     format!("failed to preserve atomic target permissions: {error}")
                 })?;
             }
+            file.sync_all()
+                .map_err(|error| format!("failed to sync atomic temp file: {error}"))?;
+            drop(file);
             replace_file(&temp, target)
         })();
 
         if result.is_err() {
             let _ = std::fs::remove_file(&temp);
         }
-        result
+        result.and_then(|()| sync_parent(target))
     }
 }
 
@@ -68,6 +71,23 @@ fn temp_path(target: &Path) -> Result<PathBuf, String> {
         .ok_or_else(|| "atomic target filename is not valid UTF-8".to_string())?;
     let id = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
     Ok(parent.join(format!(".{name}.dashi-{}-{id}.tmp", std::process::id())))
+}
+
+fn sync_parent(target: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        let parent = target
+            .parent()
+            .ok_or_else(|| "atomic target has no parent directory".to_string())?;
+        std::fs::File::open(parent)
+            .and_then(|file| file.sync_all())
+            .map_err(|error| format!("failed to sync atomic target directory: {error}"))?;
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = target;
+    }
+    Ok(())
 }
 
 #[cfg(unix)]

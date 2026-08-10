@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::i18n::trf;
 
+use super::atomic_store::{AtomicFileWriter, PlatformAtomicFileWriter};
 use super::{now_secs, AppPaths};
 
 /// 写入前备份目标文件到 ~/.codex/dashi-backups/，每个文件保留 20 份
@@ -12,14 +13,25 @@ fn backup(paths: &AppPaths, rel_file: &str, target: &Path) -> Result<(), String>
         return Ok(());
     }
     let dir = paths.backup_root().to_path_buf();
-    std::fs::create_dir_all(&dir).map_err(|e| trf("Failed to create backup directory: {error}", &[("error", e.to_string())]))?;
+    std::fs::create_dir_all(&dir).map_err(|e| {
+        trf(
+            "Failed to create backup directory: {error}",
+            &[("error", e.to_string())],
+        )
+    })?;
     let flat = rel_file.replace(['/', '\\'], "_");
     let dest = dir.join(format!("{}.{}.bak", flat, now_secs()));
-    std::fs::copy(target, &dest).map_err(|e| trf("Backup failed: {error}", &[("error", e.to_string())]))?;
+    std::fs::copy(target, &dest)
+        .map_err(|e| trf("Backup failed: {error}", &[("error", e.to_string())]))?;
 
     // 只保留 20 份：文件名即时间戳，字典序可排
     let mut olds: Vec<PathBuf> = std::fs::read_dir(&dir)
-        .map_err(|e| trf("Failed to read backup directory: {error}", &[("error", e.to_string())]))?
+        .map_err(|e| {
+            trf(
+                "Failed to read backup directory: {error}",
+                &[("error", e.to_string())],
+            )
+        })?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
         .filter(|p| {
@@ -36,13 +48,19 @@ fn backup(paths: &AppPaths, rel_file: &str, target: &Path) -> Result<(), String>
 }
 
 /// Step 5 事务协调器落地前的过渡 sink；Guard 业务只能从 engine 的计划执行边界调用。
-pub(crate) fn legacy_write_with_backup(paths: &AppPaths, rel_file: &str, target: &Path, content: &str) -> Result<(), String> {
+pub(crate) fn legacy_write_with_backup(
+    paths: &AppPaths,
+    rel_file: &str,
+    target: &Path,
+    content: &[u8],
+) -> Result<(), String> {
     backup(paths, rel_file, target)?;
-    if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| trf("Failed to create directory: {error}", &[("error", e.to_string())]))?;
-    }
-    std::fs::write(target, content).map_err(|e| trf("Failed to write {path}: {error}", &[
-        ("path", target.display().to_string()),
-        ("error", e.to_string()),
-    ]))
+    PlatformAtomicFileWriter
+        .replace(target, content)
+        .map_err(|error| {
+            trf(
+                "Failed to write {path}: {error}",
+                &[("path", target.display().to_string()), ("error", error)],
+            )
+        })
 }

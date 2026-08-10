@@ -4,8 +4,10 @@
 use crate::i18n::{tr, trf};
 use sha2::{Digest, Sha256};
 
+use super::atomic_store::{AtomicFileWriter, PlatformAtomicFileWriter};
 use super::backup::legacy_write_with_backup;
 use super::format::{diagnostics_message, parse_toml_document, validate_bytes};
+use super::journal::{self, JournalEntry, JournalEnvelope};
 use super::markdown_block::{block_begin, block_end, extract_block, upsert_block};
 use super::model::{DiagnosticCode, GuardFileFormat, ValidationDiagnostic};
 use super::ownership::{normalize_toml_path, validate_target_path};
@@ -13,6 +15,10 @@ use super::schema::default_for_lang;
 use super::toml_ops::{
     get_toml_path, json_to_toml, remove_toml_path, render_toml_value, set_toml_path,
     toml_matches_json,
+};
+use super::transaction::{
+    recovery_action, RecoveryAction, TransactionError, TransactionErrorCode, TransactionPhase,
+    TransactionState,
 };
 use super::validate::validate_param_for_file;
 use super::{AppPaths, GuardParam, GuardParamState};
@@ -568,10 +574,11 @@ fn check_loaded(
     }
 }
 
-/// 通过纯计划器生成单文件候选，再交给现有单文件备份写入器。
+/// 通过纯计划器生成单文件候选，再交给单文件事务边界。
 ///
-/// 这是 Step 5 事务协调器落地前的过渡边界：所有变换和候选校验必须经过
-/// `plan_file_write`，但这里仍保留旧的备份写入器以维持命令的现有副作用。
+/// 目前这是单文件事务：journal/快照先 durable，写前复核原始 hash，候选通过原子
+/// replace 后再做 post-check；跨文件 coordinator、启动恢复和 no-follow 句柄语义仍待
+/// 后续步骤接入。
 pub(crate) fn execute_single_plan(
     paths: &AppPaths,
     param: &GuardParam,
@@ -615,9 +622,348 @@ pub(crate) fn execute_single_plan(
     if !plan.changed {
         return Ok(());
     }
-    let candidate =
-        String::from_utf8(plan.candidate).map_err(|_| tr("Guard file is not valid UTF-8"))?;
-    legacy_write_with_backup(paths, &relative_file, &file, &candidate)
+
+    let batch_id = journal::new_batch_id();
+    let snapshot_ref = "snapshots/entry-0.bin";
+    let mut journal = JournalEnvelope::new(
+        batch_id.clone(),
+        vec![JournalEntry {
+            relative_file: relative_file.clone(),
+            original_exists: plan.original_exists,
+            original_sha256: plan.original_sha256.clone(),
+            candidate_sha256: plan.candidate_sha256.clone(),
+            snapshot_ref: snapshot_ref.to_string(),
+            completed: false,
+            post_checked: false,
+            restored: false,
+        }],
+    );
+    let transaction_root = paths.transaction_root();
+    journal::write_journal(transaction_root, &journal).map_err(transaction_error_message)?;
+
+    if let Err(error) =
+        journal::write_snapshot(transaction_root, &batch_id, snapshot_ref, original_bytes)
+    {
+        return Err(mark_transaction_critical(
+            transaction_root,
+            &mut journal,
+            &mut TransactionState::new(),
+            error.code,
+        ));
+    }
+
+    let mut state = TransactionState::new();
+    transition_and_persist(
+        transaction_root,
+        &mut journal,
+        &mut state,
+        TransactionPhase::Snapshot,
+    )
+    .map_err(transaction_error_message)?;
+
+    let precondition_matches =
+        match target_matches(&file, plan.original_exists, &plan.original_sha256) {
+            Ok(matches) => matches,
+            Err(_) => {
+                return Err(mark_transaction_critical(
+                    transaction_root,
+                    &mut journal,
+                    &mut state,
+                    TransactionErrorCode::ReadFailed,
+                ))
+            }
+        };
+    if !precondition_matches {
+        return Err(mark_transaction_critical(
+            transaction_root,
+            &mut journal,
+            &mut state,
+            TransactionErrorCode::IdentityChanged,
+        ));
+    }
+
+    transition_and_persist(
+        transaction_root,
+        &mut journal,
+        &mut state,
+        TransactionPhase::Writing,
+    )
+    .map_err(transaction_error_message)?;
+
+    if let Err(_error) = legacy_write_with_backup(paths, &relative_file, &file, &plan.candidate) {
+        return restore_after_failure(
+            paths,
+            &file,
+            transaction_root,
+            &mut journal,
+            &mut state,
+            TransactionErrorCode::ReplaceFailed,
+        );
+    }
+    journal.entries[0].completed = true;
+    transition_and_persist(
+        transaction_root,
+        &mut journal,
+        &mut state,
+        TransactionPhase::PostCheck,
+    )
+    .map_err(transaction_error_message)?;
+
+    let postcondition_matches = match target_matches(&file, true, &plan.candidate_sha256) {
+        Ok(matches) => matches,
+        Err(_) => {
+            return restore_after_failure(
+                paths,
+                &file,
+                transaction_root,
+                &mut journal,
+                &mut state,
+                TransactionErrorCode::ReadFailed,
+            )
+        }
+    };
+    if !postcondition_matches {
+        return restore_after_failure(
+            paths,
+            &file,
+            transaction_root,
+            &mut journal,
+            &mut state,
+            TransactionErrorCode::PostCheckFailed,
+        );
+    }
+    journal.entries[0].post_checked = true;
+    transition_and_persist(
+        transaction_root,
+        &mut journal,
+        &mut state,
+        TransactionPhase::Completed,
+    )
+    .map_err(transaction_error_message)?;
+    journal.commit_marker = true;
+    journal::write_journal(transaction_root, &journal).map_err(transaction_error_message)?;
+    journal::cleanup_batch(transaction_root, &batch_id).map_err(transaction_error_message)?;
+    Ok(())
+}
+
+fn transition_and_persist(
+    root: &std::path::Path,
+    journal: &mut JournalEnvelope,
+    state: &mut TransactionState,
+    next: TransactionPhase,
+) -> Result<(), TransactionError> {
+    state.transition(next)?;
+    journal.phase = next;
+    journal::write_journal(root, journal).map(|_| ())
+}
+
+fn target_matches(
+    target: &std::path::Path,
+    expected_exists: bool,
+    expected_sha256: &str,
+) -> Result<bool, String> {
+    let current = read_existing(target)?;
+    Ok(content_matches(
+        current.as_deref(),
+        expected_exists,
+        expected_sha256,
+    ))
+}
+
+fn restore_after_failure(
+    paths: &AppPaths,
+    target: &std::path::Path,
+    root: &std::path::Path,
+    journal: &mut JournalEnvelope,
+    state: &mut TransactionState,
+    failure: TransactionErrorCode,
+) -> Result<(), String> {
+    transition_and_persist(root, journal, state, TransactionPhase::Restoring)
+        .map_err(transaction_error_message)?;
+    let entry = &journal.entries[0];
+    let snapshot = match journal::read_snapshot(root, &journal.batch_id, &entry.snapshot_ref) {
+        Ok(snapshot) => snapshot,
+        Err(error) => return Err(mark_transaction_critical(root, journal, state, error.code)),
+    };
+    let restore_result = restore_entry_snapshot(target, entry.original_exists, &snapshot);
+    if let Err(error) = restore_result {
+        return Err(mark_transaction_critical(root, journal, state, error.code));
+    }
+    journal.entries[0].restored = true;
+    transition_and_persist(root, journal, state, TransactionPhase::Completed)
+        .map_err(transaction_error_message)?;
+    journal.commit_marker = true;
+    journal::write_journal(root, journal).map_err(transaction_error_message)?;
+    journal::cleanup_batch(root, &journal.batch_id).map_err(transaction_error_message)?;
+    let _ = paths;
+    Err(transaction_error_message(TransactionError::new(failure)))
+}
+
+/// 启动时处理上一次单文件事务留下的 durable journal。若当前内容既不是原始值也
+/// 不是候选值，则 fail closed，保留 journal 供人工/后续 recovery 处理，不覆盖外部修改。
+pub(crate) fn recover_pending_transactions(paths: &AppPaths) -> Result<(), String> {
+    let root = paths.transaction_root();
+    let batches = match std::fs::read_dir(root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => {
+            return Err(transaction_error_message(TransactionError::new(
+                TransactionErrorCode::JournalIo,
+            )))
+        }
+    };
+    for batch in batches {
+        let batch = batch.map_err(|_| {
+            transaction_error_message(TransactionError::new(TransactionErrorCode::JournalIo))
+        })?;
+        if !batch
+            .file_type()
+            .map_err(|_| {
+                transaction_error_message(TransactionError::new(TransactionErrorCode::JournalIo))
+            })?
+            .is_dir()
+        {
+            continue;
+        }
+        let batch_id = batch.file_name();
+        let Some(batch_id) = batch_id.to_str() else {
+            return Err(transaction_error_message(TransactionError::new(
+                TransactionErrorCode::JournalSchema,
+            )));
+        };
+        let journal_path = batch.path().join("journal.json");
+        let mut journal =
+            journal::read_journal(&journal_path).map_err(transaction_error_message)?;
+        if journal.batch_id != batch_id {
+            return Err(transaction_error_message(TransactionError::new(
+                TransactionErrorCode::JournalSchema,
+            )));
+        }
+        match recovery_action(&journal) {
+            RecoveryAction::CleanupCompleted => {
+                journal::cleanup_batch(root, batch_id).map_err(transaction_error_message)?;
+            }
+            RecoveryAction::Critical => {
+                return Err(transaction_error_message(TransactionError::new(
+                    TransactionErrorCode::RestoreFailedCritical,
+                )));
+            }
+            RecoveryAction::RestorePending => {
+                recover_one_batch(paths, &mut journal)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn recover_one_batch(paths: &AppPaths, journal: &mut JournalEnvelope) -> Result<(), String> {
+    let root = paths.transaction_root();
+    journal.phase = TransactionPhase::Restoring;
+    journal.critical = false;
+    journal::write_journal(root, journal).map_err(transaction_error_message)?;
+    let batch_id = journal.batch_id.clone();
+    for index in 0..journal.entries.len() {
+        let (relative_file, original_exists, original_sha256, candidate_sha256, snapshot_ref) = {
+            let entry = &journal.entries[index];
+            (
+                entry.relative_file.clone(),
+                entry.original_exists,
+                entry.original_sha256.clone(),
+                entry.candidate_sha256.clone(),
+                entry.snapshot_ref.clone(),
+            )
+        };
+        let target = paths.codex_file(&relative_file);
+        let current = match read_existing(&target) {
+            Ok(current) => current,
+            Err(_) => {
+                journal.phase = TransactionPhase::Critical;
+                journal.critical = true;
+                let _ = journal::write_journal(root, journal);
+                return Err(transaction_error_message(TransactionError::new(
+                    TransactionErrorCode::ReadFailed,
+                )));
+            }
+        };
+        let is_original = content_matches(current.as_deref(), original_exists, &original_sha256);
+        let is_candidate = content_matches(current.as_deref(), true, &candidate_sha256);
+        if !is_original && !is_candidate {
+            journal.phase = TransactionPhase::Critical;
+            journal.critical = true;
+            let _ = journal::write_journal(root, journal);
+            return Err(transaction_error_message(TransactionError::new(
+                TransactionErrorCode::IdentityChanged,
+            )));
+        }
+        if !is_original {
+            let snapshot = journal::read_snapshot(root, &batch_id, &snapshot_ref)
+                .map_err(transaction_error_message)?;
+            if let Err(error) = restore_entry_snapshot(&target, original_exists, &snapshot) {
+                journal.phase = TransactionPhase::Critical;
+                journal.critical = true;
+                let _ = journal::write_journal(root, journal);
+                return Err(transaction_error_message(error));
+            }
+        }
+        journal.entries[index].restored = true;
+    }
+    journal.phase = TransactionPhase::Completed;
+    journal.commit_marker = true;
+    journal::write_journal(root, journal).map_err(transaction_error_message)?;
+    journal::cleanup_batch(root, &batch_id).map_err(transaction_error_message)
+}
+
+fn restore_entry_snapshot(
+    target: &std::path::Path,
+    original_exists: bool,
+    snapshot: &[u8],
+) -> Result<(), TransactionError> {
+    if original_exists {
+        PlatformAtomicFileWriter
+            .replace(target, snapshot)
+            .map_err(|_| TransactionError::new(TransactionErrorCode::RestoreFailedCritical))
+    } else {
+        remove_new_target(target)
+    }
+}
+
+fn content_matches(current: Option<&[u8]>, expected_exists: bool, expected_sha256: &str) -> bool {
+    match (expected_exists, current) {
+        (false, None) => true,
+        (true, Some(bytes)) => sha256_hex(bytes) == expected_sha256,
+        _ => false,
+    }
+}
+
+fn remove_new_target(target: &std::path::Path) -> Result<(), TransactionError> {
+    match std::fs::symlink_metadata(target) {
+        Ok(metadata) if metadata.file_type().is_symlink() || metadata.is_dir() => Err(
+            TransactionError::new(TransactionErrorCode::RestoreFailedCritical),
+        ),
+        Ok(_) => std::fs::remove_file(target)
+            .map_err(|_| TransactionError::new(TransactionErrorCode::RestoreFailedCritical)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err(TransactionError::new(
+            TransactionErrorCode::RestoreFailedCritical,
+        )),
+    }
+}
+
+fn mark_transaction_critical(
+    root: &std::path::Path,
+    journal: &mut JournalEnvelope,
+    state: &mut TransactionState,
+    code: TransactionErrorCode,
+) -> String {
+    let _ = state.mark_critical();
+    journal.phase = TransactionPhase::Critical;
+    journal.critical = true;
+    let _ = journal::write_journal(root, journal);
+    transaction_error_message(TransactionError::new(code))
+}
+
+fn transaction_error_message(error: TransactionError) -> String {
+    format!("guard transaction failed: {}", error.code.as_str())
 }
 
 fn read_existing(file: &std::path::Path) -> Result<Option<Vec<u8>>, String> {
@@ -1013,5 +1359,81 @@ mod tests {
         let absent_plan = plan_file_write(&key_file, &[absent], b"").unwrap();
         assert!(!absent_plan.changed);
         assert!(absent_plan.candidate.is_empty());
+    }
+
+    #[test]
+    fn recovery_restores_candidate_after_interrupted_single_file_write() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::for_test(temp.path());
+        let target = paths.codex_file("config.toml");
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        let original = b"[features]\nenabled = false\n";
+        let candidate = b"[features]\nenabled = true\n";
+        std::fs::write(&target, candidate).unwrap();
+        let batch_id = "batch-recovery";
+        let snapshot_ref = "snapshots/entry-0.bin";
+        let mut journal = JournalEnvelope::new(
+            batch_id.into(),
+            vec![JournalEntry {
+                relative_file: "config.toml".into(),
+                original_exists: true,
+                original_sha256: sha256_hex(original),
+                candidate_sha256: sha256_hex(candidate),
+                snapshot_ref: snapshot_ref.into(),
+                completed: true,
+                post_checked: false,
+                restored: false,
+            }],
+        );
+        journal.phase = TransactionPhase::Writing;
+        journal::write_journal(paths.transaction_root(), &journal).unwrap();
+        journal::write_snapshot(paths.transaction_root(), batch_id, snapshot_ref, original)
+            .unwrap();
+
+        recover_pending_transactions(&paths).unwrap();
+
+        assert_eq!(std::fs::read(&target).unwrap(), original);
+        assert!(!paths.transaction_root().join(batch_id).exists());
+    }
+
+    #[test]
+    fn recovery_refuses_unknown_external_content_and_keeps_journal_critical() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::for_test(temp.path());
+        let target = paths.codex_file("config.toml");
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        let original = b"original";
+        let candidate = b"candidate";
+        let external = b"external edit";
+        std::fs::write(&target, external).unwrap();
+        let batch_id = "batch-critical";
+        let snapshot_ref = "snapshots/entry-0.bin";
+        let mut journal = JournalEnvelope::new(
+            batch_id.into(),
+            vec![JournalEntry {
+                relative_file: "config.toml".into(),
+                original_exists: true,
+                original_sha256: sha256_hex(original),
+                candidate_sha256: sha256_hex(candidate),
+                snapshot_ref: snapshot_ref.into(),
+                completed: true,
+                post_checked: false,
+                restored: false,
+            }],
+        );
+        journal.phase = TransactionPhase::Writing;
+        journal::write_journal(paths.transaction_root(), &journal).unwrap();
+        journal::write_snapshot(paths.transaction_root(), batch_id, snapshot_ref, original)
+            .unwrap();
+
+        let error = recover_pending_transactions(&paths).unwrap_err();
+
+        assert!(error.contains("identity_changed"));
+        assert_eq!(std::fs::read(&target).unwrap(), external);
+        let saved =
+            journal::read_journal(&paths.transaction_root().join(batch_id).join("journal.json"))
+                .unwrap();
+        assert!(saved.critical);
+        assert_eq!(saved.phase, TransactionPhase::Critical);
     }
 }

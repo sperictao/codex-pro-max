@@ -8,6 +8,7 @@ pub(crate) mod contracts;
 mod engine;
 mod files;
 pub(crate) mod format;
+pub(crate) mod journal;
 mod markdown_block;
 pub(crate) mod model;
 pub(crate) mod ownership;
@@ -15,11 +16,13 @@ mod paths;
 mod poll;
 mod schema;
 mod toml_ops;
+pub(crate) mod transaction;
 mod validate;
 mod view;
 
 pub use commands::*;
 pub use poll::poll_loop;
+pub(crate) use engine::recover_pending_transactions;
 pub(crate) use paths::AppPaths;
 pub use model::GuardFileFormat;
 

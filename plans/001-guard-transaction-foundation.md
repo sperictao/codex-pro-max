@@ -260,6 +260,23 @@ fn plan_file_write(
 - 仍未宣称完成 Step 5：跨文件全有全无、journal/快照、原子替换、崩溃恢复和 try-lock 尚未
   接入；轮询在多个成员漂移时仍逐成员调用过渡 sink，后续事务协调器需改成单批次执行。
 
+### Step 5 当前实施结果（2026-08-10）
+
+- 已新增版本化、拒绝未知字段的 `journal.rs` 与事务阶段模型：journal 只保存相对目标、原/候选
+  SHA-256、快照引用和完成位图，不保存配置原文、绝对路径或密钥；journal/快照均先写入并
+  `sync_all`，journal 更新通过同目录原子替换。
+- 单文件 `execute_single_plan` 已接入“Preflight → Snapshot → Writing → PostCheck →
+  Completed/Restoring/Critical”：写前重新读取并核对原 hash，候选通过原子 replace 后再做
+  候选 hash post-check；失败时尝试使用事务快照恢复，恢复失败保留 Critical journal。
+- 启动时会扫描未完成的单文件 journal：内容仍是原始值时不覆盖，内容是候选值时按快照恢复，
+  遇到未知外部内容则 fail-closed 并暂停 Guard 轮询。新增了恢复成功和外部抢写保护测试。
+- 原子写入器现在同步临时文件和 Unix 父目录；旧备份 sink 已改为调用该原子写入器，但其
+  备份命名/复制仍是过渡实现。
+- 本步仍不宣称完成：跨文件批次全有全无、`ConfigStore`/Launcher 状态共同提交、共享
+  `GuardCoordinator`/try-lock、no-follow 目录句柄级 TOCTOU、Windows 持久化证明，以及
+  Unix/Windows 双进程强杀 recovery 仍未完成；轮询仍逐成员写入。没有这些硬门禁，Plan 001
+  不能标记 DONE。
+
 ## Step 5：实现事务日志、快照和跨平台原子替换
 
 `transaction.rs` 定义阶段：
