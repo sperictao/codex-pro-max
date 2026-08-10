@@ -6,10 +6,10 @@ use tauri::State;
 
 use super::engine::{apply, check, expected_of};
 use super::files::{detect_file_path, find_file, load_files, update_files};
+use super::ownership::{normalize_relative_path, validate_ownership, validate_target_path};
 use super::schema::{ensure_schema_file, load_schema, schema_file_path, update_disk_schema};
 use super::validate::{
-    normalize_custom_id, validate_file_path, validate_guard_file, validate_param_fields,
-    validate_param_for_file,
+    normalize_custom_id, validate_guard_file, validate_param_fields, validate_param_for_file,
 };
 use super::view::{build_view, GuardView};
 use super::{now_secs, DetectRecord, GuardFile, GuardFileFormat, GuardParam};
@@ -36,6 +36,14 @@ fn find_format(files: &[GuardFile], relative_file: &str) -> Result<GuardFileForm
         })
 }
 
+fn validate_configuration(
+    paths: &super::AppPaths,
+    files: &[GuardFile],
+    schema: &[GuardParam],
+) -> Result<(), String> {
+    validate_ownership(paths, files, schema).map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn guard_get_view(state: State<'_, AppState>) -> Result<GuardView, String> {
@@ -45,6 +53,11 @@ pub fn guard_get_view(state: State<'_, AppState>) -> Result<GuardView, String> {
 #[tauri::command]
 #[specta::specta]
 pub fn guard_set_enabled(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
+    if enabled {
+        let files = load_files(&state.config_store)?;
+        let schema = load_schema(&state.config_store)?;
+        validate_configuration(&state.paths, &files, &schema)?;
+    }
     state.config_store.update_launcher(|config| {
         config.codex_guard.enabled = enabled;
         Ok(())
@@ -86,8 +99,10 @@ pub fn guard_set_value(
 
 fn guard_apply_inner(state: &AppState, id: String) -> Result<(), String> {
     let schema = load_schema(&state.config_store)?;
+    let files = load_files(&state.config_store)?;
+    validate_configuration(&state.paths, &files, &schema)?;
     let p = find_param(&schema, &id)?;
-    let format = find_format(&load_files(&state.config_store)?, &p.file)?;
+    let format = find_format(&files, &p.file)?;
     state.config_store.update_launcher(|config| {
         let expected = expected_of(&p, config.codex_guard.params.get(&id));
         apply(&state.paths, &p, format, &expected)?;
@@ -133,8 +148,10 @@ pub fn guard_set_locked(
     locked: bool,
 ) -> Result<(), String> {
     let schema = load_schema(&state.config_store)?;
+    let files = load_files(&state.config_store)?;
+    validate_configuration(&state.paths, &files, &schema)?;
     let p = find_param(&schema, &id)?;
-    let format = find_format(&load_files(&state.config_store)?, &p.file)?;
+    let format = find_format(&files, &p.file)?;
     state.config_store.update_launcher(|config| {
         if locked
             && !config
@@ -184,6 +201,14 @@ pub fn guard_add_custom_param(
     validate_param_fields(&param)?;
     validate_param_for_file(&param, f.format)?;
 
+    let mut candidate_schema = load_schema(&state.config_store)?;
+    if let Some(slot) = candidate_schema.iter_mut().find(|p| p.id == param.id) {
+        *slot = param.clone();
+    } else {
+        candidate_schema.push(param.clone());
+    }
+    validate_configuration(&state.paths, &files, &candidate_schema)?;
+
     update_disk_schema(&state.config_store, |disk| {
         if let Some(slot) = disk.iter_mut().find(|p| p.id == param.id) {
             *slot = param;
@@ -199,10 +224,22 @@ pub fn guard_add_custom_param(
 pub fn guard_remove_custom_param(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let normalized = normalize_custom_id(&id);
 
+    let files = load_files(&state.config_store)?;
+    let mut candidate_schema = load_schema(&state.config_store)?;
+    let before = candidate_schema.len();
+    candidate_schema.retain(|param| param.id != normalized);
+    if candidate_schema.len() == before {
+        return Err(trf(
+            "Custom parameter not found: {id}",
+            &[("id", normalized.clone())],
+        ));
+    }
+    validate_configuration(&state.paths, &files, &candidate_schema)?;
+
     update_disk_schema(&state.config_store, |disk| {
-        let before = disk.len();
+        let disk_before = disk.len();
         disk.retain(|p| p.id != normalized);
-        if disk.len() == before {
+        if disk.len() == disk_before {
             return Err(trf(
                 "Custom parameter not found: {id}",
                 &[("id", normalized.clone())],
@@ -232,7 +269,10 @@ pub fn guard_get_schema_file_path(state: State<'_, AppState>) -> Result<String, 
 #[tauri::command]
 #[specta::specta]
 pub fn guard_get_files(state: State<'_, AppState>) -> Result<Vec<GuardFile>, String> {
-    load_files(&state.config_store)
+    let files = load_files(&state.config_store)?;
+    let schema = load_schema(&state.config_store)?;
+    validate_configuration(&state.paths, &files, &schema)?;
+    Ok(files)
 }
 
 #[tauri::command]
@@ -256,7 +296,7 @@ pub fn guard_add_file(
     }
     let id = normalize_custom_id(&slug);
 
-    let trimmed_file = file.trim().to_string();
+    let trimmed_file = normalize_relative_path(file.trim()).map_err(|error| error.to_string())?;
     let gf = GuardFile {
         id: id.clone(),
         name: name.trim().to_string(),
@@ -266,6 +306,7 @@ pub fn guard_add_file(
         detection: None,
     };
     validate_guard_file(&gf)?;
+    let schema = load_schema(&state.config_store)?;
     update_files(&state.config_store, |files| {
         // id 与路径冲突检查（同路径会让参数在两个分组里重复显示）
         if files.iter().any(|file| file.id == id) {
@@ -281,6 +322,7 @@ pub fn guard_add_file(
             ));
         }
         files.push(gf.clone());
+        validate_configuration(&state.paths, files, &schema)?;
         Ok(gf)
     })
 }
@@ -300,7 +342,11 @@ pub fn guard_update_file(
         .ok_or_else(|| trf("File not found: {id}", &[("id", id.clone())]))?;
 
     let old_file = files[idx].file.clone();
-    let new_file = file.trim().to_string();
+    let new_file = normalize_relative_path(file.trim()).map_err(|error| error.to_string())?;
+
+    if files[idx].builtin && old_file != new_file {
+        return Err(tr("Built-in file paths cannot be changed"));
+    }
 
     if old_file != new_file && files.iter().any(|f| f.id != id && f.file == new_file) {
         return Err(trf(
@@ -316,6 +362,18 @@ pub fn guard_update_file(
         updated.detection = None;
     }
     validate_guard_file(&updated)?;
+
+    let mut candidate_files = files.clone();
+    candidate_files[idx] = updated.clone();
+    let mut candidate_schema = load_schema(&state.config_store)?;
+    if old_file != new_file {
+        for param in &mut candidate_schema {
+            if param.custom && param.file == old_file {
+                param.file = new_file.clone();
+            }
+        }
+    }
+    validate_configuration(&state.paths, &candidate_files, &candidate_schema)?;
 
     // 如果是自定义参数的归属文件，路径变了参数的 file 也要跟着变
     // schema 中该文件路径下的自定义参数需要更新 file 字段
@@ -351,15 +409,37 @@ pub fn guard_update_file(
 #[tauri::command]
 #[specta::specta]
 pub fn guard_remove_file(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    let target_file = update_files(&state.config_store, |files| {
-        let idx = files
+    let files = load_files(&state.config_store)?;
+    let idx = files
+        .iter()
+        .position(|file| file.id == id)
+        .ok_or_else(|| trf("File not found: {id}", &[("id", id.clone())]))?;
+    if files[idx].builtin {
+        return Err(tr("Built-in files cannot be removed"));
+    }
+    let target_file = files[idx].file.clone();
+    let candidate_files = files
+        .iter()
+        .filter(|file| file.id != id)
+        .cloned()
+        .collect::<Vec<_>>();
+    let schema = load_schema(&state.config_store)?;
+    let candidate_schema = schema
+        .into_iter()
+        .filter(|param| !(param.custom && param.file == target_file))
+        .collect::<Vec<_>>();
+    validate_configuration(&state.paths, &candidate_files, &candidate_schema)?;
+
+    update_files(&state.config_store, |current| {
+        let idx = current
             .iter()
             .position(|file| file.id == id)
             .ok_or_else(|| trf("File not found: {id}", &[("id", id.clone())]))?;
-        if files[idx].builtin {
+        if current[idx].builtin {
             return Err(tr("Built-in files cannot be removed"));
         }
-        Ok(files.remove(idx).file)
+        current.remove(idx);
+        Ok(())
     })?;
 
     // 清理该文件下的所有自定义参数（schema + 状态）
@@ -390,6 +470,9 @@ pub fn guard_remove_file(state: State<'_, AppState>, id: String) -> Result<(), S
 #[tauri::command]
 #[specta::specta]
 pub fn guard_detect_file(state: State<'_, AppState>, id: String) -> Result<GuardFile, String> {
+    let files = load_files(&state.config_store)?;
+    let schema = load_schema(&state.config_store)?;
+    validate_configuration(&state.paths, &files, &schema)?;
     update_files(&state.config_store, |files| {
         let file = files
             .iter_mut()
@@ -414,7 +497,6 @@ pub fn guard_relativize_picked_path(
     let rel = std::path::Path::new(&abs_path)
         .strip_prefix(home)
         .map_err(|_| tr("Selected file must be inside ~/.codex"))?;
-    let rel = rel.to_string_lossy().replace('\\', "/");
-    validate_file_path(&rel)?;
-    Ok(rel)
+    let rel = normalize_relative_path(&rel.to_string_lossy()).map_err(|error| error.to_string())?;
+    validate_target_path(&state.paths, &rel).map_err(|error| error.to_string())
 }

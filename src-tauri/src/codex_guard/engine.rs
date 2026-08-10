@@ -7,6 +7,7 @@ use super::backup::write_with_backup;
 use super::format::{diagnostics_message, parse_toml_document, validate_bytes};
 use super::markdown_block::{block_begin, block_end, extract_block, upsert_block};
 use super::model::{GuardFileFormat, ValidationDiagnostic};
+use super::ownership::validate_target_path;
 use super::schema::default_for_lang;
 use super::toml_ops::{
     get_toml_path, json_to_toml, remove_toml_path, render_toml_value, set_toml_path,
@@ -47,7 +48,11 @@ pub(crate) fn check(
     if let Err(error) = validate_mode_format(param, format) {
         return err(error);
     }
-    let file = paths.codex_file(&param.file);
+    let relative_file = match validate_target_path(paths, &param.file) {
+        Ok(relative_file) => relative_file,
+        Err(error) => return err(error.to_string()),
+    };
+    let file = paths.codex_file(&relative_file);
     let content = match read_existing(&file) {
         Ok(Some(content)) => content,
         Ok(None) => return missing_result(param),
@@ -136,7 +141,9 @@ pub(crate) fn apply(
     expected: &serde_json::Value,
 ) -> Result<(), String> {
     validate_mode_format(param, format)?;
-    let file = paths.codex_file(&param.file);
+    let relative_file =
+        validate_target_path(paths, &param.file).map_err(|error| error.to_string())?;
+    let file = paths.codex_file(&relative_file);
     match param.apply_mode.as_str() {
         "toml_key" => {
             let content = read_existing(&file)?;

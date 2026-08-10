@@ -67,6 +67,23 @@ fn run_fastctx(args: &[&str]) -> Result<String, String> {
     }
 }
 
+/// FastCtx 自己拥有的 TOML 路径；Guard 不得把这些键纳入托管。
+/// 比较按 TOML segment 边界进行，避免误伤 `fastctx_extra` 等相似键。
+pub(crate) fn is_fastctx_owned_toml_path(path: &str) -> bool {
+    [
+        "mcp_servers.fastctx",
+        "features.code_mode",
+        "tool_output_token_limit",
+    ]
+    .iter()
+    .any(|root| {
+        path == *root
+            || path
+                .strip_prefix(root)
+                .is_some_and(|rest| rest.starts_with('.'))
+    })
+}
+
 /// 接入状态唯一事实来源：config.toml 是否含 [mcp_servers.fastctx]
 fn integrated_in(content: &str) -> Result<bool, String> {
     let doc = content
@@ -196,5 +213,32 @@ mod tests {
         assert!(!integrated_in("model = \"gpt-5\"\n").unwrap());
         // 解析失败要报错而不是谎报未接入
         assert!(integrated_in("[mcp_servers\n").is_err());
+    }
+
+    #[test]
+    fn fastctx_owned_paths_use_segment_boundaries() {
+        use super::is_fastctx_owned_toml_path;
+        for path in [
+            "mcp_servers.fastctx",
+            "mcp_servers.fastctx.command",
+            "features.code_mode",
+            "features.code_mode.direct_only_tool_namespaces",
+            "tool_output_token_limit",
+        ] {
+            assert!(
+                is_fastctx_owned_toml_path(path),
+                "{path} should be reserved"
+            );
+        }
+        for path in [
+            "mcp_servers.fastctx_extra",
+            "features.code_mode_extra",
+            "other.tool_output_token_limit",
+        ] {
+            assert!(
+                !is_fastctx_owned_toml_path(path),
+                "{path} should remain Guard-owned"
+            );
+        }
     }
 }

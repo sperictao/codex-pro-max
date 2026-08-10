@@ -10,6 +10,7 @@ mod files;
 pub(crate) mod format;
 mod markdown_block;
 pub(crate) mod model;
+pub(crate) mod ownership;
 mod paths;
 mod poll;
 mod schema;

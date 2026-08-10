@@ -2,6 +2,7 @@
 
 use crate::config::ConfigStore;
 
+use super::ownership::validate_param_ids;
 use super::{AppPaths, GuardParam};
 
 const BUILTIN_SCHEMA: &str = include_str!("guard_schema.json");
@@ -35,6 +36,7 @@ pub(crate) fn load_schema(store: &ConfigStore) -> Result<Vec<GuardParam>, String
     let builtin: Vec<GuardParam> =
         serde_json::from_str(BUILTIN_SCHEMA).expect("内置 guard schema 必须可解析");
     let disk = store.load_guard_schema()?;
+    validate_param_ids(&disk).map_err(|error| error.to_string())?;
     Ok(merge_schema(builtin, disk))
 }
 

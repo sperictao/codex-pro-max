@@ -6,6 +6,7 @@ use crate::config::ConfigStore;
 use super::engine::{apply, check, expected_of};
 use super::files::load_files;
 use super::now_secs;
+use super::ownership::validate_ownership;
 use super::schema::load_schema;
 use super::AppPaths;
 
@@ -32,6 +33,7 @@ fn poll_once(store: &ConfigStore, paths: &AppPaths) -> Result<(), String> {
     let schema = load_schema(store)?;
     // 只看守文件列表内的目标文件，与 UI 可见范围一致（CONTEXT.md：UI 完全由合并结果驱动）
     let files = load_files(store)?;
+    validate_ownership(paths, &files, &schema).map_err(|error| error.to_string())?;
     store.update_launcher(|config| {
         if !config.codex_guard.enabled {
             return Ok(());

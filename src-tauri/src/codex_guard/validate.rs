@@ -2,6 +2,7 @@
 
 use crate::i18n::{tr, trf};
 
+use super::ownership::normalize_relative_path;
 use super::{GuardFile, GuardFileFormat, GuardParam};
 
 const CUSTOM_ID_PREFIX: &str = "custom.";
@@ -15,22 +16,9 @@ pub(crate) fn normalize_custom_id(id: &str) -> String {
 }
 
 pub(crate) fn validate_file_path(rel: &str) -> Result<(), String> {
-    if rel.trim().is_empty() {
-        return Err(tr("File path cannot be empty"));
-    }
-    if rel.starts_with('/') || rel.starts_with('\\') {
-        return Err(tr(
-            "File path must be relative to ~/.codex and cannot start with /",
-        ));
-    }
-    for seg in rel.split(['/', '\\']) {
-        if seg == ".." {
-            return Err(tr(
-                "File path cannot contain .. and must stay inside ~/.codex",
-            ));
-        }
-    }
-    Ok(())
+    normalize_relative_path(rel)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 pub(crate) fn validate_guard_file(f: &GuardFile) -> Result<(), String> {

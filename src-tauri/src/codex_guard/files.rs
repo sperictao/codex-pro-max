@@ -67,17 +67,26 @@ pub(crate) fn find_file(files: &[GuardFile], id: &str) -> Option<GuardFile> {
 
 // ponytail: 只搜顶层 + 一层子目录；配置散得更深再升级递归
 fn detect_file_path_in(home: &Path, rel: &str) -> Option<String> {
-    if home.join(rel).exists() {
+    if is_regular_non_symlink(&home.join(rel)) {
         return Some(rel.to_string());
     }
     let name = Path::new(rel).file_name()?.to_string_lossy().to_string();
     for e in std::fs::read_dir(home).ok()?.flatten() {
         let dir = e.path();
-        if dir.is_dir() && dir.join(&name).exists() {
+        let is_dir = std::fs::symlink_metadata(&dir)
+            .map(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
+            .unwrap_or(false);
+        if is_dir && is_regular_non_symlink(&dir.join(&name)) {
             return Some(format!("{}/{}", e.file_name().to_string_lossy(), name));
         }
     }
     None
+}
+
+fn is_regular_non_symlink(path: &Path) -> bool {
+    std::fs::symlink_metadata(path)
+        .map(|metadata| metadata.is_file() && !metadata.file_type().is_symlink())
+        .unwrap_or(false)
 }
 
 pub(crate) fn detect_file_path(paths: &AppPaths, rel: &str) -> Option<String> {
@@ -125,6 +134,21 @@ mod tests {
         );
         // 不存在 → None
         assert_eq!(detect_file_path_in(&home, "nope.toml"), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn detect_file_path_does_not_follow_symlinks() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().join("codex");
+        std::fs::create_dir_all(home.join("agents")).unwrap();
+        let outside = temp.path().join("outside.toml");
+        std::fs::write(&outside, "x = 1\n").unwrap();
+        std::os::unix::fs::symlink(&outside, home.join("config.toml")).unwrap();
+        std::os::unix::fs::symlink(&outside, home.join("agents/default.toml")).unwrap();
+
+        assert_eq!(detect_file_path_in(&home, "config.toml"), None);
+        assert_eq!(detect_file_path_in(&home, "default.toml"), None);
     }
 
     #[test]

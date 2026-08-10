@@ -197,7 +197,14 @@ NUL、错误行列、超大诊断脱敏。
 - 已移除 Guard 写路径中把读取错误静默当空文件的行为；仅明确允许新建的 TOML/Markdown
   路径使用空文档，权限错误、目录目标和坏格式均 fail closed。
 - 已将文件格式枚举接入文件列表、视图、轮询、命令和前端选择器，并增加格式/模式兼容校验。
-- Step 3 的所有权检查、Step 4 的多成员写计划以及 Step 5 的事务日志仍未开始。
+- Step 4 的多成员写计划以及 Step 5 的事务日志仍未开始。
+
+### Step 3 基础实施结果（2026-08-10）
+
+- 已新增 `ownership.rs` 作为 Guard 文件、参数和 TOML 路径的统一预检入口：相对路径规范化、根目录 containment、最近存在父目录解析，以及目标/中间路径的 symlink 拒绝。
+- 已接入 schema 合并、文件增删改、启用、应用、锁定、视图和轮询入口；重复文件 ID/路径、父子路径、未知文件引用、重复参数 ID、TOML parent/child、`toml_absent` 冲突和 `file_overwrite` 排他都会在写入前失败。
+- FastCtx 保留键仍由 `fastctx.rs` 单一列出，并按 TOML segment 边界拒绝 Guard 托管；相似前缀不会误伤。
+- 本步只完成所有权预检，不宣称完成快照后/替换前的 no-follow 目录句柄、TOCTOU 防护和崩溃恢复；这些仍由 Step 5 的事务写入层负责。
 
 ## Step 3：建立唯一配置所有权检查
 

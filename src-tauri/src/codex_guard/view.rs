@@ -6,6 +6,7 @@ use crate::config::ConfigStore;
 
 use super::engine::{check, expected_of};
 use super::files::load_files;
+use super::ownership::validate_ownership;
 use super::schema::load_schema;
 use super::{AppPaths, GuardFileFormat};
 
@@ -56,6 +57,7 @@ pub fn build_view(store: &ConfigStore, paths: &AppPaths) -> Result<GuardView, St
     let cfg = store.load_launcher()?;
     let schema = load_schema(store)?;
     let files = load_files(store)?;
+    validate_ownership(paths, &files, &schema).map_err(|error| error.to_string())?;
 
     let mut groups: Vec<GroupView> = Vec::new();
     for f in &files {
