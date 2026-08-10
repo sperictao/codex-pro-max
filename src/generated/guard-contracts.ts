@@ -85,7 +85,7 @@ async guardGetFiles() : Promise<Result<GuardFile[], string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async guardAddFile(name: string, file: string, format: string) : Promise<Result<GuardFile, string>> {
+async guardAddFile(name: string, file: string, format: GuardFileFormat) : Promise<Result<GuardFile, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("guard_add_file", { name, file, format }) };
 } catch (e) {
@@ -139,7 +139,7 @@ async guardRelativizePickedPath(absPath: string) : Promise<Result<string, string
 
 /** user-defined constants **/
 
-export const GUARD_CONTRACT = {"applyModes":["toml_key","toml_absent","file_overwrite","markdown_block"],"fileFormats":["toml","json","md"],"paramStatuses":["match","drift","missing","error"],"schemaVersion":1,"valueTypes":["bool","int","string","text","none"]} as const;
+export const GUARD_CONTRACT = {"applyModes":["toml_key","toml_absent","file_overwrite","markdown_block"],"fileFormats":["toml","json","markdown","plain_text"],"paramStatuses":["match","drift","missing","error"],"schemaVersion":1,"valueTypes":["bool","int","string","text","none"]} as const;
 
 /** user-defined types **/
 
@@ -156,7 +156,7 @@ export type DetectRecord = {
  * 检测到的相对 ~/.codex 路径；None = 未找到该文件
  */
 path: string | null; at: number }
-export type GroupView = { id: string; name: string; file: string; format: string; builtin: boolean; error: string | null; params: ParamView[] }
+export type GroupView = { id: string; name: string; file: string; format: GuardFileFormat; builtin: boolean; error: string | null; params: ParamView[] }
 /**
  * 看守目标文件
  */
@@ -166,13 +166,17 @@ export type GuardFile = { id: string; name: string;
  */
 file: string;
 /**
- * toml | json | md
+ * toml | json | markdown | plain_text
  */
-format: string; builtin?: boolean;
+format: GuardFileFormat; builtin?: boolean;
 /**
  * 上次路径检测记录；None = 从未检测（检测走文件系统，落盘后不再重复扫）
  */
 detection?: DetectRecord | null }
+/**
+ * 看守文件的物理解析格式。序列化值是稳定的 snake_case 字符串。
+ */
+export type GuardFileFormat = "toml" | "json" | "markdown" | "plain_text"
 /**
  * schema 中的一条托管参数
  */

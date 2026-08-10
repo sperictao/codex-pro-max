@@ -7,7 +7,9 @@ mod commands;
 pub(crate) mod contracts;
 mod engine;
 mod files;
+pub(crate) mod format;
 mod markdown_block;
+pub(crate) mod model;
 mod paths;
 mod poll;
 mod schema;
@@ -18,6 +20,7 @@ mod view;
 pub use commands::*;
 pub use poll::poll_loop;
 pub(crate) use paths::AppPaths;
+pub use model::GuardFileFormat;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -103,8 +106,8 @@ pub struct GuardFile {
     pub name: String,
     /// 相对 ~/.codex 的路径
     pub file: String,
-    /// toml | json | md
-    pub format: String,
+    /// toml | json | markdown | plain_text
+    pub format: GuardFileFormat,
     #[serde(default)]
     pub builtin: bool,
     /// 上次路径检测记录；None = 从未检测（检测走文件系统，落盘后不再重复扫）

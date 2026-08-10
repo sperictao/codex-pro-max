@@ -2,6 +2,7 @@ import {
   commands,
   GUARD_CONTRACT,
   type GuardFile,
+  type GuardFileFormat,
   type GuardParam,
   type GuardView,
   type JsonValue,
@@ -141,7 +142,7 @@ export async function guardGetFiles(): Promise<GuardFile[]> {
   return decodeGuardFiles(unwrap(await commands.guardGetFiles()));
 }
 
-export async function guardAddFile(name: string, file: string, format: string): Promise<GuardFile> {
+export async function guardAddFile(name: string, file: string, format: GuardFileFormat): Promise<GuardFile> {
   return decodeGuardFile(unwrap(await commands.guardAddFile(name, file, format)));
 }
 

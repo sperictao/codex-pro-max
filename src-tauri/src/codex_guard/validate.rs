@@ -2,7 +2,7 @@
 
 use crate::i18n::{tr, trf};
 
-use super::{GuardFile, GuardParam};
+use super::{GuardFile, GuardFileFormat, GuardParam};
 
 const CUSTOM_ID_PREFIX: &str = "custom.";
 
@@ -19,21 +19,18 @@ pub(crate) fn validate_file_path(rel: &str) -> Result<(), String> {
         return Err(tr("File path cannot be empty"));
     }
     if rel.starts_with('/') || rel.starts_with('\\') {
-        return Err(tr("File path must be relative to ~/.codex and cannot start with /"));
+        return Err(tr(
+            "File path must be relative to ~/.codex and cannot start with /",
+        ));
     }
     for seg in rel.split(['/', '\\']) {
         if seg == ".." {
-            return Err(tr("File path cannot contain .. and must stay inside ~/.codex"));
+            return Err(tr(
+                "File path cannot contain .. and must stay inside ~/.codex",
+            ));
         }
     }
     Ok(())
-}
-
-fn validate_format(format: &str) -> Result<(), String> {
-    match format {
-        "toml" | "json" | "md" => Ok(()),
-        other => Err(trf("Unsupported file format: {format}", &[("format", other.to_string())])),
-    }
 }
 
 pub(crate) fn validate_guard_file(f: &GuardFile) -> Result<(), String> {
@@ -41,21 +38,44 @@ pub(crate) fn validate_guard_file(f: &GuardFile) -> Result<(), String> {
         return Err(tr("File name cannot be empty"));
     }
     validate_file_path(&f.file)?;
-    validate_format(&f.format)?;
     Ok(())
+}
+
+pub(crate) fn validate_param_for_file(
+    p: &GuardParam,
+    format: GuardFileFormat,
+) -> Result<(), String> {
+    match (format, p.apply_mode.as_str()) {
+        (GuardFileFormat::Toml, "toml_key" | "toml_absent")
+        | (GuardFileFormat::Markdown, "markdown_block")
+        | (_, "file_overwrite") => Ok(()),
+        _ => Err(trf(
+            "Apply mode {mode} is incompatible with file format {format}",
+            &[
+                ("mode", p.apply_mode.clone()),
+                ("format", format.to_string()),
+            ],
+        )),
+    }
 }
 
 fn validate_apply_mode(mode: &str) -> Result<(), String> {
     match mode {
         "toml_key" | "toml_absent" | "file_overwrite" | "markdown_block" => Ok(()),
-        other => Err(trf("Unsupported apply_mode: {mode}", &[("mode", other.to_string())])),
+        other => Err(trf(
+            "Unsupported apply_mode: {mode}",
+            &[("mode", other.to_string())],
+        )),
     }
 }
 
 fn validate_value_type(value_type: &str) -> Result<(), String> {
     match value_type {
         "bool" | "int" | "string" | "text" | "none" => Ok(()),
-        other => Err(trf("Unsupported value_type: {type}", &[("type", other.to_string())])),
+        other => Err(trf(
+            "Unsupported value_type: {type}",
+            &[("type", other.to_string())],
+        )),
     }
 }
 
@@ -69,7 +89,10 @@ pub(crate) fn validate_param_fields(p: &GuardParam) -> Result<(), String> {
     }
 
     if (p.apply_mode == "toml_key" || p.apply_mode == "toml_absent") && p.path.trim().is_empty() {
-        return Err(trf("{mode} mode requires a path", &[("mode", p.apply_mode.clone())]));
+        return Err(trf(
+            "{mode} mode requires a path",
+            &[("mode", p.apply_mode.clone())],
+        ));
     }
     if p.apply_mode == "toml_key" && p.value_type == "none" {
         return Err(tr("value_type of toml_key mode cannot be none"));
@@ -90,7 +113,12 @@ mod tests {
 
     #[test]
     fn validate_apply_mode_accepts_four_modes() {
-        for m in ["toml_key", "toml_absent", "file_overwrite", "markdown_block"] {
+        for m in [
+            "toml_key",
+            "toml_absent",
+            "file_overwrite",
+            "markdown_block",
+        ] {
             assert!(validate_apply_mode(m).is_ok(), "{} should be valid", m);
         }
         assert!(validate_apply_mode("nonsense").is_err());
@@ -151,11 +179,24 @@ mod tests {
     }
 
     #[test]
-    fn validate_format_accepts_three() {
-        for f in ["toml", "json", "md"] {
-            assert!(validate_format(f).is_ok());
-        }
-        assert!(validate_format("yaml").is_err());
-        assert!(validate_format("").is_err());
+    fn validate_param_for_file_accepts_matching_modes() {
+        let mut p = GuardParam {
+            id: "p".into(),
+            label: "参数".into(),
+            label_en: String::new(),
+            description: String::new(),
+            description_en: String::new(),
+            file: "config.toml".into(),
+            apply_mode: "toml_key".into(),
+            path: "features.x".into(),
+            value_type: "bool".into(),
+            default: serde_json::json!(true),
+            default_en: serde_json::Value::Null,
+            custom: true,
+        };
+        assert!(validate_param_for_file(&p, GuardFileFormat::Toml).is_ok());
+        assert!(validate_param_for_file(&p, GuardFileFormat::Json).is_err());
+        p.apply_mode = "file_overwrite".into();
+        assert!(validate_param_for_file(&p, GuardFileFormat::PlainText).is_ok());
     }
 }

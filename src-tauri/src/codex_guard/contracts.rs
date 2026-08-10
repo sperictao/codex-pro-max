@@ -16,7 +16,7 @@ use super::{
     guard_get_schema_file_path, guard_get_view, guard_relativize_picked_path,
     guard_remove_custom_param, guard_remove_file, guard_set_applied, guard_set_enabled,
     guard_set_locked, guard_set_value, guard_update_file, CodexGuardState, DetectRecord, GuardFile,
-    GuardParam, GuardParamState,
+    GuardFileFormat, GuardParam, GuardParamState,
 };
 
 pub const GUARD_CONTRACT_SCHEMA_VERSION: u16 = 1;
@@ -38,7 +38,7 @@ pub const GUARD_APPLY_MODES: [&str; 4] = [
     "markdown_block",
 ];
 pub const GUARD_VALUE_TYPES: [&str; 5] = ["bool", "int", "string", "text", "none"];
-pub const GUARD_FILE_FORMATS: [&str; 3] = ["toml", "json", "md"];
+pub const GUARD_FILE_FORMATS: [&str; 4] = ["toml", "json", "markdown", "plain_text"];
 pub const GUARD_PARAM_STATUSES: [&str; 4] = ["match", "drift", "missing", "error"];
 
 pub fn builder() -> Builder<tauri::Wry> {
@@ -65,6 +65,7 @@ pub fn builder() -> Builder<tauri::Wry> {
         .typ::<GuardParamState>()
         .typ::<CodexGuardState>()
         .typ::<GuardFile>()
+        .typ::<GuardFileFormat>()
         .typ::<DetectRecord>()
         .constant(
             "GUARD_CONTRACT",
@@ -114,7 +115,7 @@ fn fixture_view() -> super::view::GuardView {
             id: "config".to_string(),
             name: "Codex config".to_string(),
             file: "config.toml".to_string(),
-            format: "toml".to_string(),
+            format: GuardFileFormat::Toml,
             builtin: true,
             error: None,
             params: vec![super::view::ParamView {

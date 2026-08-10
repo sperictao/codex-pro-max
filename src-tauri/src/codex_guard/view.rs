@@ -7,7 +7,7 @@ use crate::config::ConfigStore;
 use super::engine::{check, expected_of};
 use super::files::load_files;
 use super::schema::load_schema;
-use super::AppPaths;
+use super::{AppPaths, GuardFileFormat};
 
 #[derive(Debug, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -37,7 +37,7 @@ pub struct GroupView {
     pub id: String,
     pub name: String,
     pub file: String,
-    pub format: String,
+    pub format: GuardFileFormat,
     pub builtin: bool,
     pub error: Option<String>,
     pub params: Vec<ParamView>,
@@ -65,7 +65,7 @@ pub fn build_view(store: &ConfigStore, paths: &AppPaths) -> Result<GuardView, St
         for p in schema.iter().filter(|p| p.file == f.file) {
             let state = cfg.codex_guard.params.get(&p.id);
             let expected = expected_of(p, state);
-            let c = check(paths, p, &expected);
+            let c = check(paths, p, f.format, &expected);
             if group_error.is_none() && c.error.is_some() {
                 group_error = c.error.clone();
             }
@@ -93,7 +93,7 @@ pub fn build_view(store: &ConfigStore, paths: &AppPaths) -> Result<GuardView, St
             id: f.id.clone(),
             name: f.name.clone(),
             file: f.file.clone(),
-            format: f.format.clone(),
+            format: f.format,
             builtin: f.builtin,
             error: group_error,
             params: group_params,

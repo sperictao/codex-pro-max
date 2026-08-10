@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crate::config::ConfigStore;
 
-use super::{AppPaths, GuardFile};
+use super::{AppPaths, GuardFile, GuardFileFormat};
 
 pub(crate) fn builtin_files() -> Vec<GuardFile> {
     vec![
@@ -12,7 +12,7 @@ pub(crate) fn builtin_files() -> Vec<GuardFile> {
             id: "builtin.config-toml".to_string(),
             name: "config.toml".to_string(),
             file: "config.toml".to_string(),
-            format: "toml".to_string(),
+            format: GuardFileFormat::Toml,
             builtin: true,
             detection: None,
         },
@@ -20,7 +20,7 @@ pub(crate) fn builtin_files() -> Vec<GuardFile> {
             id: "builtin.agents-md".to_string(),
             name: "AGENTS.md".to_string(),
             file: "AGENTS.md".to_string(),
-            format: "md".to_string(),
+            format: GuardFileFormat::Markdown,
             builtin: true,
             detection: None,
         },
@@ -28,7 +28,7 @@ pub(crate) fn builtin_files() -> Vec<GuardFile> {
             id: "builtin.default-toml".to_string(),
             name: "default.toml".to_string(),
             file: "agents/default.toml".to_string(),
-            format: "toml".to_string(),
+            format: GuardFileFormat::Toml,
             builtin: true,
             detection: None,
         },
@@ -110,13 +110,19 @@ mod tests {
         std::fs::write(home.join("agents/default.toml"), "").unwrap();
 
         // 原位置命中
-        assert_eq!(detect_file_path_in(&home, "config.toml"), Some("config.toml".into()));
+        assert_eq!(
+            detect_file_path_in(&home, "config.toml"),
+            Some("config.toml".into())
+        );
         assert_eq!(
             detect_file_path_in(&home, "agents/default.toml"),
             Some("agents/default.toml".into())
         );
         // 配置写顶层但实际在子目录 → 浅搜命中
-        assert_eq!(detect_file_path_in(&home, "default.toml"), Some("agents/default.toml".into()));
+        assert_eq!(
+            detect_file_path_in(&home, "default.toml"),
+            Some("agents/default.toml".into())
+        );
         // 不存在 → None
         assert_eq!(detect_file_path_in(&home, "nope.toml"), None);
     }

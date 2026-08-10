@@ -6,21 +6,34 @@ use tauri::State;
 
 use super::engine::{apply, check, expected_of};
 use super::files::{detect_file_path, find_file, load_files, update_files};
-use super::schema::{
-    ensure_schema_file, load_schema, schema_file_path, update_disk_schema,
-};
+use super::schema::{ensure_schema_file, load_schema, schema_file_path, update_disk_schema};
 use super::validate::{
     normalize_custom_id, validate_file_path, validate_guard_file, validate_param_fields,
+    validate_param_for_file,
 };
 use super::view::{build_view, GuardView};
-use super::{now_secs, DetectRecord, GuardFile, GuardParam};
+use super::{now_secs, DetectRecord, GuardFile, GuardFileFormat, GuardParam};
 
 fn find_param(schema: &[GuardParam], id: &str) -> Result<GuardParam, String> {
-    schema
+    schema.iter().find(|p| p.id == id).cloned().ok_or_else(|| {
+        trf(
+            "Parameter not found in schema: {id}",
+            &[("id", id.to_string())],
+        )
+    })
+}
+
+fn find_format(files: &[GuardFile], relative_file: &str) -> Result<GuardFileFormat, String> {
+    files
         .iter()
-        .find(|p| p.id == id)
-        .cloned()
-        .ok_or_else(|| trf("Parameter not found in schema: {id}", &[("id", id.to_string())]))
+        .find(|file| file.file == relative_file)
+        .map(|file| file.format)
+        .ok_or_else(|| {
+            trf(
+                "Target file not found in guard list: {file}",
+                &[("file", relative_file.to_string())],
+            )
+        })
 }
 
 #[tauri::command]
@@ -40,14 +53,23 @@ pub fn guard_set_enabled(state: State<'_, AppState>, enabled: bool) -> Result<()
 
 #[tauri::command]
 #[specta::specta]
-pub fn guard_set_value(state: State<'_, AppState>, id: String, value: serde_json::Value) -> Result<(), String> {
+pub fn guard_set_value(
+    state: State<'_, AppState>,
+    id: String,
+    value: serde_json::Value,
+) -> Result<(), String> {
     let schema = load_schema(&state.config_store)?;
     let p = find_param(&schema, &id)?;
     let type_ok = match p.value_type.as_str() {
         "bool" => value.is_boolean(),
         "int" => value.as_i64().is_some(),
         "string" | "text" => value.is_string(),
-        other => return Err(trf("Parameter type {type} is not editable", &[("type", other.to_string())])),
+        other => {
+            return Err(trf(
+                "Parameter type {type} is not editable",
+                &[("type", other.to_string())],
+            ))
+        }
     };
     if !type_ok {
         return Err(tr("Value type mismatch"));
@@ -65,9 +87,10 @@ pub fn guard_set_value(state: State<'_, AppState>, id: String, value: serde_json
 fn guard_apply_inner(state: &AppState, id: String) -> Result<(), String> {
     let schema = load_schema(&state.config_store)?;
     let p = find_param(&schema, &id)?;
+    let format = find_format(&load_files(&state.config_store)?, &p.file)?;
     state.config_store.update_launcher(|config| {
         let expected = expected_of(&p, config.codex_guard.params.get(&id));
-        apply(&state.paths, &p, &expected)?;
+        apply(&state.paths, &p, format, &expected)?;
         let st = config.codex_guard.params.entry(id).or_default();
         st.applied = true;
         st.last_checked = Some(now_secs());
@@ -83,7 +106,11 @@ pub fn guard_apply(state: State<'_, AppState>, id: String) -> Result<(), String>
 
 #[tauri::command]
 #[specta::specta]
-pub fn guard_set_applied(state: State<'_, AppState>, id: String, applied: bool) -> Result<(), String> {
+pub fn guard_set_applied(
+    state: State<'_, AppState>,
+    id: String,
+    applied: bool,
+) -> Result<(), String> {
     if applied {
         return guard_apply_inner(&state, id);
     }
@@ -100,26 +127,40 @@ pub fn guard_set_applied(state: State<'_, AppState>, id: String, applied: bool) 
 
 #[tauri::command]
 #[specta::specta]
-pub fn guard_set_locked(state: State<'_, AppState>, id: String, locked: bool) -> Result<(), String> {
+pub fn guard_set_locked(
+    state: State<'_, AppState>,
+    id: String,
+    locked: bool,
+) -> Result<(), String> {
     let schema = load_schema(&state.config_store)?;
     let p = find_param(&schema, &id)?;
+    let format = find_format(&load_files(&state.config_store)?, &p.file)?;
     state.config_store.update_launcher(|config| {
-        let st = config.codex_guard.params.entry(id.clone()).or_default();
-        if locked && !st.applied {
+        if locked
+            && !config
+                .codex_guard
+                .params
+                .get(&id)
+                .is_some_and(|state| state.applied)
+        {
             return Err(tr("Apply the parameter before locking it"));
         }
-        st.locked = locked;
         if locked {
             // 锁定即校验一次：已漂移就当场恢复
             let expected = expected_of(&p, config.codex_guard.params.get(&id));
-            let c = check(&state.paths, &p, &expected);
+            let c = check(&state.paths, &p, format, &expected);
+            if c.status == "error" {
+                return Err(c.error.unwrap_or_else(|| tr("Guard validation failed")));
+            }
             let st = config.codex_guard.params.entry(id.clone()).or_default();
             st.last_checked = Some(now_secs());
             if c.status == "drift" || c.status == "missing" {
-                apply(&state.paths, &p, &expected)?;
+                apply(&state.paths, &p, format, &expected)?;
                 st.last_restored = Some(now_secs());
             }
         }
+        let st = config.codex_guard.params.entry(id).or_default();
+        st.locked = locked;
         Ok(())
     })
 }
@@ -141,6 +182,7 @@ pub fn guard_add_custom_param(
     param.custom = true;
     param.file = f.file.clone();
     validate_param_fields(&param)?;
+    validate_param_for_file(&param, f.format)?;
 
     update_disk_schema(&state.config_store, |disk| {
         if let Some(slot) = disk.iter_mut().find(|p| p.id == param.id) {
@@ -161,7 +203,10 @@ pub fn guard_remove_custom_param(state: State<'_, AppState>, id: String) -> Resu
         let before = disk.len();
         disk.retain(|p| p.id != normalized);
         if disk.len() == before {
-            return Err(trf("Custom parameter not found: {id}", &[("id", normalized.clone())]));
+            return Err(trf(
+                "Custom parameter not found: {id}",
+                &[("id", normalized.clone())],
+            ));
         }
         Ok(())
     })?;
@@ -192,7 +237,12 @@ pub fn guard_get_files(state: State<'_, AppState>) -> Result<Vec<GuardFile>, Str
 
 #[tauri::command]
 #[specta::specta]
-pub fn guard_add_file(state: State<'_, AppState>, name: String, file: String, format: String) -> Result<GuardFile, String> {
+pub fn guard_add_file(
+    state: State<'_, AppState>,
+    name: String,
+    file: String,
+    format: GuardFileFormat,
+) -> Result<GuardFile, String> {
     // 从 name 推导 id slug（简单处理：非字母数字替换为 -，去首尾 -，小写）
     let slug = name
         .to_lowercase()
@@ -219,10 +269,16 @@ pub fn guard_add_file(state: State<'_, AppState>, name: String, file: String, fo
     update_files(&state.config_store, |files| {
         // id 与路径冲突检查（同路径会让参数在两个分组里重复显示）
         if files.iter().any(|file| file.id == id) {
-            return Err(trf("A file with the same name already exists: {name}", &[("name", name.clone())]));
+            return Err(trf(
+                "A file with the same name already exists: {name}",
+                &[("name", name.clone())],
+            ));
         }
         if files.iter().any(|file| file.file == trimmed_file) {
-            return Err(trf("Path already in guard list: {path}", &[("path", trimmed_file.clone())]));
+            return Err(trf(
+                "Path already in guard list: {path}",
+                &[("path", trimmed_file.clone())],
+            ));
         }
         files.push(gf.clone());
         Ok(gf)
@@ -231,7 +287,12 @@ pub fn guard_add_file(state: State<'_, AppState>, name: String, file: String, fo
 
 #[tauri::command]
 #[specta::specta]
-pub fn guard_update_file(state: State<'_, AppState>, id: String, name: String, file: String) -> Result<GuardFile, String> {
+pub fn guard_update_file(
+    state: State<'_, AppState>,
+    id: String,
+    name: String,
+    file: String,
+) -> Result<GuardFile, String> {
     let files = load_files(&state.config_store)?;
     let idx = files
         .iter()
@@ -242,7 +303,10 @@ pub fn guard_update_file(state: State<'_, AppState>, id: String, name: String, f
     let new_file = file.trim().to_string();
 
     if old_file != new_file && files.iter().any(|f| f.id != id && f.file == new_file) {
-        return Err(trf("Path already in guard list: {path}", &[("path", new_file.clone())]));
+        return Err(trf(
+            "Path already in guard list: {path}",
+            &[("path", new_file.clone())],
+        ));
     }
 
     let mut updated = files[idx].clone();
@@ -266,8 +330,14 @@ pub fn guard_update_file(state: State<'_, AppState>, id: String, name: String, f
         })?;
     }
     update_files(&state.config_store, |current| {
-        if current.iter().any(|file| file.id != id && file.file == new_file) {
-            return Err(trf("Path already in guard list: {path}", &[("path", new_file.clone())]));
+        if current
+            .iter()
+            .any(|file| file.id != id && file.file == new_file)
+        {
+            return Err(trf(
+                "Path already in guard list: {path}",
+                &[("path", new_file.clone())],
+            ));
         }
         let slot = current
             .iter_mut()
@@ -336,7 +406,10 @@ pub fn guard_detect_file(state: State<'_, AppState>, id: String) -> Result<Guard
 /// 把文件选择器选中的绝对路径换算为相对 ~/.codex 的路径（越界拒绝）
 #[tauri::command]
 #[specta::specta]
-pub fn guard_relativize_picked_path(state: State<'_, AppState>, abs_path: String) -> Result<String, String> {
+pub fn guard_relativize_picked_path(
+    state: State<'_, AppState>,
+    abs_path: String,
+) -> Result<String, String> {
     let home = state.paths.codex_root();
     let rel = std::path::Path::new(&abs_path)
         .strip_prefix(home)

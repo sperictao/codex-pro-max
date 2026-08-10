@@ -11,6 +11,7 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const generatedPath = join(root, "src", "generated", "guard-contracts.ts");
 const generatedSource = readFileSync(generatedPath, "utf8");
 const guardSource = readFileSync(join(root, "src", "guard.ts"), "utf8");
+const indexSource = readFileSync(join(root, "index.html"), "utf8");
 const fixturePath = join(root, "src-tauri", "src", "codex_guard", "fixtures", "contracts", "guard-view.json");
 const fixture = JSON.parse(readFileSync(fixturePath, "utf8"));
 const registry = JSON.parse(readFileSync(join(root, "src-tauri", "src", "codex_guard", "fixtures", "contracts", "command-registry.json"), "utf8"));
@@ -47,6 +48,14 @@ test("generated command registry covers exactly the Guard command fixture", () =
   for (const command of registry.commands) {
     assert.match(generatedSource, new RegExp(`TAURI_INVOKE\\("${command}"(?:,|\\))`));
   }
+});
+
+test("generated Guard file format contract is canonical", () => {
+  assert.match(generatedSource, /fileFormats.*toml.*json.*markdown.*plain_text/);
+  assert.doesNotMatch(generatedSource, /fileFormats.*\"md\"/);
+  assert.match(indexSource, /option value="markdown"/);
+  assert.match(indexSource, /option value="plain_text"/);
+  assert.doesNotMatch(indexSource, /option value="md"/);
 });
 
 test("Guard UI does not handwrite Tauri invoke calls", () => {

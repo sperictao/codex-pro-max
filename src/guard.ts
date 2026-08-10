@@ -6,7 +6,7 @@ import { t } from "./i18n";
 import { toast, escapeHtml, fmtTs } from "./core";
 import { state } from "./state";
 import { showHome } from "./nav";
-import type { GuardFile, GuardParam, GuardView, JsonValue } from "./generated/guard-contracts";
+import type { GuardFile, GuardFileFormat, GuardParam, GuardView, JsonValue } from "./generated/guard-contracts";
 import {
   guardAddCustomParam as contractAddCustomParam,
   guardAddFile as contractAddFile,
@@ -349,8 +349,14 @@ export async function guardPickFilePath(): Promise<void> {
     const fileName = rel.split("/").pop() ?? rel;
     if (!nameEl.value.trim()) nameEl.value = fileName;
     const ext = fileName.split(".").pop()?.toLowerCase();
-    if (ext === "toml" || ext === "json" || ext === "md") {
-      (document.getElementById("settings-guard-file-format") as HTMLSelectElement).value = ext;
+    const formatByExtension: Partial<Record<string, GuardFileFormat>> = {
+      toml: "toml",
+      json: "json",
+      md: "markdown",
+      txt: "plain_text",
+    };
+    if (ext && formatByExtension[ext]) {
+      (document.getElementById("settings-guard-file-format") as HTMLSelectElement).value = formatByExtension[ext];
     }
   } catch (e) {
     toast(`${e}`, "error");
@@ -360,7 +366,7 @@ export async function guardPickFilePath(): Promise<void> {
 export async function guardSaveFileForm(): Promise<void> {
   const name = (document.getElementById("settings-guard-file-name") as HTMLInputElement).value.trim();
   const file = (document.getElementById("settings-guard-file-path") as HTMLInputElement).value.trim();
-  const format = (document.getElementById("settings-guard-file-format") as HTMLSelectElement).value;
+  const format = (document.getElementById("settings-guard-file-format") as HTMLSelectElement).value as GuardFileFormat;
   if (!name) { toast(t("Please enter a file name"), "error"); return; }
   if (!file) { toast(t("Please enter a file path"), "error"); return; }
   try {

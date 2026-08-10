@@ -21,7 +21,11 @@ pub async fn poll_loop(store: ConfigStore, paths: AppPaths) {
 fn poll_once(store: &ConfigStore, paths: &AppPaths) -> Result<(), String> {
     let snapshot = store.load_launcher()?;
     if !snapshot.codex_guard.enabled
-        || !snapshot.codex_guard.params.values().any(|state| state.locked)
+        || !snapshot
+            .codex_guard
+            .params
+            .values()
+            .any(|state| state.locked)
     {
         return Ok(());
     }
@@ -33,9 +37,10 @@ fn poll_once(store: &ConfigStore, paths: &AppPaths) -> Result<(), String> {
             return Ok(());
         }
         for param in &schema {
-            if !files.iter().any(|file| file.file == param.file) {
+            let Some(file) = files.iter().find(|file| file.file == param.file) else {
                 continue;
-            }
+            };
+            let format = file.format;
             let locked = config
                 .codex_guard
                 .params
@@ -45,11 +50,15 @@ fn poll_once(store: &ConfigStore, paths: &AppPaths) -> Result<(), String> {
                 continue;
             }
             let expected = expected_of(param, config.codex_guard.params.get(&param.id));
-            let check_result = check(paths, param, &expected);
-            let state = config.codex_guard.params.entry(param.id.clone()).or_default();
+            let check_result = check(paths, param, format, &expected);
+            let state = config
+                .codex_guard
+                .params
+                .entry(param.id.clone())
+                .or_default();
             state.last_checked = Some(now_secs());
             if check_result.status == "drift" || check_result.status == "missing" {
-                match apply(paths, param, &expected) {
+                match apply(paths, param, format, &expected) {
                     Ok(()) => {
                         state.last_restored = Some(now_secs());
                         log::info!("codex guard 已自动恢复: {}", param.id);

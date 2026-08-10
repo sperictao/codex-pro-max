@@ -125,7 +125,18 @@ node scripts/run-rust-tests.mjs --manifest-path src-tauri/Cargo.toml --filter co
 - 验证通过：Rust 1.89.0 `--locked --no-run`、Clippy `-D warnings`、39 个单元测试与 1 个
   集成测试、runner 自测 3 项、前端测试与生产构建、workflow YAML 解析、`git diff --check`。
 
-Step 1 已完成；Plan 001 继续保持 `IN PROGRESS`，Step 1.5 尚未开始。
+Step 1 已完成；Plan 001 继续保持 `IN PROGRESS`。Step 1.5 已完成，Step 2 正在实施。
+
+### Step 1.5 实施结果（2026-08-10）
+
+- 已完成 Guard IPC 的 Rust 单一来源合同：现有 Guard commands、DTO、参数对象和返回值由
+  `specta/tauri-specta` 生成到 `src/generated/guard-contracts.ts`；前端 Guard 页面不再直接
+  手写 `invoke`。
+- 已加入生成合同逐字比较、固定 fixture、command registry 静态门和运行时 decoder；未知
+  `schemaVersion` 或枚举值会明确失败。
+- 已验证 Rust 1.89.0、Clippy、全量 Rust tests、前端 tests、contracts check 和生产构建。
+- 生成器版本兼容性结论已记录：当前锁定的 `specta` 版本可用，未来升级前仍需重新验证
+  MSRV/Tauri 兼容性。
 
 ## Step 1.5：建立 Rust 单一来源的 Guard IPC 合同
 
@@ -175,6 +186,18 @@ struct ValidationDiagnostic {
 
 测试矩阵：四格式 valid/invalid、JSON 多层重复键、Markdown 重复/交叉/残缺、非 UTF-8、
 NUL、错误行列、超大诊断脱敏。
+
+### Step 2 实施结果（2026-08-10）
+
+- 已新增 `GuardFileFormat` 和结构化 `ValidationDiagnostic`；旧配置中的 `md` 仍可读取，
+  保存时统一写成 `markdown`，并补齐 `json`、`markdown`、`plain_text` 的 canonical 合同值。
+- 已新增统一 bytes 校验 seam：TOML 全文件解析、JSON 递归拒绝重复键、Markdown 标记结构
+  校验、PlainText UTF-8/NUL 校验；诊断只返回稳定 code、相对路径和行列，不回显源文或解析器
+  错误文本。
+- 已移除 Guard 写路径中把读取错误静默当空文件的行为；仅明确允许新建的 TOML/Markdown
+  路径使用空文档，权限错误、目录目标和坏格式均 fail closed。
+- 已将文件格式枚举接入文件列表、视图、轮询、命令和前端选择器，并增加格式/模式兼容校验。
+- Step 3 的所有权检查、Step 4 的多成员写计划以及 Step 5 的事务日志仍未开始。
 
 ## Step 3：建立唯一配置所有权检查
 
