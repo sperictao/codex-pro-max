@@ -234,7 +234,7 @@ fn valid_param_id(id: &str) -> bool {
         && !id.contains(['\0', '<', '>'])
 }
 
-fn normalize_toml_path(path: &str) -> Result<String, OwnershipError> {
+pub(crate) fn normalize_toml_path(path: &str) -> Result<String, OwnershipError> {
     if path.trim().is_empty() {
         return Err(OwnershipError::new(OwnershipCode::InvalidPath));
     }

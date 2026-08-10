@@ -3,7 +3,7 @@
 
 use crate::config::ConfigStore;
 
-use super::engine::{apply, check, expected_of};
+use super::engine::{check_many, execute_single_plan, expected_of};
 use super::files::load_files;
 use super::now_secs;
 use super::ownership::validate_ownership;
@@ -38,34 +38,51 @@ fn poll_once(store: &ConfigStore, paths: &AppPaths) -> Result<(), String> {
         if !config.codex_guard.enabled {
             return Ok(());
         }
-        for param in &schema {
-            let Some(file) = files.iter().find(|file| file.file == param.file) else {
-                continue;
-            };
-            let format = file.format;
-            let locked = config
-                .codex_guard
-                .params
-                .get(&param.id)
-                .is_some_and(|state| state.locked);
-            if !locked {
+        for file in &files {
+            let locked_params = schema
+                .iter()
+                .filter(|param| {
+                    param.file == file.file
+                        && config
+                            .codex_guard
+                            .params
+                            .get(&param.id)
+                            .is_some_and(|state| state.locked)
+                })
+                .collect::<Vec<_>>();
+            if locked_params.is_empty() {
                 continue;
             }
-            let expected = expected_of(param, config.codex_guard.params.get(&param.id));
-            let check_result = check(paths, param, format, &expected);
-            let state = config
-                .codex_guard
-                .params
-                .entry(param.id.clone())
-                .or_default();
-            state.last_checked = Some(now_secs());
-            if check_result.status == "drift" || check_result.status == "missing" {
-                match apply(paths, param, format, &expected) {
-                    Ok(()) => {
-                        state.last_restored = Some(now_secs());
-                        log::info!("codex guard 已自动恢复: {}", param.id);
+            let expected_values = locked_params
+                .iter()
+                .map(|param| expected_of(param, config.codex_guard.params.get(&param.id)))
+                .collect::<Vec<_>>();
+            let check_targets = locked_params
+                .iter()
+                .zip(expected_values.iter())
+                .map(|(param, expected)| (*param, expected))
+                .collect::<Vec<_>>();
+            let check_results = check_many(paths, &file.file, file.format, &check_targets);
+
+            for ((param, expected), check_result) in locked_params
+                .into_iter()
+                .zip(expected_values)
+                .zip(check_results)
+            {
+                let state = config
+                    .codex_guard
+                    .params
+                    .entry(param.id.clone())
+                    .or_default();
+                state.last_checked = Some(now_secs());
+                if check_result.status == "drift" || check_result.status == "missing" {
+                    match execute_single_plan(paths, param, file.format, &expected) {
+                        Ok(()) => {
+                            state.last_restored = Some(now_secs());
+                            log::info!("codex guard 已自动恢复: {}", param.id);
+                        }
+                        Err(error) => log::error!("codex guard 恢复 {} 失败: {}", param.id, error),
                     }
-                    Err(error) => log::error!("codex guard 恢复 {} 失败: {}", param.id, error),
                 }
             }
         }

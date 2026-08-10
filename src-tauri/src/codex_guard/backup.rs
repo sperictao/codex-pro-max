@@ -35,7 +35,8 @@ fn backup(paths: &AppPaths, rel_file: &str, target: &Path) -> Result<(), String>
     Ok(())
 }
 
-pub(crate) fn write_with_backup(paths: &AppPaths, rel_file: &str, target: &Path, content: &str) -> Result<(), String> {
+/// Step 5 事务协调器落地前的过渡 sink；Guard 业务只能从 engine 的计划执行边界调用。
+pub(crate) fn legacy_write_with_backup(paths: &AppPaths, rel_file: &str, target: &Path, content: &str) -> Result<(), String> {
     backup(paths, rel_file, target)?;
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent).map_err(|e| trf("Failed to create directory: {error}", &[("error", e.to_string())]))?;

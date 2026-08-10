@@ -4,7 +4,7 @@ use serde::Serialize;
 
 use crate::config::ConfigStore;
 
-use super::engine::{check, expected_of};
+use super::engine::{check_many, expected_of};
 use super::files::load_files;
 use super::ownership::validate_ownership;
 use super::schema::load_schema;
@@ -64,10 +64,27 @@ pub fn build_view(store: &ConfigStore, paths: &AppPaths) -> Result<GuardView, St
         let mut group_params: Vec<ParamView> = Vec::new();
         let mut group_error: Option<String> = None;
 
-        for p in schema.iter().filter(|p| p.file == f.file) {
+        let file_params = schema
+            .iter()
+            .filter(|p| p.file == f.file)
+            .collect::<Vec<_>>();
+        let expected_values = file_params
+            .iter()
+            .map(|p| expected_of(p, cfg.codex_guard.params.get(&p.id)))
+            .collect::<Vec<_>>();
+        let check_targets = file_params
+            .iter()
+            .zip(expected_values.iter())
+            .map(|(param, expected)| (*param, expected))
+            .collect::<Vec<_>>();
+        let checks = check_many(paths, &f.file, f.format, &check_targets);
+
+        for ((p, expected), c) in file_params
+            .iter()
+            .zip(expected_values)
+            .zip(checks)
+        {
             let state = cfg.codex_guard.params.get(&p.id);
-            let expected = expected_of(p, state);
-            let c = check(paths, p, f.format, &expected);
             if group_error.is_none() && c.error.is_some() {
                 group_error = c.error.clone();
             }

@@ -4,7 +4,7 @@ use crate::i18n::{tr, trf};
 use crate::AppState;
 use tauri::State;
 
-use super::engine::{apply, check, expected_of};
+use super::engine::{check, execute_single_plan, expected_of};
 use super::files::{detect_file_path, find_file, load_files, update_files};
 use super::ownership::{normalize_relative_path, validate_ownership, validate_target_path};
 use super::schema::{ensure_schema_file, load_schema, schema_file_path, update_disk_schema};
@@ -105,7 +105,7 @@ fn guard_apply_inner(state: &AppState, id: String) -> Result<(), String> {
     let format = find_format(&files, &p.file)?;
     state.config_store.update_launcher(|config| {
         let expected = expected_of(&p, config.codex_guard.params.get(&id));
-        apply(&state.paths, &p, format, &expected)?;
+        execute_single_plan(&state.paths, &p, format, &expected)?;
         let st = config.codex_guard.params.entry(id).or_default();
         st.applied = true;
         st.last_checked = Some(now_secs());
@@ -172,7 +172,7 @@ pub fn guard_set_locked(
             let st = config.codex_guard.params.entry(id.clone()).or_default();
             st.last_checked = Some(now_secs());
             if c.status == "drift" || c.status == "missing" {
-                apply(&state.paths, &p, format, &expected)?;
+                execute_single_plan(&state.paths, &p, format, &expected)?;
                 st.last_restored = Some(now_secs());
             }
         }

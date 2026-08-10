@@ -45,6 +45,12 @@ pub(crate) enum DiagnosticCode {
     MarkdownCrossingMarker,
     MarkdownUnmatchedMarker,
     MarkdownUnclosedMarker,
+    PlanEmptyMembers,
+    PlanUnknownMode,
+    PlanModeIncompatible,
+    PlanInvalidPath,
+    PlanExpectedTypeMismatch,
+    PlanConflict,
 }
 
 impl DiagnosticCode {
@@ -60,6 +66,12 @@ impl DiagnosticCode {
             Self::MarkdownCrossingMarker => "markdown_crossing_marker",
             Self::MarkdownUnmatchedMarker => "markdown_unmatched_marker",
             Self::MarkdownUnclosedMarker => "markdown_unclosed_marker",
+            Self::PlanEmptyMembers => "plan_empty_members",
+            Self::PlanUnknownMode => "plan_unknown_mode",
+            Self::PlanModeIncompatible => "plan_mode_incompatible",
+            Self::PlanInvalidPath => "plan_invalid_path",
+            Self::PlanExpectedTypeMismatch => "plan_expected_type_mismatch",
+            Self::PlanConflict => "plan_conflict",
         }
     }
 }
