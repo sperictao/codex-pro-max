@@ -2,8 +2,9 @@
 //!
 //! Journal 只记录相对目标、hash、快照引用和位图，不记录文件内容、绝对路径、命令或
 //! 用户配置值。写入先落同目录临时文件并 `sync_all`，再替换 journal，供后续 recovery
-//! 读取；完整的跨文件执行协议仍由 transaction/coordinator 接入。
+//! 读取；跨文件执行协议由 engine 的批量执行器负责。
 
+use std::collections::HashSet;
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -17,6 +18,20 @@ use super::transaction::{TransactionError, TransactionErrorCode, TransactionPhas
 
 pub(crate) const JOURNAL_SCHEMA_VERSION: u16 = 1;
 static NEXT_JOURNAL_ID: AtomicU64 = AtomicU64::new(1);
+
+#[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum JournalParticipant {
+    #[default]
+    Codex,
+    Launcher,
+}
+
+impl JournalParticipant {
+    fn is_codex(&self) -> bool {
+        matches!(self, Self::Codex)
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -32,6 +47,8 @@ pub(crate) struct JournalEnvelope {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct JournalEntry {
+    #[serde(default, skip_serializing_if = "JournalParticipant::is_codex")]
+    pub(crate) participant: JournalParticipant,
     pub(crate) relative_file: String,
     pub(crate) original_exists: bool,
     pub(crate) original_sha256: String,
@@ -61,11 +78,17 @@ impl JournalEnvelope {
         {
             return Err(TransactionError::new(TransactionErrorCode::JournalSchema));
         }
+        let mut targets = HashSet::new();
+        let mut snapshots = HashSet::new();
         for entry in &self.entries {
             if !valid_relative_ref(&entry.relative_file)
                 || !valid_relative_ref(&entry.snapshot_ref)
                 || !valid_hash(&entry.original_sha256)
                 || !valid_hash(&entry.candidate_sha256)
+                || !valid_participant_ref(entry.participant, &entry.relative_file)
+                || (!entry.original_exists && entry.original_sha256 != empty_sha256())
+                || !targets.insert((entry.participant, entry.relative_file.as_str()))
+                || !snapshots.insert(entry.snapshot_ref.as_str())
             {
                 return Err(TransactionError::new(TransactionErrorCode::JournalSchema));
             }
@@ -114,6 +137,7 @@ pub(crate) fn write_journal(
         .map_err(|_| TransactionError::new(TransactionErrorCode::JournalIo))?;
     restrict_file(&journal_path)?;
     sync_directory(&batch_dir)?;
+    sync_directory(root)?;
     Ok(journal_path)
 }
 
@@ -144,6 +168,11 @@ pub(crate) fn write_snapshot(
         .map_err(|_| TransactionError::new(TransactionErrorCode::JournalIo))?;
     drop(file);
     sync_directory(parent)?;
+    let batch_dir = parent
+        .parent()
+        .ok_or_else(|| TransactionError::new(TransactionErrorCode::JournalSchema))?;
+    sync_directory(batch_dir)?;
+    sync_directory(root)?;
     Ok(path)
 }
 
@@ -153,7 +182,13 @@ pub(crate) fn read_snapshot(
     snapshot_ref: &str,
 ) -> Result<Vec<u8>, TransactionError> {
     validate_batch_and_ref(batch_id, snapshot_ref)?;
-    fs::read(root.join(batch_id).join(snapshot_ref))
+    let path = root.join(batch_id).join(snapshot_ref);
+    let metadata = fs::symlink_metadata(&path)
+        .map_err(|_| TransactionError::new(TransactionErrorCode::JournalIo))?;
+    if !metadata.file_type().is_file() {
+        return Err(TransactionError::new(TransactionErrorCode::JournalSchema));
+    }
+    fs::read(path)
         .map_err(|_| TransactionError::new(TransactionErrorCode::JournalIo))
 }
 
@@ -168,7 +203,9 @@ pub(crate) fn cleanup_batch(root: &Path, batch_id: &str) -> Result<(), Transacti
         return Err(TransactionError::new(TransactionErrorCode::JournalSchema));
     }
     fs::remove_dir_all(root.join(batch_id))
-        .map_err(|_| TransactionError::new(TransactionErrorCode::JournalIo))
+        .map_err(|_| TransactionError::new(TransactionErrorCode::JournalIo))?;
+    sync_directory(root)?;
+    Ok(())
 }
 
 fn valid_component(value: &str) -> bool {
@@ -188,7 +225,10 @@ fn valid_relative_ref(value: &str) -> bool {
 }
 
 fn validate_batch_and_ref(batch_id: &str, snapshot_ref: &str) -> Result<(), TransactionError> {
-    if !valid_component(batch_id) || !valid_relative_ref(snapshot_ref) {
+    if !valid_component(batch_id)
+        || !valid_relative_ref(snapshot_ref)
+        || !snapshot_ref.starts_with("snapshots/")
+    {
         return Err(TransactionError::new(TransactionErrorCode::JournalSchema));
     }
     Ok(())
@@ -196,6 +236,17 @@ fn validate_batch_and_ref(batch_id: &str, snapshot_ref: &str) -> Result<(), Tran
 
 fn valid_hash(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn valid_participant_ref(participant: JournalParticipant, relative_file: &str) -> bool {
+    match participant {
+        JournalParticipant::Codex => true,
+        JournalParticipant::Launcher => relative_file == "config.json",
+    }
+}
+
+fn empty_sha256() -> &'static str {
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 }
 
 fn sync_directory(path: &Path) -> Result<(), TransactionError> {
@@ -249,6 +300,7 @@ mod tests {
 
     fn entry() -> JournalEntry {
         JournalEntry {
+            participant: JournalParticipant::Codex,
             relative_file: "config.toml".into(),
             original_exists: true,
             original_sha256: "0".repeat(64),
@@ -292,6 +344,71 @@ mod tests {
     }
 
     #[test]
+    fn launcher_participant_is_limited_to_config_json_and_legacy_entries_default_to_codex() {
+        let mut launcher = JournalEnvelope::new(
+            "batch-1".into(),
+            vec![JournalEntry {
+                participant: JournalParticipant::Launcher,
+                relative_file: "config.json".into(),
+                ..entry()
+            }],
+        );
+        assert!(launcher.validate().is_ok());
+
+        launcher.entries[0].relative_file = "other.json".into();
+        assert_eq!(
+            launcher.validate().unwrap_err().code,
+            TransactionErrorCode::JournalSchema
+        );
+
+        let legacy = br#"{
+            "schema_version":1,
+            "batch_id":"batch-legacy",
+            "phase":"preflight",
+            "entries":[{
+                "relative_file":"config.toml",
+                "original_exists":true,
+                "original_sha256":"0000000000000000000000000000000000000000000000000000000000000000",
+                "candidate_sha256":"1111111111111111111111111111111111111111111111111111111111111111",
+                "snapshot_ref":"snapshots/entry-0.bin",
+                "completed":false,
+                "post_checked":false,
+                "restored":false
+            }],
+            "commit_marker":false,
+            "critical":false
+        }"#;
+        assert_eq!(
+            JournalEnvelope::from_bytes(legacy).unwrap().entries[0].participant,
+            JournalParticipant::Codex
+        );
+
+        let bytes = serde_json::to_vec(&serde_json::json!({
+            "schema_version": 1,
+            "batch_id": "batch-1",
+            "phase": "preflight",
+            "entries": [{
+                "participant": "unknown",
+                "relative_file": "config.toml",
+                "original_exists": true,
+                "original_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+                "candidate_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "snapshot_ref": "snapshots/entry-0.bin",
+                "completed": false,
+                "post_checked": false,
+                "restored": false
+            }],
+            "commit_marker": false,
+            "critical": false
+        }))
+        .unwrap();
+        assert_eq!(
+            JournalEnvelope::from_bytes(&bytes).unwrap_err().code,
+            TransactionErrorCode::JournalSchema
+        );
+    }
+
+    #[test]
     fn journal_write_reads_and_cleans_a_batch_directory() {
         let temp = tempfile::tempdir().unwrap();
         let journal = JournalEnvelope::new("batch-1".into(), vec![entry()]);
@@ -315,6 +432,12 @@ mod tests {
         );
         assert_eq!(
             write_snapshot(temp.path(), "batch-1", "../outside", bytes)
+                .unwrap_err()
+                .code,
+            TransactionErrorCode::JournalSchema
+        );
+        assert_eq!(
+            write_snapshot(temp.path(), "batch-1", "journal.json", bytes)
                 .unwrap_err()
                 .code,
             TransactionErrorCode::JournalSchema

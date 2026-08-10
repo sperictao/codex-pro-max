@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 
 use crate::i18n::trf;
 
-use super::atomic_store::{AtomicFileWriter, PlatformAtomicFileWriter};
 use super::{now_secs, AppPaths};
 
 /// 写入前备份目标文件到 ~/.codex/dashi-backups/，每个文件保留 20 份
@@ -47,20 +46,10 @@ fn backup(paths: &AppPaths, rel_file: &str, target: &Path) -> Result<(), String>
     Ok(())
 }
 
-/// Step 5 事务协调器落地前的过渡 sink；Guard 业务只能从 engine 的计划执行边界调用。
-pub(crate) fn legacy_write_with_backup(
+pub(crate) fn backup_before_write(
     paths: &AppPaths,
     rel_file: &str,
     target: &Path,
-    content: &[u8],
 ) -> Result<(), String> {
-    backup(paths, rel_file, target)?;
-    PlatformAtomicFileWriter
-        .replace(target, content)
-        .map_err(|error| {
-            trf(
-                "Failed to write {path}: {error}",
-                &[("path", target.display().to_string()), ("error", error)],
-            )
-        })
+    backup(paths, rel_file, target)
 }

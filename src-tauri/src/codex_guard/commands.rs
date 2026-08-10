@@ -4,19 +4,20 @@ use crate::i18n::{tr, trf};
 use crate::AppState;
 use tauri::State;
 
+use super::atomic_store::PlatformAtomicFileWriter;
 use super::engine::{
-    check, execute_single_plan, expected_of, recover_pending_transactions,
+    check, execute_transaction_batch, expected_of, prepare_single_plan,
+    recover_pending_transactions, TransactionWrite,
 };
 use super::files::{detect_file_path, find_file, load_files, update_files};
+use super::journal::JournalParticipant;
 use super::ownership::{normalize_relative_path, validate_ownership, validate_target_path};
 use super::schema::{ensure_schema_file, load_schema, schema_file_path, update_disk_schema};
 use super::validate::{
     normalize_custom_id, validate_guard_file, validate_param_fields, validate_param_for_file,
 };
 use super::view::{build_view, GuardView};
-use super::{
-    now_secs, DetectRecord, GuardFile, GuardFileFormat, GuardParam, GuardRecoveryStatus,
-};
+use super::{now_secs, DetectRecord, GuardFile, GuardFileFormat, GuardParam, GuardRecoveryStatus};
 
 fn find_param(schema: &[GuardParam], id: &str) -> Result<GuardParam, String> {
     schema.iter().find(|p| p.id == id).cloned().ok_or_else(|| {
@@ -46,6 +47,21 @@ fn validate_configuration(
     schema: &[GuardParam],
 ) -> Result<(), String> {
     validate_ownership(paths, files, schema).map_err(|error| error.to_string())
+}
+
+fn return_guard_transaction_result(
+    state: &AppState,
+    result: Result<(), String>,
+) -> Result<(), String> {
+    if result
+        .as_ref()
+        .is_err_and(|error| error.starts_with("guard transaction failed: "))
+    {
+        state
+            .guard_coordinator
+            .mark_recovery_blocked("recovery_failed");
+    }
+    result
 }
 
 #[tauri::command]
@@ -144,14 +160,40 @@ fn guard_apply_inner(state: &AppState, id: String) -> Result<(), String> {
     validate_configuration(&state.paths, &files, &schema)?;
     let p = find_param(&schema, &id)?;
     let format = find_format(&files, &p.file)?;
-    state.config_store.update_launcher(|config| {
-        let expected = expected_of(&p, config.codex_guard.params.get(&id));
-        execute_single_plan(&state.paths, &p, format, &expected)?;
-        let st = config.codex_guard.params.entry(id).or_default();
+    let result = state.config_store.with_launcher_transaction(|launcher| {
+        let expected = expected_of(&p, launcher.config().codex_guard.params.get(&id));
+        let (target, original, plan) = prepare_single_plan(&state.paths, &p, format, &expected)?;
+        let codex_writer = PlatformAtomicFileWriter;
+        let mut writes = Vec::with_capacity(2);
+        if plan.changed {
+            writes.push(TransactionWrite {
+                participant: JournalParticipant::Codex,
+                relative_file: plan.relative_file.clone(),
+                target,
+                original,
+                candidate: plan.candidate,
+                writer: &codex_writer,
+            });
+        }
+        let st = launcher
+            .config_mut()
+            .codex_guard
+            .params
+            .entry(id)
+            .or_default();
         st.applied = true;
         st.last_checked = Some(now_secs());
-        Ok(())
-    })
+        writes.push(TransactionWrite {
+            participant: JournalParticipant::Launcher,
+            relative_file: "config.json".into(),
+            target: launcher.target().to_path_buf(),
+            original: launcher.original().map(ToOwned::to_owned),
+            candidate: launcher.candidate_bytes()?,
+            writer: launcher.writer(),
+        });
+        execute_transaction_batch(&state.paths, writes)
+    });
+    return_guard_transaction_result(state, result)
 }
 
 #[tauri::command]
@@ -196,9 +238,10 @@ pub fn guard_set_locked(
     validate_configuration(&state.paths, &files, &schema)?;
     let p = find_param(&schema, &id)?;
     let format = find_format(&files, &p.file)?;
-    state.config_store.update_launcher(|config| {
+    let result = state.config_store.with_launcher_transaction(|launcher| {
         if locked
-            && !config
+            && !launcher
+                .config()
                 .codex_guard
                 .params
                 .get(&id)
@@ -206,24 +249,76 @@ pub fn guard_set_locked(
         {
             return Err(tr("Apply the parameter before locking it"));
         }
+
         if locked {
             // 锁定即校验一次：已漂移就当场恢复
-            let expected = expected_of(&p, config.codex_guard.params.get(&id));
+            let expected = expected_of(&p, launcher.config().codex_guard.params.get(&id));
             let c = check(&state.paths, &p, format, &expected);
             if c.status == "error" {
                 return Err(c.error.unwrap_or_else(|| tr("Guard validation failed")));
             }
-            let st = config.codex_guard.params.entry(id.clone()).or_default();
-            st.last_checked = Some(now_secs());
             if c.status == "drift" || c.status == "missing" {
-                execute_single_plan(&state.paths, &p, format, &expected)?;
-                st.last_restored = Some(now_secs());
+                let (target, original, plan) =
+                    prepare_single_plan(&state.paths, &p, format, &expected)?;
+                let codex_writer = PlatformAtomicFileWriter;
+                let mut writes = Vec::with_capacity(2);
+                if plan.changed {
+                    writes.push(TransactionWrite {
+                        participant: JournalParticipant::Codex,
+                        relative_file: plan.relative_file,
+                        target,
+                        original,
+                        candidate: plan.candidate,
+                        writer: &codex_writer,
+                    });
+                }
+                let st = launcher
+                    .config_mut()
+                    .codex_guard
+                    .params
+                    .entry(id.clone())
+                    .or_default();
+                st.last_checked = Some(now_secs());
+                st.locked = locked;
+                let restored = plan.changed;
+                if restored {
+                    st.last_restored = Some(now_secs());
+                }
+                writes.push(TransactionWrite {
+                    participant: JournalParticipant::Launcher,
+                    relative_file: "config.json".into(),
+                    target: launcher.target().to_path_buf(),
+                    original: launcher.original().map(ToOwned::to_owned),
+                    candidate: launcher.candidate_bytes()?,
+                    writer: launcher.writer(),
+                });
+                execute_transaction_batch(&state.paths, writes)?;
+                return Ok(());
             }
         }
-        let st = config.codex_guard.params.entry(id).or_default();
+        let st = launcher
+            .config_mut()
+            .codex_guard
+            .params
+            .entry(id)
+            .or_default();
+        if locked {
+            st.last_checked = Some(now_secs());
+        }
         st.locked = locked;
-        Ok(())
-    })
+        execute_transaction_batch(
+            &state.paths,
+            vec![TransactionWrite {
+                participant: JournalParticipant::Launcher,
+                relative_file: "config.json".into(),
+                target: launcher.target().to_path_buf(),
+                original: launcher.original().map(ToOwned::to_owned),
+                candidate: launcher.candidate_bytes()?,
+                writer: launcher.writer(),
+            }],
+        )
+    });
+    return_guard_transaction_result(&state, result)
 }
 
 // ============ 自定义参数管理 ============

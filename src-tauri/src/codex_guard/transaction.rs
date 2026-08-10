@@ -78,13 +78,9 @@ impl TransactionError {
 pub(crate) enum RecoveryAction {
     CleanupCompleted,
     RestorePending,
-    Critical,
 }
 
 pub(crate) fn recovery_action(journal: &JournalEnvelope) -> RecoveryAction {
-    if journal.phase == TransactionPhase::Critical || journal.critical {
-        return RecoveryAction::Critical;
-    }
     if journal.phase == TransactionPhase::Completed && journal.commit_marker {
         return RecoveryAction::CleanupCompleted;
     }
@@ -127,7 +123,7 @@ impl TransactionState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::codex_guard::journal::{JournalEntry, JOURNAL_SCHEMA_VERSION};
+    use crate::codex_guard::journal::{JournalEntry, JournalParticipant, JOURNAL_SCHEMA_VERSION};
 
     #[test]
     fn transaction_phase_rejects_skips_and_repeated_terminal_transitions() {
@@ -148,16 +144,17 @@ mod tests {
         journal.commit_marker = true;
         assert_eq!(recovery_action(&journal), RecoveryAction::CleanupCompleted);
         journal.critical = true;
-        assert_eq!(recovery_action(&journal), RecoveryAction::Critical);
+        assert_eq!(recovery_action(&journal), RecoveryAction::CleanupCompleted);
     }
 
     fn entry() -> JournalEntry {
         JournalEntry {
+            participant: JournalParticipant::Codex,
             relative_file: "config.toml".into(),
             original_exists: true,
             original_sha256: "0".repeat(64),
             candidate_sha256: "1".repeat(64),
-            snapshot_ref: "snapshot-0".into(),
+            snapshot_ref: "snapshots/snapshot-0".into(),
             completed: false,
             post_checked: false,
             restored: false,

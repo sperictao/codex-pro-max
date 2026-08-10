@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use crate::codex_guard::atomic_store::{AtomicFileWriter, PlatformAtomicFileWriter};
@@ -113,6 +114,44 @@ pub(crate) struct ConfigStore {
     writer: Arc<dyn AtomicFileWriter>,
 }
 
+pub(crate) struct LauncherTransaction<'a> {
+    target: PathBuf,
+    original: Option<Vec<u8>>,
+    config: LauncherConfig,
+    writer: &'a dyn AtomicFileWriter,
+}
+
+impl<'a> LauncherTransaction<'a> {
+    pub(crate) fn config(&self) -> &LauncherConfig {
+        &self.config
+    }
+
+    pub(crate) fn config_mut(&mut self) -> &mut LauncherConfig {
+        &mut self.config
+    }
+
+    pub(crate) fn candidate_bytes(&self) -> Result<Vec<u8>, String> {
+        serde_json::to_vec_pretty(&self.config).map_err(|error| {
+            crate::i18n::trf(
+                "Failed to serialize config: {error}",
+                &[("error", error.to_string())],
+            )
+        })
+    }
+
+    pub(crate) fn target(&self) -> &Path {
+        &self.target
+    }
+
+    pub(crate) fn original(&self) -> Option<&[u8]> {
+        self.original.as_deref()
+    }
+
+    pub(crate) fn writer(&self) -> &dyn AtomicFileWriter {
+        self.writer
+    }
+}
+
 impl ConfigStore {
     pub(crate) fn new(paths: AppPaths) -> Self {
         Self {
@@ -149,10 +188,34 @@ impl ConfigStore {
             .map_err(|_| "config store lock is poisoned".to_string())?;
         let mut config = self.load_launcher_unlocked()?;
         let result = update(&mut config)?;
-        let bytes = serde_json::to_vec_pretty(&config)
-            .map_err(|error| crate::i18n::trf("Failed to serialize config: {error}", &[("error", error.to_string())]))?;
+        let bytes = serde_json::to_vec_pretty(&config).map_err(|error| {
+            crate::i18n::trf(
+                "Failed to serialize config: {error}",
+                &[("error", error.to_string())],
+            )
+        })?;
         self.writer.replace(&self.paths.config_file(), &bytes)?;
         Ok(result)
+    }
+
+    pub(crate) fn with_launcher_transaction<R>(
+        &self,
+        operation: impl FnOnce(&mut LauncherTransaction<'_>) -> Result<R, String>,
+    ) -> Result<R, String> {
+        // 联合 Guard 事务会在这个闭包内完成 Codex 写入和 config.json 写入；保持
+        // ConfigStore 锁直到批次提交，避免进程内设置写入穿过原始 hash precondition。
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|_| "config store lock is poisoned".to_string())?;
+        let (original, config) = self.load_launcher_snapshot_unlocked()?;
+        let mut transaction = LauncherTransaction {
+            target: self.paths.config_file(),
+            original,
+            config,
+            writer: self.writer.as_ref(),
+        };
+        operation(&mut transaction)
     }
 
     pub(crate) fn load_guard_schema(&self) -> Result<Vec<GuardParam>, String> {
@@ -173,9 +236,14 @@ impl ConfigStore {
             .map_err(|_| "config store lock is poisoned".to_string())?;
         let mut schema = self.load_guard_schema_unlocked()?;
         let result = update(&mut schema)?;
-        let bytes = serde_json::to_vec_pretty(&schema)
-            .map_err(|error| crate::i18n::trf("Failed to serialize schema: {error}", &[("error", error.to_string())]))?;
-        self.writer.replace(&self.paths.guard_schema_file(), &bytes)?;
+        let bytes = serde_json::to_vec_pretty(&schema).map_err(|error| {
+            crate::i18n::trf(
+                "Failed to serialize schema: {error}",
+                &[("error", error.to_string())],
+            )
+        })?;
+        self.writer
+            .replace(&self.paths.guard_schema_file(), &bytes)?;
         Ok(result)
     }
 
@@ -186,9 +254,9 @@ impl ConfigStore {
             .map_err(|_| "config store lock is poisoned".to_string())?;
         match std::fs::metadata(self.paths.guard_schema_file()) {
             Ok(_) => Ok(()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                self.writer.replace(&self.paths.guard_schema_file(), default_bytes)
-            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => self
+                .writer
+                .replace(&self.paths.guard_schema_file(), default_bytes),
             Err(error) => Err(crate::i18n::trf(
                 "Failed to read schema file: {error}",
                 &[("error", error.to_string())],
@@ -197,18 +265,23 @@ impl ConfigStore {
     }
 
     fn load_launcher_unlocked(&self) -> Result<LauncherConfig, String> {
+        self.load_launcher_snapshot_unlocked()
+            .map(|(_, config)| config)
+    }
+
+    fn load_launcher_snapshot_unlocked(&self) -> Result<(Option<Vec<u8>>, LauncherConfig), String> {
         let path = self.paths.config_file();
-        let bytes = match std::fs::read(&path) {
-            Ok(bytes) => bytes,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(LauncherConfig::default());
-            }
+        let Some(bytes) = (match std::fs::read(&path) {
+            Ok(bytes) => Some(bytes),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
             Err(error) => {
                 return Err(crate::i18n::trf(
                     "Failed to read config file: {error}",
                     &[("error", error.to_string())],
                 ));
             }
+        }) else {
+            return Ok((None, LauncherConfig::default()));
         };
         let mut config: LauncherConfig = serde_json::from_slice(&bytes).map_err(|error| {
             crate::i18n::trf(
@@ -217,7 +290,7 @@ impl ConfigStore {
             )
         })?;
         config.taskboard_path = strip_unc(&config.taskboard_path);
-        Ok(config)
+        Ok((Some(bytes), config))
     }
 
     fn load_guard_schema_unlocked(&self) -> Result<Vec<GuardParam>, String> {
@@ -331,7 +404,11 @@ mod tests {
 
         // codex_guard 完整保留，没有被默认值覆盖
         assert_eq!(current.codex_guard.enabled, true);
-        let p = current.codex_guard.params.get("features.image_generation").unwrap();
+        let p = current
+            .codex_guard
+            .params
+            .get("features.image_generation")
+            .unwrap();
         assert_eq!(p.applied, true);
         assert_eq!(p.locked, true);
         assert_eq!(p.last_checked, Some(12345));
@@ -441,6 +518,29 @@ mod tests {
         });
 
         assert_eq!(result.unwrap_err(), "injected replace failure");
+        assert_eq!(std::fs::read(paths.config_file()).unwrap(), original);
+    }
+
+    #[test]
+    fn launcher_transaction_keeps_raw_precondition_and_builds_candidate_without_writing() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::for_test(temp.path());
+        std::fs::create_dir_all(paths.launcher_root()).unwrap();
+        let mut original_config = LauncherConfig::default();
+        original_config.language = "zh-CN".into();
+        let original = serde_json::to_vec_pretty(&original_config).unwrap();
+        std::fs::write(paths.config_file(), &original).unwrap();
+        let store = ConfigStore::new(paths.clone());
+
+        let candidate = store
+            .with_launcher_transaction(|transaction| {
+                assert_eq!(transaction.original(), Some(original.as_slice()));
+                transaction.config_mut().language = "en".into();
+                transaction.candidate_bytes()
+            })
+            .unwrap();
+
+        assert_ne!(candidate, original);
         assert_eq!(std::fs::read(paths.config_file()).unwrap(), original);
     }
 

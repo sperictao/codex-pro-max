@@ -10,6 +10,19 @@ use super::ownership::validate_ownership;
 use super::schema::load_schema;
 use super::{AppPaths, GuardCoordinator};
 
+fn handle_restore_error(
+    coordinator: &GuardCoordinator,
+    param_id: &str,
+    error: String,
+) -> Result<(), String> {
+    log::error!("codex guard 恢复 {} 失败: {}", param_id, error);
+    if error.starts_with("guard transaction failed: ") {
+        coordinator.mark_recovery_blocked("recovery_failed");
+        return Err(error);
+    }
+    Ok(())
+}
+
 pub async fn poll_loop(store: ConfigStore, paths: AppPaths, coordinator: GuardCoordinator) {
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(60)).await;
@@ -88,11 +101,40 @@ fn poll_once(
                             state.last_restored = Some(now_secs());
                             log::info!("codex guard 已自动恢复: {}", param.id);
                         }
-                        Err(error) => log::error!("codex guard 恢复 {} 失败: {}", param.id, error),
+                        Err(error) => handle_restore_error(coordinator, &param.id, error)?,
                     }
                 }
             }
         }
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transaction_restore_failure_blocks_follow_up_writes() {
+        let coordinator = GuardCoordinator::new();
+        let error = handle_restore_error(
+            &coordinator,
+            "subagent.model",
+            "guard transaction failed: replace_failed".to_string(),
+        )
+        .unwrap_err();
+
+        assert_eq!(error, "guard transaction failed: replace_failed");
+        assert_eq!(
+            coordinator.recovery_status(),
+            super::super::GuardRecoveryStatus {
+                blocked: true,
+                code: Some("recovery_failed".to_string()),
+            }
+        );
+        assert_eq!(
+            coordinator.try_guard_write().unwrap_err(),
+            "recovery_blocked"
+        );
+    }
 }
