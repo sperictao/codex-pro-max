@@ -8,18 +8,27 @@ use super::files::load_files;
 use super::now_secs;
 use super::ownership::validate_ownership;
 use super::schema::load_schema;
-use super::AppPaths;
+use super::{AppPaths, GuardCoordinator};
 
-pub async fn poll_loop(store: ConfigStore, paths: AppPaths) {
+pub async fn poll_loop(store: ConfigStore, paths: AppPaths, coordinator: GuardCoordinator) {
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-        if let Err(e) = poll_once(&store, &paths) {
+        if let Err(e) = poll_once(&store, &paths, &coordinator) {
             log::error!("codex guard 轮询失败: {}", e);
         }
     }
 }
 
-fn poll_once(store: &ConfigStore, paths: &AppPaths) -> Result<(), String> {
+fn poll_once(
+    store: &ConfigStore,
+    paths: &AppPaths,
+    coordinator: &GuardCoordinator,
+) -> Result<(), String> {
+    let _write = match coordinator.try_write() {
+        Ok(guard) => guard,
+        Err(error) if error == "guard_busy" => return Ok(()),
+        Err(error) => return Err(error),
+    };
     let snapshot = store.load_launcher()?;
     if !snapshot.codex_guard.enabled
         || !snapshot

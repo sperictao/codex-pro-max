@@ -13,10 +13,11 @@ use crate::*;
 
 use super::{
     guard_add_custom_param, guard_add_file, guard_apply, guard_detect_file, guard_get_files,
-    guard_get_schema_file_path, guard_get_view, guard_relativize_picked_path,
+    guard_get_recovery_status, guard_get_schema_file_path, guard_get_view,
+    guard_relativize_picked_path,
     guard_remove_custom_param, guard_remove_file, guard_set_applied, guard_set_enabled,
-    guard_set_locked, guard_set_value, guard_update_file, CodexGuardState, DetectRecord, GuardFile,
-    GuardFileFormat, GuardParam, GuardParamState,
+    guard_retry_recovery, guard_set_locked, guard_set_value, guard_update_file, CodexGuardState,
+    DetectRecord, GuardFile, GuardFileFormat, GuardParam, GuardParamState, GuardRecoveryStatus,
 };
 
 pub const GUARD_CONTRACT_SCHEMA_VERSION: u16 = 1;
@@ -59,6 +60,8 @@ pub fn builder() -> Builder<tauri::Wry> {
             guard_remove_file,
             guard_detect_file,
             guard_relativize_picked_path,
+            guard_get_recovery_status,
+            guard_retry_recovery,
         ])
         .events(collect_events![])
         .typ::<GuardParam>()
@@ -67,6 +70,7 @@ pub fn builder() -> Builder<tauri::Wry> {
         .typ::<GuardFile>()
         .typ::<GuardFileFormat>()
         .typ::<DetectRecord>()
+        .typ::<GuardRecoveryStatus>()
         .constant(
             "GUARD_CONTRACT",
             GuardContractConstants {

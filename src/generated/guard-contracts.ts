@@ -130,6 +130,28 @@ async guardRelativizePickedPath(absPath: string) : Promise<Result<string, string
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * 返回启动恢复是否阻断了 Guard 写入。只暴露稳定 code，不泄漏 journal 细节。
+ */
+async guardGetRecoveryStatus() : Promise<Result<GuardRecoveryStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_get_recovery_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 重试未完成事务恢复；成功后按需启动唯一的 Guard 轮询任务。
+ */
+async guardRetryRecovery() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_retry_recovery") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -221,6 +243,10 @@ export type GuardParamState = {
  * 用户改后的值；None = 用 schema 推荐值
  */
 value?: JsonValue | null; applied?: boolean; locked?: boolean; last_checked?: number | null; last_restored?: number | null }
+/**
+ * 前端可见的恢复状态。只返回稳定 code，不暴露 journal 路径、文件内容或底层错误。
+ */
+export type GuardRecoveryStatus = { blocked: boolean; code: string | null }
 export type GuardView = { schemaVersion: number; enabled: boolean; groups: GroupView[] }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 export type ParamView = { id: string; label: string; description: string; applyMode: string; valueType: string; path: string; default: JsonValue; value: JsonValue; applied: boolean; locked: boolean; actual: string | null;

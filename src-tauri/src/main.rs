@@ -22,6 +22,7 @@ pub(crate) struct AppState {
     pub(crate) pm: Arc<ProcessManager>,
     pub(crate) paths: AppPaths,
     pub(crate) config_store: ConfigStore,
+    pub(crate) guard_coordinator: codex_guard::GuardCoordinator,
 }
 
 /// 生产 composition root 唯一允许读取用户主目录环境变量的位置。
@@ -140,6 +141,7 @@ fn set_language(app: tauri::AppHandle, setting: String) -> Result<(), String> {
 /// 保存配置（全量覆盖，仅前端已知字段的场景使用）
 #[tauri::command]
 async fn save_config(state: State<'_, AppState>, config: LauncherConfig) -> Result<(), String> {
+    let _write = state.guard_coordinator.try_write()?;
     state.config_store.update_launcher(|current| {
         config::merge_settings(current, &config);
         Ok(())
@@ -150,6 +152,7 @@ async fn save_config(state: State<'_, AppState>, config: LauncherConfig) -> Resu
 /// 防止设置页保存时把内存中过时的看守状态写回，导致 apply/lock 被回滚
 #[tauri::command]
 async fn update_settings(state: State<'_, AppState>, config: LauncherConfig) -> Result<(), String> {
+    let _write = state.guard_coordinator.try_write()?;
     state.config_store.update_launcher(|current| {
         config::merge_settings(current, &config);
         Ok(())
@@ -834,6 +837,7 @@ pub fn run() {
     );
     let process_manager = Arc::new(ProcessManager::new(app_paths.clone()));
     let config_store = ConfigStore::new(app_paths.clone());
+    let guard_coordinator = codex_guard::GuardCoordinator::new();
 
     tauri::Builder::default()
         // single-instance 必须最先注册：第二实例在此退出，其余插件不重复初始化
@@ -874,6 +878,7 @@ pub fn run() {
             pm: process_manager,
             paths: app_paths,
             config_store,
+            guard_coordinator,
         })
         .manage(updater::PendingUpdateState::default())
         .setup(|app| {
@@ -918,18 +923,23 @@ pub fn run() {
                 show_main_window(app.handle());
             }
             let recovery_ready = match codex_guard::recover_pending_transactions(&state.paths) {
-                Ok(()) => true,
+                Ok(()) => {
+                    state.guard_coordinator.clear_recovery();
+                    true
+                }
                 Err(error) => {
                     // Recovery 失败时保留 journal 并阻断自动漂移写入，避免在不确定的
                     // 文件状态上继续叠加 poll 副作用；用户仍可打开界面处理问题。
                     log::error!("codex guard 事务恢复失败，已暂停轮询: {}", error);
+                    state.guard_coordinator.mark_recovery_blocked("recovery_failed");
                     false
                 }
             };
-            if recovery_ready {
+            if recovery_ready && state.guard_coordinator.claim_poll_start() {
                 tauri::async_runtime::spawn(codex_guard::poll_loop(
                     state.config_store.clone(),
                     state.paths.clone(),
+                    state.guard_coordinator.clone(),
                 ));
             }
             Ok(())
@@ -995,6 +1005,8 @@ pub fn run() {
             codex_guard::guard_remove_file,
             codex_guard::guard_detect_file,
             codex_guard::guard_relativize_picked_path,
+            codex_guard::guard_get_recovery_status,
+            codex_guard::guard_retry_recovery,
             fastctx::fastctx_detect,
             fastctx::fastctx_install,
             fastctx::fastctx_apply,

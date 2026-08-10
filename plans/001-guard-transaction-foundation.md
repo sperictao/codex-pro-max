@@ -332,6 +332,21 @@ DONE。
   Guard 边界不得透传完整路径或 CLI stdout/stderr。既有 FastCtx 结果展示合同不在本期
   重构，但获取 Guard 锁失败必须使用新安全 code。
 
+### Step 6 阶段实施结果（2026-08-10）
+
+- 已新增进程内 `GuardCoordinator`，所有 Guard 主动写命令、`save_config`、
+  `update_settings`、Guard schema/file mutation、FastCtx apply/unapply 和 poll 都先走同一
+  个非排队 `try_write`；用户忙时返回稳定 `guard_busy`，轮询忙时跳过本轮，不积压旧意图。
+- 启动恢复结果进入协调器状态；新增 `guard_get_recovery_status` 与
+  `guard_retry_recovery`，只返回 `blocked` 和白名单 code。恢复重试成功后按需启动唯一的
+  poll 任务，失败不透传 journal/路径/底层错误。
+- 新增恢复 DTO/命令到 Rust 单一来源 IPC 合同、command registry fixture 和生成的
+  TypeScript 合同，合同逐字比较与前端构建均通过。
+- 本阶段仍不宣称 Plan 001 完成：协调器目前解决入口互斥与恢复阻断，跨文件全有全无批次、
+  ConfigStore/Launcher 状态共同提交、no-follow 目录句柄级 TOCTOU、Windows 持久化与双进程
+  强杀证明仍是后续硬门；Critical 状态目前仍以全局恢复阻断 code 暴露，Plan 002 再细化到
+  逻辑组/物理 scope blocker。
+
 ## 验证
 
 ```bash

@@ -5,6 +5,7 @@ mod backup;
 pub(crate) mod atomic_store;
 mod commands;
 pub(crate) mod contracts;
+mod coordinator;
 mod engine;
 mod files;
 pub(crate) mod format;
@@ -22,6 +23,8 @@ mod view;
 
 pub use commands::*;
 pub use poll::poll_loop;
+pub(crate) use coordinator::GuardCoordinator;
+pub use coordinator::GuardRecoveryStatus;
 pub(crate) use engine::recover_pending_transactions;
 pub(crate) use paths::AppPaths;
 pub use model::GuardFileFormat;
