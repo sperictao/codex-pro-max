@@ -5,8 +5,12 @@
 
 use serde::Serialize;
 use specta::Type;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
+
+use super::batch::BatchRequest;
+use super::now_secs;
 
 /// 前端可见的恢复状态。只返回稳定 code，不暴露 journal 路径、文件内容或底层错误。
 #[derive(Debug, Clone, Serialize, Type, PartialEq, Eq)]
@@ -21,6 +25,13 @@ pub(crate) struct GuardCoordinator {
     write: Arc<Mutex<()>>,
     recovery: Arc<Mutex<GuardRecoveryStatus>>,
     poll_started: Arc<AtomicBool>,
+    previews: Arc<Mutex<HashMap<String, PreviewRecord>>>,
+}
+
+struct PreviewRecord {
+    request: BatchRequest,
+    revision: String,
+    expires_at: u64,
 }
 
 impl GuardCoordinator {
@@ -32,6 +43,7 @@ impl GuardCoordinator {
                 code: None,
             })),
             poll_started: Arc::new(AtomicBool::new(false)),
+            previews: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -103,6 +115,32 @@ impl GuardCoordinator {
     pub(crate) fn claim_poll_start(&self) -> bool {
         !self.poll_started.swap(true, Ordering::AcqRel)
     }
+
+    pub(crate) fn remember_preview(&self, id: String, request: BatchRequest, revision: String) {
+        if let Ok(mut previews) = self.previews.lock() {
+            let now = now_secs();
+            previews.retain(|_, record| record.expires_at > now);
+            previews.insert(
+                id,
+                PreviewRecord {
+                    request,
+                    revision,
+                    expires_at: now.saturating_add(300),
+                },
+            );
+        }
+    }
+
+    pub(crate) fn take_preview(&self, id: &str, request: &BatchRequest, revision: &str) -> bool {
+        let Ok(mut previews) = self.previews.lock() else {
+            return false;
+        };
+        let now = now_secs();
+        previews.retain(|_, record| record.expires_at > now);
+        previews.remove(id).is_some_and(|record| {
+            record.expires_at > now && record.request == *request && record.revision == revision
+        })
+    }
 }
 
 #[cfg(test)]
@@ -156,5 +194,18 @@ mod tests {
         let coordinator = GuardCoordinator::new();
         assert!(coordinator.claim_poll_start());
         assert!(!coordinator.claim_poll_start());
+    }
+
+    #[test]
+    fn preview_is_invalidated_when_configuration_revision_changes() {
+        let coordinator = GuardCoordinator::new();
+        let request = BatchRequest::new(
+            super::super::batch::BatchScope::all(),
+            super::super::batch::BatchAction::Apply,
+        );
+        coordinator.remember_preview("preview".to_string(), request.clone(), "rev-a".to_string());
+        assert!(!coordinator.take_preview("preview", &request, "rev-b"));
+        coordinator.remember_preview("preview".to_string(), request.clone(), "rev-a".to_string());
+        assert!(coordinator.take_preview("preview", &request, "rev-a"));
     }
 }

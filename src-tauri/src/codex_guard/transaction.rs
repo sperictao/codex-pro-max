@@ -44,8 +44,10 @@ pub(crate) enum TransactionErrorCode {
     ReadFailed,
     IdentityChanged,
     ReplaceFailed,
+    DurableBackupFailed,
     PostCheckFailed,
     RestoreFailedCritical,
+    FaultInjected,
 }
 
 impl TransactionErrorCode {
@@ -57,9 +59,65 @@ impl TransactionErrorCode {
             Self::ReadFailed => "read_failed",
             Self::IdentityChanged => "identity_changed",
             Self::ReplaceFailed => "replace_failed",
+            Self::DurableBackupFailed => "durable_backup_failed",
             Self::PostCheckFailed => "post_check_failed",
             Self::RestoreFailedCritical => "restore_failed_critical",
+            Self::FaultInjected => "fault_injected",
         }
+    }
+}
+
+/// Test-only failure locations for the durable transaction protocol.
+///
+/// Keeping the points in the transaction domain makes it possible to exercise the
+/// same production executor without replacing the filesystem with a mock success
+/// path. A plan contains one failure, which keeps each test deterministic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TransactionFaultPoint {
+    JournalCreate,
+    JournalSync,
+    Snapshot(usize),
+    PreWriteIdentity(usize),
+    DurableBackup(usize),
+    Write(usize),
+    Replace(usize),
+    PostCheck(usize),
+    StateSaveBefore(TransactionPhase),
+    StateSaveAfter(TransactionPhase),
+    CommitMarkerBefore,
+    CommitMarkerAfter,
+    Restore(usize),
+    JournalCleanup,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct TransactionFaultPlan {
+    point: Option<TransactionFaultPoint>,
+    tripped: bool,
+}
+
+impl TransactionFaultPlan {
+    pub(crate) const fn disabled() -> Self {
+        Self {
+            point: None,
+            tripped: false,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn fail_at(point: TransactionFaultPoint) -> Self {
+        Self {
+            point: Some(point),
+            tripped: false,
+        }
+    }
+
+    pub(crate) fn check(&mut self, point: TransactionFaultPoint) -> Result<(), TransactionError> {
+        if !self.tripped && self.point == Some(point) {
+            self.tripped = true;
+            return Err(TransactionError::new(TransactionErrorCode::FaultInjected));
+        }
+        Ok(())
     }
 }
 
@@ -71,6 +129,40 @@ pub(crate) struct TransactionError {
 impl TransactionError {
     pub(crate) const fn new(code: TransactionErrorCode) -> Self {
         Self { code }
+    }
+}
+
+/// Returns whether an operation left durable recovery state that must block the
+/// next Guard write. A transaction that restored every participant successfully
+/// is a rollback, not a recovery failure.
+// Tauri command proc-macro entrypoints keep the callers reachable at runtime,
+// but rustc's binary dead-code analysis cannot see that generated path.
+#[allow(dead_code)]
+pub(crate) fn is_recovery_blocking_error(error: &str) -> bool {
+    error == "recovery_blocked"
+        || error == "recovery_failed"
+        || error == "migration_failed"
+        || error.contains("restore_failed_critical")
+        || error.contains("journal_")
+        || error.contains("invalid_transition")
+}
+
+/// Converts a bounded transaction error into a stable audit code without
+/// exposing arbitrary filesystem or parser text.
+#[allow(dead_code)]
+pub(crate) fn stable_transaction_error_code(error: &str) -> String {
+    let candidate = error
+        .strip_prefix("guard transaction failed: ")
+        .unwrap_or(error);
+    if !candidate.is_empty()
+        && candidate.len() <= 96
+        && candidate
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.' | b':'))
+    {
+        candidate.to_string()
+    } else {
+        "operation_failed".to_string()
     }
 }
 
@@ -153,6 +245,7 @@ mod tests {
             relative_file: "config.toml".into(),
             original_exists: true,
             original_sha256: "0".repeat(64),
+            candidate_exists: true,
             candidate_sha256: "1".repeat(64),
             snapshot_ref: "snapshots/snapshot-0".into(),
             completed: false,

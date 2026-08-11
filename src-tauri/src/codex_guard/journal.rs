@@ -5,11 +5,14 @@
 //! 读取；跨文件执行协议由 engine 的批量执行器负责。
 
 use std::collections::HashSet;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 
 use serde::{Deserialize, Serialize};
 
@@ -25,6 +28,9 @@ pub(crate) enum JournalParticipant {
     #[default]
     Codex,
     Launcher,
+    /// The launcher-owned guard schema is stored separately from config.json,
+    /// but must use the same durable transaction protocol.
+    LauncherSchema,
 }
 
 impl JournalParticipant {
@@ -52,11 +58,19 @@ pub(crate) struct JournalEntry {
     pub(crate) relative_file: String,
     pub(crate) original_exists: bool,
     pub(crate) original_sha256: String,
+    /// Whether the committed candidate should exist.  Missing in v1 journals
+    /// means `true`, preserving the original replace-only wire contract.
+    #[serde(default = "default_candidate_exists")]
+    pub(crate) candidate_exists: bool,
     pub(crate) candidate_sha256: String,
     pub(crate) snapshot_ref: String,
     pub(crate) completed: bool,
     pub(crate) post_checked: bool,
     pub(crate) restored: bool,
+}
+
+fn default_candidate_exists() -> bool {
+    true
 }
 
 impl JournalEnvelope {
@@ -87,6 +101,7 @@ impl JournalEnvelope {
                 || !valid_hash(&entry.candidate_sha256)
                 || !valid_participant_ref(entry.participant, &entry.relative_file)
                 || (!entry.original_exists && entry.original_sha256 != empty_sha256())
+                || (!entry.candidate_exists && entry.candidate_sha256 != empty_sha256())
                 || !targets.insert((entry.participant, entry.relative_file.as_str()))
                 || !snapshots.insert(entry.snapshot_ref.as_str())
             {
@@ -124,11 +139,10 @@ pub(crate) fn write_journal(
     journal: &JournalEnvelope,
 ) -> Result<PathBuf, TransactionError> {
     journal.validate()?;
-    fs::create_dir_all(root).map_err(|_| TransactionError::new(TransactionErrorCode::JournalIo))?;
+    ensure_safe_directory(root)?;
     restrict_directory(root)?;
     let batch_dir = root.join(&journal.batch_id);
-    fs::create_dir_all(&batch_dir)
-        .map_err(|_| TransactionError::new(TransactionErrorCode::JournalIo))?;
+    ensure_safe_directory(&batch_dir)?;
     restrict_directory(&batch_dir)?;
     let journal_path = batch_dir.join("journal.json");
     let bytes = journal.to_bytes()?;
@@ -153,12 +167,13 @@ pub(crate) fn write_snapshot(
     let parent = path
         .parent()
         .ok_or_else(|| TransactionError::new(TransactionErrorCode::JournalSchema))?;
-    fs::create_dir_all(parent)
-        .map_err(|_| TransactionError::new(TransactionErrorCode::JournalIo))?;
+    ensure_safe_directory(parent)?;
     restrict_directory(parent)?;
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options
         .open(&path)
         .map_err(|_| TransactionError::new(TransactionErrorCode::JournalIo))?;
     file.write_all(bytes)
@@ -183,16 +198,24 @@ pub(crate) fn read_snapshot(
 ) -> Result<Vec<u8>, TransactionError> {
     validate_batch_and_ref(batch_id, snapshot_ref)?;
     let path = root.join(batch_id).join(snapshot_ref);
+    ensure_safe_directory(
+        path.parent()
+            .ok_or_else(|| TransactionError::new(TransactionErrorCode::JournalSchema))?,
+    )?;
     let metadata = fs::symlink_metadata(&path)
         .map_err(|_| TransactionError::new(TransactionErrorCode::JournalIo))?;
     if !metadata.file_type().is_file() {
         return Err(TransactionError::new(TransactionErrorCode::JournalSchema));
     }
-    fs::read(path)
-        .map_err(|_| TransactionError::new(TransactionErrorCode::JournalIo))
+    fs::read(path).map_err(|_| TransactionError::new(TransactionErrorCode::JournalIo))
 }
 
 pub(crate) fn read_journal(path: &Path) -> Result<JournalEnvelope, TransactionError> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|_| TransactionError::new(TransactionErrorCode::JournalIo))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(TransactionError::new(TransactionErrorCode::JournalSchema));
+    }
     let bytes =
         fs::read(path).map_err(|_| TransactionError::new(TransactionErrorCode::JournalIo))?;
     JournalEnvelope::from_bytes(&bytes)
@@ -202,9 +225,57 @@ pub(crate) fn cleanup_batch(root: &Path, batch_id: &str) -> Result<(), Transacti
     if !valid_component(batch_id) {
         return Err(TransactionError::new(TransactionErrorCode::JournalSchema));
     }
-    fs::remove_dir_all(root.join(batch_id))
-        .map_err(|_| TransactionError::new(TransactionErrorCode::JournalIo))?;
+    let batch = root.join(batch_id);
+    let metadata = match fs::symlink_metadata(&batch) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Err(TransactionError::new(TransactionErrorCode::JournalIo)),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(TransactionError::new(TransactionErrorCode::JournalSchema));
+    }
+    match fs::remove_dir_all(&batch) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Err(TransactionError::new(TransactionErrorCode::JournalIo)),
+    }
     sync_directory(root)?;
+    Ok(())
+}
+
+/// Check the nearest existing ancestor before creating a journal path, then
+/// verify every newly-created component without following symlinks. This is a
+/// fail-closed path boundary; platform handle-level TOCTOU protection remains
+/// the responsibility of the atomic writer.
+fn ensure_safe_directory(path: &Path) -> Result<(), TransactionError> {
+    let mut missing = Vec::new();
+    let mut current = path.to_path_buf();
+    let base = loop {
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                    return Err(TransactionError::new(TransactionErrorCode::JournalSchema));
+                }
+                break current;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                missing.push(current.clone());
+                if !current.pop() {
+                    return Err(TransactionError::new(TransactionErrorCode::JournalIo));
+                }
+            }
+            Err(_) => return Err(TransactionError::new(TransactionErrorCode::JournalIo)),
+        }
+    };
+    fs::create_dir_all(path).map_err(|_| TransactionError::new(TransactionErrorCode::JournalIo))?;
+    for created in missing.into_iter().rev() {
+        let metadata = fs::symlink_metadata(&created)
+            .map_err(|_| TransactionError::new(TransactionErrorCode::JournalIo))?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err(TransactionError::new(TransactionErrorCode::JournalSchema));
+        }
+    }
+    let _ = base;
     Ok(())
 }
 
@@ -242,6 +313,7 @@ fn valid_participant_ref(participant: JournalParticipant, relative_file: &str) -
     match participant {
         JournalParticipant::Codex => true,
         JournalParticipant::Launcher => relative_file == "config.json",
+        JournalParticipant::LauncherSchema => relative_file == "codex-guard-schema.json",
     }
 }
 
@@ -250,17 +322,8 @@ fn empty_sha256() -> &'static str {
 }
 
 fn sync_directory(path: &Path) -> Result<(), TransactionError> {
-    #[cfg(unix)]
-    {
-        File::open(path)
-            .and_then(|file| file.sync_all())
-            .map_err(|_| TransactionError::new(TransactionErrorCode::JournalIo))?;
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = path;
-    }
-    Ok(())
+    super::atomic_store::sync_directory(path)
+        .map_err(|_| TransactionError::new(TransactionErrorCode::JournalIo))
 }
 
 fn restrict_file(path: &Path) -> Result<(), TransactionError> {
@@ -304,6 +367,7 @@ mod tests {
             relative_file: "config.toml".into(),
             original_exists: true,
             original_sha256: "0".repeat(64),
+            candidate_exists: true,
             candidate_sha256: "1".repeat(64),
             snapshot_ref: "snapshots/config.toml.bin".into(),
             completed: false,

@@ -12,7 +12,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "specta"] }
 specta = { version = "=2.0.0-rc.22", features = ["derive", "serde_json"] }
-tauri-specta = { version = "=2.0.0-rc.21", features = ["typescript"] }
+tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
 specta-typescript = "=0.0.9"
 tauri-plugin-shell = "2"
 tauri-plugin-process = "2"
@@ -30,6 +30,7 @@ sha2 = "=0.10.9"
 tokio = { version = "1", features = ["full"] }
 log = "0.4"
 sys-locale = "0.3"
+rusqlite = { version = "=0.32.1", features = ["bundled"] }
 
 [dev-dependencies]
 tempfile = "=3.27.0"
@@ -37,6 +38,9 @@ tempfile = "=3.27.0"
 # 商店版应用 COM 激活（版本与 tauri 依赖树中的 windows 0.61.3 对齐）
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = ["Win32_System_Com", "Win32_UI_Shell", "Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Storage_Packaging_Appx"] }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "=1.1.4", features = ["fs"] }
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

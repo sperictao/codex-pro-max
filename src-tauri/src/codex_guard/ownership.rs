@@ -172,6 +172,15 @@ pub(crate) fn validate_ownership(
         let (_, file_real) = file_keys
             .get(&file_key)
             .ok_or_else(|| OwnershipError::new(OwnershipCode::UnknownFile))?;
+        if !param.file_id.is_empty() {
+            let matching_file = files
+                .iter()
+                .find(|file| file.id == param.effective_file_id())
+                .ok_or_else(|| OwnershipError::new(OwnershipCode::UnknownFile))?;
+            if matching_file.file != normalized_file {
+                return Err(OwnershipError::new(OwnershipCode::UnknownFile));
+            }
+        }
         let _ = file_real;
 
         if param.apply_mode == "file_overwrite" {
@@ -600,6 +609,8 @@ mod tests {
             description: String::new(),
             description_en: String::new(),
             file: file.into(),
+            file_id: String::new(),
+            group_id: None,
             apply_mode: mode.into(),
             path: path.into(),
             value_type: value_type.into(),

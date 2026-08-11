@@ -2,20 +2,20 @@
 // 关掉控制台会把整个进程树（含软件窗体）一起杀掉
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use serde::Serialize;
 use std::sync::{Arc, OnceLock};
 use tauri::{Emitter, Manager, State};
-use serde::Serialize;
 
-mod config;
 mod codex_guard;
+mod config;
 mod fastctx;
 mod i18n;
 mod process_manager;
 mod updater;
 
-use config::{ConfigStore, LauncherConfig};
 use codex_guard::AppPaths;
-use process_manager::{ProcessManager, ProcessInfo, resolve_node};
+use config::{ConfigStore, LauncherConfig};
+use process_manager::{resolve_node, ProcessInfo, ProcessManager};
 
 /// 应用共享状态
 pub(crate) struct AppState {
@@ -27,6 +27,11 @@ pub(crate) struct AppState {
 
 /// 生产 composition root 唯一允许读取用户主目录环境变量的位置。
 fn resolve_home_root() -> Result<std::path::PathBuf, String> {
+    #[cfg(debug_assertions)]
+    if let Ok(smoke_home) = std::env::var("DASHI_GUARD_SMOKE_HOME") {
+        return Ok(std::path::PathBuf::from(smoke_home));
+    }
+
     #[cfg(unix)]
     {
         std::env::var("HOME")
@@ -142,10 +147,18 @@ fn set_language(app: tauri::AppHandle, setting: String) -> Result<(), String> {
 #[tauri::command]
 async fn save_config(state: State<'_, AppState>, config: LauncherConfig) -> Result<(), String> {
     let _write = state.guard_coordinator.try_guard_write()?;
-    state.config_store.update_launcher(|current| {
+    let result = state.config_store.update_launcher(|current| {
         config::merge_settings(current, &config);
         Ok(())
-    })
+    });
+    if let Err(error) = &result {
+        if codex_guard::is_recovery_blocking_error(error) {
+            state
+                .guard_coordinator
+                .mark_recovery_blocked("recovery_failed");
+        }
+    }
+    result
 }
 
 /// 仅更新设置类字段，保留 codex_guard 等看守状态不变
@@ -153,10 +166,18 @@ async fn save_config(state: State<'_, AppState>, config: LauncherConfig) -> Resu
 #[tauri::command]
 async fn update_settings(state: State<'_, AppState>, config: LauncherConfig) -> Result<(), String> {
     let _write = state.guard_coordinator.try_guard_write()?;
-    state.config_store.update_launcher(|current| {
+    let result = state.config_store.update_launcher(|current| {
         config::merge_settings(current, &config);
         Ok(())
-    })
+    });
+    if let Err(error) = &result {
+        if codex_guard::is_recovery_blocking_error(error) {
+            state
+                .guard_coordinator
+                .mark_recovery_blocked("recovery_failed");
+        }
+    }
+    result
 }
 
 /// 检测 dashi-taskboard 项目路径是否有效
@@ -171,7 +192,10 @@ async fn validate_taskboard_path(path: String) -> Result<bool, String> {
 
 /// 检测 Node.js 是否可用并返回版本
 #[tauri::command]
-async fn check_node_version(state: State<'_, AppState>, node_path: String) -> Result<String, String> {
+async fn check_node_version(
+    state: State<'_, AppState>,
+    node_path: String,
+) -> Result<String, String> {
     let node = resolve_node(&state.paths, &node_path);
     let mut cmd = std::process::Command::new(&node);
     cmd.arg("--version");
@@ -182,11 +206,12 @@ async fn check_node_version(state: State<'_, AppState>, node_path: String) -> Re
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
-    let output = cmd.output()
-        .map_err(|e| i18n::trf("Cannot execute {path}: {error}", &[
-            ("path", node.clone()),
-            ("error", e.to_string()),
-        ]))?;
+    let output = cmd.output().map_err(|e| {
+        i18n::trf(
+            "Cannot execute {path}: {error}",
+            &[("path", node.clone()), ("error", e.to_string())],
+        )
+    })?;
     if output.status.success() {
         let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
         Ok(version)
@@ -209,13 +234,16 @@ fn codex_app_candidates(paths: &AppPaths) -> Vec<String> {
     let v = vec![
         "/Applications/ChatGPT.app".to_string(),
         "/Applications/Codex.app".to_string(),
-        paths.home_root().join("Applications/ChatGPT.app").to_string_lossy().to_string(),
+        paths
+            .home_root()
+            .join("Applications/ChatGPT.app")
+            .to_string_lossy()
+            .to_string(),
     ];
     #[cfg(target_os = "windows")]
     let v = {
         let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
-        let pf = std::env::var("ProgramFiles")
-            .unwrap_or_else(|_| "C:\\Program Files".to_string());
+        let pf = std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".to_string());
         let mut v = vec![
             // Codex 直装版真实安装位置（参考 CodexPlusPlus）
             format!("{}\\OpenAI\\Codex\\bin\\Codex.exe", local),
@@ -262,7 +290,10 @@ fn codex_app_candidates(paths: &AppPaths) -> Vec<String> {
         v
     };
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let v = vec!["/usr/bin/chatgpt".to_string(), "/usr/local/bin/chatgpt".to_string()];
+    let v = vec![
+        "/usr/bin/chatgpt".to_string(),
+        "/usr/local/bin/chatgpt".to_string(),
+    ];
     v
 }
 
@@ -282,7 +313,10 @@ fn package_installed(family_name: &str) -> bool {
     use windows::core::PCWSTR;
     use windows::Win32::Foundation::{ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS};
     use windows::Win32::Storage::Packaging::Appx::GetPackagesByPackageFamily;
-    let family: Vec<u16> = family_name.encode_utf16().chain(std::iter::once(0)).collect();
+    let family: Vec<u16> = family_name
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
     let mut count = 0u32;
     let mut buf_len = 0u32;
     let status = unsafe {
@@ -326,21 +360,38 @@ pub(crate) fn launch_store_app(amid: &str, args: &str) -> Result<(), String> {
         const RPC_E_CHANGED_MODE: i32 = -2147417850;
         coinit
             .ok()
-            .or_else(|e| if e.code().0 == RPC_E_CHANGED_MODE { Ok(()) } else { Err(e) })
-            .map_err(|e| i18n::trf("COM initialization failed: {error}", &[("error", e.to_string())]))?;
+            .or_else(|e| {
+                if e.code().0 == RPC_E_CHANGED_MODE {
+                    Ok(())
+                } else {
+                    Err(e)
+                }
+            })
+            .map_err(|e| {
+                i18n::trf(
+                    "COM initialization failed: {error}",
+                    &[("error", e.to_string())],
+                )
+            })?;
         let result = (|| -> windows::core::Result<()> {
             let mgr: IApplicationActivationManager =
                 CoCreateInstance(&ApplicationActivationManager, None, CLSCTX_LOCAL_SERVER)?;
-            mgr.ActivateApplication(&HSTRING::from(amid), &HSTRING::from(args), ACTIVATEOPTIONS(0))?;
+            mgr.ActivateApplication(
+                &HSTRING::from(amid),
+                &HSTRING::from(args),
+                ACTIVATEOPTIONS(0),
+            )?;
             Ok(())
         })();
         if should_uninit {
             CoUninitialize();
         }
-        result.map_err(|e| i18n::trf("Cannot launch Store app ({amid}): {error}", &[
-            ("amid", amid.to_string()),
-            ("error", e.to_string()),
-        ]))
+        result.map_err(|e| {
+            i18n::trf(
+                "Cannot launch Store app ({amid}): {error}",
+                &[("amid", amid.to_string()), ("error", e.to_string())],
+            )
+        })
     }
 }
 
@@ -352,7 +403,12 @@ fn detect_codex_app(state: State<'_, AppState>) -> Option<String> {
         .find(|p| std::path::Path::new(p).exists());
     // 商店版无文件路径，返回 msix: 哨兵，ensure_codex_cdp 按此前缀走 COM 激活
     #[cfg(target_os = "windows")]
-    let found = found.or_else(|| store_app_amids().into_iter().next().map(|a| format!("msix:{}", a)));
+    let found = found.or_else(|| {
+        store_app_amids()
+            .into_iter()
+            .next()
+            .map(|a| format!("msix:{}", a))
+    });
     found
 }
 
@@ -395,44 +451,62 @@ async fn run_start_all(
 ) -> Result<(), String> {
     // 验证路径
     if config.taskboard_path.is_empty() {
-        return Err(i18n::tr("Please set the dashi-taskboard project path first"));
+        return Err(i18n::tr(
+            "Please set the dashi-taskboard project path first",
+        ));
     }
     if !std::path::Path::new(&config.taskboard_path).exists() {
-        return Err(i18n::trf("Path does not exist: {path}", &[("path", config.taskboard_path.clone())]));
+        return Err(i18n::trf(
+            "Path does not exist: {path}",
+            &[("path", config.taskboard_path.clone())],
+        ));
     }
 
     // 启动 taskboard 服务
-    app.emit("status-update", &serde_json::json!({
-        "name": "taskboard-server",
-        "status": "starting",
-        "message": i18n::tr("Starting Taskboard server...")
-    })).ok();
+    app.emit(
+        "status-update",
+        &serde_json::json!({
+            "name": "taskboard-server",
+            "status": "starting",
+            "message": i18n::tr("Starting Taskboard server...")
+        }),
+    )
+    .ok();
 
     pm.start_taskboard(
         &config.taskboard_path,
         &config.node_path,
         &config.taskboard_host,
         config.taskboard_port,
-    ).await?;
+    )
+    .await?;
 
-    app.emit("status-update", &serde_json::json!({
-        "name": "taskboard-server",
-        "status": "running",
-        "message": i18n::trf("Taskboard running at http://{host}:{port}", &[
-            ("host", config.taskboard_host.clone()),
-            ("port", config.taskboard_port.to_string()),
-        ])
-    })).ok();
+    app.emit(
+        "status-update",
+        &serde_json::json!({
+            "name": "taskboard-server",
+            "status": "running",
+            "message": i18n::trf("Taskboard running at http://{host}:{port}", &[
+                ("host", config.taskboard_host.clone()),
+                ("port", config.taskboard_port.to_string()),
+            ])
+        }),
+    )
+    .ok();
 
     // 等待服务就绪
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     // 启动 codex 注入器
-    app.emit("status-update", &serde_json::json!({
-        "name": "codex-injector",
-        "status": "starting",
-        "message": i18n::tr("Starting Codex injector...")
-    })).ok();
+    app.emit(
+        "status-update",
+        &serde_json::json!({
+            "name": "codex-injector",
+            "status": "starting",
+            "message": i18n::tr("Starting Codex injector...")
+        }),
+    )
+    .ok();
 
     pm.start_injector(
         &config.taskboard_path,
@@ -441,46 +515,67 @@ async fn run_start_all(
         &config.codex_app_path,
         config.separate_window_mode,
         config.taskboard_port,
-    ).await?;
+    )
+    .await?;
 
-    app.emit("status-update", &serde_json::json!({
-        "name": "codex-injector",
-        "status": "running",
-        "message": i18n::tr("Injector running")
-    })).ok();
+    app.emit(
+        "status-update",
+        &serde_json::json!({
+            "name": "codex-injector",
+            "status": "running",
+            "message": i18n::tr("Injector running")
+        }),
+    )
+    .ok();
 
     Ok(())
 }
 
 /// 全部停止的共享实现：Tauri 命令与托盘菜单共用
 async fn run_stop_all(pm: &ProcessManager, app: &tauri::AppHandle) -> Result<(), String> {
-    app.emit("status-update", &serde_json::json!({
-        "name": "codex-injector",
-        "status": "stopping",
-        "message": i18n::tr("Stopping injector...")
-    })).ok();
+    app.emit(
+        "status-update",
+        &serde_json::json!({
+            "name": "codex-injector",
+            "status": "stopping",
+            "message": i18n::tr("Stopping injector...")
+        }),
+    )
+    .ok();
 
     pm.stop_injector().await?;
 
-    app.emit("status-update", &serde_json::json!({
-        "name": "codex-injector",
-        "status": "stopped",
-        "message": i18n::tr("Stopped")
-    })).ok();
+    app.emit(
+        "status-update",
+        &serde_json::json!({
+            "name": "codex-injector",
+            "status": "stopped",
+            "message": i18n::tr("Stopped")
+        }),
+    )
+    .ok();
 
-    app.emit("status-update", &serde_json::json!({
-        "name": "taskboard-server",
-        "status": "stopping",
-        "message": i18n::tr("Stopping Taskboard server...")
-    })).ok();
+    app.emit(
+        "status-update",
+        &serde_json::json!({
+            "name": "taskboard-server",
+            "status": "stopping",
+            "message": i18n::tr("Stopping Taskboard server...")
+        }),
+    )
+    .ok();
 
     pm.stop_taskboard().await?;
 
-    app.emit("status-update", &serde_json::json!({
-        "name": "taskboard-server",
-        "status": "stopped",
-        "message": i18n::tr("Stopped")
-    })).ok();
+    app.emit(
+        "status-update",
+        &serde_json::json!({
+            "name": "taskboard-server",
+            "status": "stopped",
+            "message": i18n::tr("Stopped")
+        }),
+    )
+    .ok();
 
     Ok(())
 }
@@ -497,25 +592,22 @@ async fn start_all(
 
 /// 停止所有服务
 #[tauri::command]
-async fn stop_all(
-    state: State<'_, AppState>,
-    app: tauri::AppHandle,
-) -> Result<(), String> {
+async fn stop_all(state: State<'_, AppState>, app: tauri::AppHandle) -> Result<(), String> {
     run_stop_all(&state.pm, &app).await
 }
 
 /// 单独启动 taskboard 服务
 #[tauri::command]
-async fn start_taskboard(
-    state: State<'_, AppState>,
-    config: LauncherConfig,
-) -> Result<(), String> {
-    state.pm.start_taskboard(
-        &config.taskboard_path,
-        &config.node_path,
-        &config.taskboard_host,
-        config.taskboard_port,
-    ).await
+async fn start_taskboard(state: State<'_, AppState>, config: LauncherConfig) -> Result<(), String> {
+    state
+        .pm
+        .start_taskboard(
+            &config.taskboard_path,
+            &config.node_path,
+            &config.taskboard_host,
+            config.taskboard_port,
+        )
+        .await
 }
 
 /// 单独停止 taskboard 服务
@@ -526,18 +618,18 @@ async fn stop_taskboard(state: State<'_, AppState>) -> Result<(), String> {
 
 /// 单独启动 codex 注入器
 #[tauri::command]
-async fn start_injector(
-    state: State<'_, AppState>,
-    config: LauncherConfig,
-) -> Result<(), String> {
-    state.pm.start_injector(
-        &config.taskboard_path,
-        &config.node_path,
-        config.cdp_port,
-        &config.codex_app_path,
-        config.separate_window_mode,
-        config.taskboard_port,
-    ).await
+async fn start_injector(state: State<'_, AppState>, config: LauncherConfig) -> Result<(), String> {
+    state
+        .pm
+        .start_injector(
+            &config.taskboard_path,
+            &config.node_path,
+            config.cdp_port,
+            &config.codex_app_path,
+            config.separate_window_mode,
+            config.taskboard_port,
+        )
+        .await
 }
 
 /// 单独停止 codex 注入器
@@ -563,8 +655,10 @@ async fn open_taskboard(config: LauncherConfig) -> Result<(), String> {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         let mut cmd = std::process::Command::new("cmd");
-        cmd.args(["/c", "start", "", &url]).creation_flags(CREATE_NO_WINDOW);
-        cmd.spawn().map_err(|e| i18n::trf("Cannot open browser: {error}", &[("error", e.to_string())]))?;
+        cmd.args(["/c", "start", "", &url])
+            .creation_flags(CREATE_NO_WINDOW);
+        cmd.spawn()
+            .map_err(|e| i18n::trf("Cannot open browser: {error}", &[("error", e.to_string())]))?;
     }
     Ok(())
 }
@@ -581,7 +675,10 @@ struct SkillStatus {
 
 /// 检测 manage-taskboard Skill 的安装状态
 #[tauri::command]
-async fn check_skill_status(state: State<'_, AppState>, taskboard_path: String) -> Result<SkillStatus, String> {
+async fn check_skill_status(
+    state: State<'_, AppState>,
+    taskboard_path: String,
+) -> Result<SkillStatus, String> {
     let target = state.paths.manage_taskboard_skill_dir();
     let source = std::path::Path::new(&taskboard_path).join("skills/manage-taskboard");
     let target_path = target.display().to_string();
@@ -598,8 +695,12 @@ async fn check_skill_status(state: State<'_, AppState>, taskboard_path: String) 
     };
 
     if meta.file_type().is_symlink() {
-        let link = std::fs::read_link(&target)
-            .map_err(|e| i18n::trf("Failed to read symlink: {error}", &[("error", e.to_string())]))?;
+        let link = std::fs::read_link(&target).map_err(|e| {
+            i18n::trf(
+                "Failed to read symlink: {error}",
+                &[("error", e.to_string())],
+            )
+        })?;
         // read_link 可能返回相对路径，统一与 source 比较前先做字典序归一
         let link_norm = link.canonicalize().unwrap_or(link);
         let source_norm = source.canonicalize().unwrap_or(source);
@@ -612,9 +713,10 @@ async fn check_skill_status(state: State<'_, AppState>, taskboard_path: String) 
         } else {
             Ok(SkillStatus {
                 state: "mismatch".to_string(),
-                detail: i18n::trf("Symlink points to {path}, which differs from the current Taskboard path", &[
-                    ("path", link_norm.display().to_string()),
-                ]),
+                detail: i18n::trf(
+                    "Symlink points to {path}, which differs from the current Taskboard path",
+                    &[("path", link_norm.display().to_string())],
+                ),
                 target_path,
             })
         }
@@ -635,34 +737,51 @@ async fn check_skill_status(state: State<'_, AppState>, taskboard_path: String) 
 
 /// 安装 Codex Skill（创建符号链接）
 #[tauri::command]
-async fn install_skill(state: State<'_, AppState>, taskboard_path: String) -> Result<String, String> {
+async fn install_skill(
+    state: State<'_, AppState>,
+    taskboard_path: String,
+) -> Result<String, String> {
     let skill_source = std::path::Path::new(&taskboard_path).join("skills/manage-taskboard");
     let skill_target = state.paths.manage_taskboard_skill_dir();
 
     // 检查源路径
     if !skill_source.exists() {
-        return Err(i18n::trf("Skill source path does not exist: {path}", &[
-            ("path", skill_source.display().to_string()),
-        ]));
+        return Err(i18n::trf(
+            "Skill source path does not exist: {path}",
+            &[("path", skill_source.display().to_string())],
+        ));
     }
 
     // 创建目标目录
     let skills_dir = state.paths.codex_skills_root();
-    std::fs::create_dir_all(&skills_dir)
-        .map_err(|e| i18n::trf("Failed to create skills directory: {error}", &[("error", e.to_string())]))?;
+    std::fs::create_dir_all(&skills_dir).map_err(|e| {
+        i18n::trf(
+            "Failed to create skills directory: {error}",
+            &[("error", e.to_string())],
+        )
+    })?;
 
     // 如果已存在则先删除
     if skill_target.exists() {
         std::fs::remove_file(&skill_target)
             .or_else(|_| std::fs::remove_dir_all(&skill_target))
-            .map_err(|e| i18n::trf("Failed to remove old link: {error}", &[("error", e.to_string())]))?;
+            .map_err(|e| {
+                i18n::trf(
+                    "Failed to remove old link: {error}",
+                    &[("error", e.to_string())],
+                )
+            })?;
     }
 
     // 创建符号链接（跨平台）
     #[cfg(unix)]
     {
-        std::os::unix::fs::symlink(&skill_source, &skill_target)
-            .map_err(|e| i18n::trf("Failed to create symlink: {error}", &[("error", e.to_string())]))?;
+        std::os::unix::fs::symlink(&skill_source, &skill_target).map_err(|e| {
+            i18n::trf(
+                "Failed to create symlink: {error}",
+                &[("error", e.to_string())],
+            )
+        })?;
     }
     #[cfg(windows)]
     {
@@ -675,7 +794,10 @@ async fn install_skill(state: State<'_, AppState>, taskboard_path: String) -> Re
         result.map_err(|e| i18n::trf("Failed to create symlink: {error} (administrator privileges or Developer Mode may be required)", &[("error", e.to_string())]))?;
     }
 
-    Ok(i18n::trf("Skill installed to {path}", &[("path", skill_target.display().to_string())]))
+    Ok(i18n::trf(
+        "Skill installed to {path}",
+        &[("path", skill_target.display().to_string())],
+    ))
 }
 
 /// 运行 taskctl 命令
@@ -703,8 +825,12 @@ async fn run_taskctl(
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
 
-    let output = cmd.output()
-        .map_err(|e| i18n::trf("Failed to execute taskctl: {error}", &[("error", e.to_string())]))?;
+    let output = cmd.output().map_err(|e| {
+        i18n::trf(
+            "Failed to execute taskctl: {error}",
+            &[("error", e.to_string())],
+        )
+    })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -832,18 +958,21 @@ pub fn run() {
         default_hook(info);
     }));
 
-    let app_paths = AppPaths::from_home(
-        resolve_home_root().expect("cannot resolve the user home directory"),
-    );
+    let app_paths =
+        AppPaths::from_home(resolve_home_root().expect("cannot resolve the user home directory"));
     let process_manager = Arc::new(ProcessManager::new(app_paths.clone()));
     let config_store = ConfigStore::new(app_paths.clone());
     let guard_coordinator = codex_guard::GuardCoordinator::new();
 
-    tauri::Builder::default()
-        // single-instance 必须最先注册：第二实例在此退出，其余插件不重复初始化
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+    let smoke_mode = cfg!(debug_assertions) && std::env::var_os("DASHI_GUARD_SMOKE_HOME").is_some();
+    let mut builder = tauri::Builder::default();
+    if !smoke_mode {
+        // single-instance 必须最先注册：第二实例在此退出，其余插件不重复初始化。
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main_window(app);
-        }))
+        }));
+    }
+    builder
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Info)
@@ -851,13 +980,19 @@ pub fn run() {
                 .max_file_size(2 * 1024 * 1024)
                 .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
                 .targets([
-                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: None }),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+                        file_name: None,
+                    }),
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
                 ])
                 .build(),
         )
         // ponytail: args 在 macOS 登录项上不生效，mac 自启会显示主窗口而非静默到托盘
-        .plugin(tauri_plugin_autostart::Builder::new().args(["--autostart"]).build())
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .args(["--autostart"])
+                .build(),
+        )
         // 不记 VISIBLE：自启静默到托盘不该被持久化成「下次也不显示」
         .plugin(
             tauri_plugin_window_state::Builder::new()
@@ -883,10 +1018,26 @@ pub fn run() {
         .manage(updater::PendingUpdateState::default())
         .setup(|app| {
             log::info!("Dashi Taskboard Launcher 启动中...");
+            // Register the typed Guard events before any command can emit progress.
+            codex_guard::contracts::builder().mount_events(app);
             let _ = APP_HANDLE.set(app.handle().clone());
             // 启动即解析界面语言（system → 具体语言），托盘与后续所有产串处都读它
             let state = app.state::<AppState>();
-            let setting = state.config_store.load_launcher()
+            let migration_ready = match state.config_store.migrate_guard_state() {
+                Ok(_) => true,
+                Err(error) => {
+                    // 旧状态迁移是启动前置条件；迁移失败时不继续启动 Guard 轮询，
+                    // 让用户看到持久化错误并可重试，而不是在半迁移配置上写入。
+                    log::error!("codex guard state migration failed: {}", error);
+                    state
+                        .guard_coordinator
+                        .mark_recovery_blocked("migration_failed");
+                    false
+                }
+            };
+            let setting = state
+                .config_store
+                .load_launcher()
                 .map(|c| c.language)
                 .unwrap_or_else(|_| "system".to_string());
             i18n::set_current(i18n::resolve_language(&setting));
@@ -922,16 +1073,23 @@ pub fn run() {
                 }
                 show_main_window(app.handle());
             }
+            // 恢复未完成事务只依赖 journal 与目标文件字节，与 config.json 是否已迁移无关。
+            // 让它跟随迁移一起短路会造成死锁：迁移失败时未完成事务永远得不到恢复，
+            // 目标文件停在未提交的候选值，而重试入口同样先跑迁移，用户没有任何出路。
             let recovery_ready = match codex_guard::recover_pending_transactions(&state.paths) {
                 Ok(()) => {
-                    state.guard_coordinator.clear_recovery();
-                    true
+                    if migration_ready {
+                        state.guard_coordinator.clear_recovery();
+                    }
+                    migration_ready
                 }
                 Err(error) => {
                     // Recovery 失败时保留 journal 并阻断自动漂移写入，避免在不确定的
                     // 文件状态上继续叠加 poll 副作用；用户仍可打开界面处理问题。
                     log::error!("codex guard 事务恢复失败，已暂停轮询: {}", error);
-                    state.guard_coordinator.mark_recovery_blocked("recovery_failed");
+                    state
+                        .guard_coordinator
+                        .mark_recovery_blocked("recovery_failed");
                     false
                 }
             };
@@ -947,7 +1105,9 @@ pub fn run() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let state = window.app_handle().state::<AppState>();
-                let minimize_to_tray = state.config_store.load_launcher()
+                let minimize_to_tray = state
+                    .config_store
+                    .load_launcher()
                     .map(|c| c.minimize_to_tray_on_close)
                     .unwrap_or(false);
                 if minimize_to_tray {
@@ -1007,6 +1167,30 @@ pub fn run() {
             codex_guard::guard_relativize_picked_path,
             codex_guard::guard_get_recovery_status,
             codex_guard::guard_retry_recovery,
+            codex_guard::guard_preview_batch,
+            codex_guard::guard_execute_batch,
+            codex_guard::guard_group_create,
+            codex_guard::guard_group_rename,
+            codex_guard::guard_group_reorder,
+            codex_guard::guard_group_delete,
+            codex_guard::guard_parameter_move,
+            codex_guard::guard_lifecycle_migration_resolve,
+            codex_guard::guard_file_format_migration_resolve,
+            codex_guard::guard_role_get,
+            codex_guard::guard_role_list,
+            codex_guard::guard_role_save,
+            codex_guard::guard_role_copy,
+            codex_guard::guard_role_discover,
+            codex_guard::guard_role_adopt,
+            codex_guard::guard_role_reorder,
+            codex_guard::guard_role_stop_managing,
+            codex_guard::guard_role_delete,
+            codex_guard::guard_capability_get,
+            codex_guard::guard_capability_refresh,
+            codex_guard::guard_role_migration_plan,
+            codex_guard::guard_role_migration_resolve,
+            codex_guard::guard_run_subagent_audit,
+            codex_guard::guard_operation_audit_list,
             fastctx::fastctx_detect,
             fastctx::fastctx_install,
             fastctx::fastctx_apply,

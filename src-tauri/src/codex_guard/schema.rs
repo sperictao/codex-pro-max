@@ -3,7 +3,7 @@
 use crate::config::ConfigStore;
 
 use super::ownership::validate_param_ids;
-use super::{AppPaths, GuardParam};
+use super::{AppPaths, GuardFile, GuardParam};
 
 const BUILTIN_SCHEMA: &str = include_str!("guard_schema.json");
 
@@ -37,7 +37,24 @@ pub(crate) fn load_schema(store: &ConfigStore) -> Result<Vec<GuardParam>, String
         serde_json::from_str(BUILTIN_SCHEMA).expect("内置 guard schema 必须可解析");
     let disk = store.load_guard_schema()?;
     validate_param_ids(&disk).map_err(|error| error.to_string())?;
-    Ok(merge_schema(builtin, disk))
+    let mut merged = merge_schema(builtin, disk);
+    let files = super::files::load_files(store)?;
+    for param in &mut merged {
+        if param.file_id.is_empty() {
+            param.file_id = stable_file_id_for_path(&param.file, &files);
+        }
+    }
+    Ok(merged)
+}
+
+/// 为缺 `file_id` 的旧参数补齐稳定文件 ID。必须以实际看守文件列表为准：
+/// 自定义文件的 ID 是 `custom.<slug>`，凭路径猜出的 `path:<路径>` 永不匹配，
+/// 会让所有权预检把该参数判成 UnknownFile 并阻断整个 Guard 域。
+fn stable_file_id_for_path(path: &str, files: &[GuardFile]) -> String {
+    if let Some(file) = files.iter().find(|file| file.file == path) {
+        return file.id.clone();
+    }
+    format!("path:{path}")
 }
 
 /// 合并内置与磁盘 schema（纯函数，便于测试）
@@ -71,11 +88,71 @@ pub(crate) fn ensure_schema_file(store: &ConfigStore) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::codex_guard::GuardFileFormat;
 
     #[test]
     fn builtin_schema_parses() {
         let v: Vec<GuardParam> = serde_json::from_str(BUILTIN_SCHEMA).unwrap();
         assert_eq!(v.len(), 11);
+    }
+
+    /// A legacy custom parameter on a user-added Guard file carries no `file_id`.
+    /// Deriving one from the path alone yields `path:<path>`, which never matches the
+    /// file's real `custom.<slug>` id — ownership preflight then reports UnknownFile
+    /// and every view, poll, and batch command fails with no way to recover.
+    #[test]
+    fn backfilled_file_id_resolves_to_the_real_custom_guard_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::for_test(temp.path());
+        std::fs::create_dir_all(paths.launcher_root()).unwrap();
+        let store = ConfigStore::new(paths.clone());
+
+        let custom_file = GuardFile {
+            id: "custom.my-config".to_string(),
+            name: "My config".to_string(),
+            file: "myconfig.toml".to_string(),
+            format: GuardFileFormat::Toml,
+            builtin: false,
+            detection: None,
+        };
+        store
+            .update_launcher(|config| {
+                let mut files = super::super::files::builtin_files();
+                files.push(custom_file.clone());
+                config.codex_guard.files = files;
+                Ok(())
+            })
+            .unwrap();
+        store
+            .update_guard_schema(|disk| {
+                disk.push(
+                    serde_json::from_value::<GuardParam>(serde_json::json!({
+                        "id": "custom.legacy",
+                        "label": "Legacy",
+                        "file": "myconfig.toml",
+                        "apply_mode": "toml_key",
+                        "path": "alpha",
+                        "custom": true,
+                    }))
+                    .unwrap(),
+                );
+                Ok(())
+            })
+            .unwrap();
+
+        let schema = load_schema(&store).unwrap();
+        let param = schema
+            .iter()
+            .find(|param| param.id == "custom.legacy")
+            .expect("custom parameter survives merge");
+        assert_eq!(
+            param.file_id, "custom.my-config",
+            "backfill must resolve the real Guard file id, not guess from the path"
+        );
+
+        let files = super::super::files::load_files(&store).unwrap();
+        super::super::ownership::validate_ownership(&paths, &files, &schema)
+            .expect("ownership preflight must accept a backfilled custom parameter");
     }
 
     #[test]
@@ -107,7 +184,12 @@ mod tests {
             }))
             .unwrap()
         };
-        let builtin = vec![json("a", "内置中文", "Builtin EN", serde_json::json!("EN content"))];
+        let builtin = vec![json(
+            "a",
+            "内置中文",
+            "Builtin EN",
+            serde_json::json!("EN content"),
+        )];
         let disk = vec![
             // 同 id 覆盖：label 尊重磁盘，英文资源（含 default_en）以内置为准
             json("a", "用户改过的中文", "", serde_json::Value::Null),
@@ -131,6 +213,8 @@ mod tests {
             description: String::new(),
             description_en: String::new(),
             file: "f".into(),
+            file_id: String::new(),
+            group_id: None,
             apply_mode: "file_overwrite".into(),
             path: String::new(),
             value_type: "text".into(),
@@ -140,10 +224,19 @@ mod tests {
         };
         // en + 有英文内容 → 英文；en + 无英文内容 → 原文；zh → 原文
         let with_en = p(serde_json::json!("English content"));
-        assert_eq!(default_for_lang(&with_en, "en"), &serde_json::json!("English content"));
-        assert_eq!(default_for_lang(&with_en, "zh-CN"), &serde_json::json!("中文内容"));
+        assert_eq!(
+            default_for_lang(&with_en, "en"),
+            &serde_json::json!("English content")
+        );
+        assert_eq!(
+            default_for_lang(&with_en, "zh-CN"),
+            &serde_json::json!("中文内容")
+        );
         let without_en = p(serde_json::Value::Null);
-        assert_eq!(default_for_lang(&without_en, "en"), &serde_json::json!("中文内容"));
+        assert_eq!(
+            default_for_lang(&without_en, "en"),
+            &serde_json::json!("中文内容")
+        );
     }
 
     #[test]

@@ -17,7 +17,10 @@ pub(crate) fn set_toml_path(doc: &mut DocumentMut, path: &str, val: Item) -> Res
     let mut item = doc.as_item_mut();
     for seg in &segs[..segs.len() - 1] {
         if item.as_table_like().is_none() {
-            return Err(trf("Intermediate path node {node} is not a table", &[("node", seg.to_string())]));
+            return Err(trf(
+                "Intermediate path node {node} is not a table",
+                &[("node", seg.to_string())],
+            ));
         }
         if item.get(seg).is_none() {
             item.as_table_like_mut()
@@ -26,7 +29,10 @@ pub(crate) fn set_toml_path(doc: &mut DocumentMut, path: &str, val: Item) -> Res
         }
         item = item.get_mut(seg).unwrap();
         if item.as_table_like().is_none() {
-            return Err(trf("Intermediate path node {node} is not a table", &[("node", seg.to_string())]));
+            return Err(trf(
+                "Intermediate path node {node} is not a table",
+                &[("node", seg.to_string())],
+            ));
         }
     }
     let last = segs[segs.len() - 1];
@@ -64,15 +70,11 @@ pub(crate) fn json_to_toml(v: &serde_json::Value) -> Result<Item, String> {
 
 pub(crate) fn toml_matches_json(item: &Item, v: &serde_json::Value) -> bool {
     match (item, v) {
-        (Item::Value(toml_edit::Value::Boolean(b)), serde_json::Value::Bool(x)) => {
-            *b.value() == *x
-        }
+        (Item::Value(toml_edit::Value::Boolean(b)), serde_json::Value::Bool(x)) => *b.value() == *x,
         (Item::Value(toml_edit::Value::Integer(i)), serde_json::Value::Number(n)) => {
             n.as_i64() == Some(*i.value())
         }
-        (Item::Value(toml_edit::Value::String(s)), serde_json::Value::String(x)) => {
-            s.value() == x
-        }
+        (Item::Value(toml_edit::Value::String(s)), serde_json::Value::String(x)) => s.value() == x,
         _ => false,
     }
 }
@@ -117,9 +119,7 @@ mod tests {
 
     #[test]
     fn toml_remove_nested() {
-        let mut doc = "[a.b]\nx = 1\n"
-            .parse::<DocumentMut>()
-            .unwrap();
+        let mut doc = "[a.b]\nx = 1\n".parse::<DocumentMut>().unwrap();
         remove_toml_path(&mut doc, "a.b");
         assert!(get_toml_path(&doc, "a.b").is_none());
     }

@@ -1,0 +1,16 @@
+{
+  "taskboard_path": "",
+  "node_path": "",
+  "codex_app_path": "/Applications/ChatGPT.app",
+  "codex_guard": {
+    "enabled": true,
+    "params": {
+      "disabled": {"applied": false, "locked": false},
+      "applied": {"applied": true, "locked": false},
+      "locked": {"applied": true, "locked": true},
+      "invalid": {"applied": false, "locked": true}
+    },
+    "files": [],
+    "groups": []
+  }
+}
