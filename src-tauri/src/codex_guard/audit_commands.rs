@@ -73,7 +73,7 @@ fn finish_audit_command_result<T>(
 }
 
 /// Run the bounded runtime audit against the current Codex rollout and sampling stores.
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_run_subagent_audit(state: State<'_, AppState>) -> Result<SubagentAuditResult, String> {
     let mut audit = OperationAuditGuard::new(&state.paths, "audit:runtime", None);
@@ -87,7 +87,7 @@ pub fn guard_run_subagent_audit(state: State<'_, AppState>) -> Result<SubagentAu
 }
 
 /// Return retained local operation-audit records. The store owns parsing and retention.
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_operation_audit_list(
     state: State<'_, AppState>,

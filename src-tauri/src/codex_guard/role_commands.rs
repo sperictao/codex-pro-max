@@ -482,7 +482,7 @@ fn commit_role_states(state: &AppState, next_states: Vec<ManagedRoleState>) -> R
     result
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_role_save(
     state: State<'_, AppState>,
@@ -549,7 +549,7 @@ pub fn guard_role_save(
     finish_role_command_result(&mut audit, result)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_role_copy(
     state: State<'_, AppState>,
@@ -616,7 +616,7 @@ pub fn guard_role_copy(
     finish_role_command_result(&mut audit, result)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_role_adopt(state: State<'_, AppState>, id: String) -> Result<RoleDetailDto, String> {
     let mut audit = OperationAuditGuard::new(&state.paths, "role:adopt", Some(&id));
@@ -686,7 +686,7 @@ pub fn guard_role_adopt(state: State<'_, AppState>, id: String) -> Result<RoleDe
     finish_role_command_result(&mut audit, result)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_role_reorder(
     state: State<'_, AppState>,
@@ -733,7 +733,7 @@ pub fn guard_role_reorder(
     finish_role_command_result(&mut audit, result)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_role_stop_managing(
     state: State<'_, AppState>,
@@ -805,7 +805,7 @@ pub fn guard_role_stop_managing(
     finish_role_command_result(&mut audit, result)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_role_delete(
     state: State<'_, AppState>,
@@ -1022,7 +1022,7 @@ fn capability_snapshot_dto(
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_role_migration_plan(
     state: State<'_, AppState>,
@@ -1061,7 +1061,7 @@ pub fn guard_role_migration_plan(
     finish_role_command_result(&mut audit, result)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_role_migration_resolve(
     state: State<'_, AppState>,

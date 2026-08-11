@@ -610,7 +610,7 @@ pub fn guard_get_recovery_status(
 }
 
 /// 重试未完成事务恢复；成功后按需启动唯一的 Guard 轮询任务。
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_retry_recovery(state: State<'_, AppState>) -> Result<(), String> {
     let mut audit = OperationAuditGuard::new(&state.paths, "recovery:retry", None);
@@ -781,7 +781,7 @@ fn preview_batch_inner(
 }
 
 /// 预检一次全局/组级批量动作。预检只读取文件，不落盘，并在进程内保留五分钟。
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_preview_batch(
     state: State<'_, AppState>,
@@ -1091,7 +1091,7 @@ fn execute_batch_inner(
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_execute_batch(
     app: AppHandle,
@@ -1142,7 +1142,7 @@ fn duplicate_group_name(groups: &[GuardGroup], name: &str, except_id: Option<&st
         .any(|group| Some(group.id.as_str()) != except_id && group.name.eq_ignore_ascii_case(name))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_group_create(state: State<'_, AppState>, name: String) -> Result<GuardGroup, String> {
     let mut audit = OperationAuditGuard::new(&state.paths, "group:create", None);
@@ -1187,7 +1187,7 @@ pub fn guard_group_create(state: State<'_, AppState>, name: String) -> Result<Gu
     finish_command_result(&mut audit, result)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_group_rename(
     state: State<'_, AppState>,
@@ -1225,7 +1225,7 @@ pub fn guard_group_rename(
     finish_command_result(&mut audit, result)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_group_reorder(
     state: State<'_, AppState>,
@@ -1274,7 +1274,7 @@ pub fn guard_group_reorder(
     finish_command_result(&mut audit, result)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_group_delete(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let mut audit = OperationAuditGuard::new(&state.paths, "group:delete", None);
@@ -1310,7 +1310,7 @@ pub fn guard_group_delete(state: State<'_, AppState>, id: String) -> Result<(), 
     finish_command_result(&mut audit, result)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_parameter_move(
     state: State<'_, AppState>,
@@ -1365,7 +1365,7 @@ pub fn guard_parameter_move(
     finish_command_result(&mut audit, result)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_lifecycle_migration_resolve(
     app: AppHandle,
@@ -1425,7 +1425,7 @@ pub fn guard_lifecycle_migration_resolve(
     finish_command_result(&mut audit, result)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_file_format_migration_resolve(
     state: State<'_, AppState>,
@@ -1479,7 +1479,7 @@ pub fn guard_file_format_migration_resolve(
     finish_command_result(&mut audit, result)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_set_enabled(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
     let mut audit = OperationAuditGuard::new(&state.paths, "guard:set_enabled", None);
@@ -1505,7 +1505,7 @@ pub fn guard_set_enabled(state: State<'_, AppState>, enabled: bool) -> Result<()
     finish_command_result(&mut audit, result)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_set_value(
     state: State<'_, AppState>,
@@ -1583,7 +1583,7 @@ fn execute_parameter_batch(
     )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_apply(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<(), String> {
     let mut audit = OperationAuditGuard::new(&state.paths, "parameter:apply", None);
@@ -1592,7 +1592,7 @@ pub fn guard_apply(app: AppHandle, state: State<'_, AppState>, id: String) -> Re
     finish_command_result(&mut audit, result)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_set_applied(
     app: AppHandle,
@@ -1610,7 +1610,7 @@ pub fn guard_set_applied(
     finish_command_result(&mut audit, result)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_set_locked(
     app: AppHandle,
@@ -1630,7 +1630,7 @@ pub fn guard_set_locked(
 
 // ============ 自定义参数管理 ============
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_add_custom_param(
     state: State<'_, AppState>,
@@ -1676,7 +1676,7 @@ pub fn guard_add_custom_param(
     finish_command_result(&mut audit, result)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_remove_custom_param(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let mut audit = OperationAuditGuard::new(&state.paths, "parameter:remove_custom", None);
@@ -1720,7 +1720,7 @@ pub fn guard_remove_custom_param(state: State<'_, AppState>, id: String) -> Resu
     finish_command_result(&mut audit, result)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_get_schema_file_path(state: State<'_, AppState>) -> Result<String, String> {
     let mut audit = OperationAuditGuard::new(&state.paths, "schema:path", None);
@@ -1745,7 +1745,7 @@ pub fn guard_get_files(state: State<'_, AppState>) -> Result<Vec<GuardFile>, Str
     Ok(files)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_add_file(
     state: State<'_, AppState>,
@@ -1808,7 +1808,7 @@ pub fn guard_add_file(
     finish_command_result(&mut audit, result)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_update_file(
     state: State<'_, AppState>,
@@ -1933,7 +1933,7 @@ pub fn guard_update_file(
     finish_command_result(&mut audit, result)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_remove_file(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let mut audit = OperationAuditGuard::new(&state.paths, "file:remove", Some(&id));
@@ -2001,7 +2001,7 @@ pub fn guard_remove_file(state: State<'_, AppState>, id: String) -> Result<(), S
 // ============ 路径检测 ============
 
 /// 检测文件实际路径并落盘记录；之后直接读记录，不重复扫盘
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_detect_file(state: State<'_, AppState>, id: String) -> Result<GuardFile, String> {
     let mut audit = OperationAuditGuard::new(&state.paths, "file:detect", Some(&id));
@@ -2031,25 +2031,18 @@ pub fn guard_detect_file(state: State<'_, AppState>, id: String) -> Result<Guard
 }
 
 /// 把文件选择器选中的绝对路径换算为相对 ~/.codex 的路径（越界拒绝）
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_relativize_picked_path(
     state: State<'_, AppState>,
     abs_path: String,
 ) -> Result<String, String> {
-    let mut audit = OperationAuditGuard::new(&state.paths, "file:relativize", None);
-    let result = (|| {
-        let home = state.paths.codex_root();
-        let rel = std::path::Path::new(&abs_path)
-            .strip_prefix(home)
-            .map_err(|_| tr("Selected file must be inside ~/.codex"))?;
-        let rel =
-            normalize_relative_path(&rel.to_string_lossy()).map_err(|error| error.to_string())?;
-        let result = validate_target_path(&state.paths, &rel).map_err(|error| error.to_string())?;
-        audit.success(0, 1, 0);
-        Ok(result)
-    })();
-    finish_command_result(&mut audit, result)
+    let home = state.paths.codex_root();
+    let rel = std::path::Path::new(&abs_path)
+        .strip_prefix(home)
+        .map_err(|_| tr("Selected file must be inside ~/.codex"))?;
+    let rel = normalize_relative_path(&rel.to_string_lossy()).map_err(|error| error.to_string())?;
+    validate_target_path(&state.paths, &rel).map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
