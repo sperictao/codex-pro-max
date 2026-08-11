@@ -10,13 +10,35 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: recursive
       - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: "npm"
       - run: npm ci
+      # check:contracts regenerates the contract with `cargo run`, so this job needs the
+      # same Tauri build prerequisites as the rust job: the vendored taskboard resources
+      # referenced by tauri.conf.json and the Linux WebKit/GTK toolchain.
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+      - uses: dtolnay/rust-toolchain@1.89.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Ensure taskboard resource dirs exist
+        run: mkdir -p vendor/dashi-taskboard/dist/web
+      - run: npm run check:contracts
       - run: npx tsc --noEmit
       - run: npm test
+      - run: npm run build
 
   rust:
     runs-on: ubuntu-latest
@@ -48,8 +70,10 @@ jobs:
         run: mkdir -p vendor/dashi-taskboard/dist/web
       - name: Clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --locked -- -D warnings
+      - name: Compile Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --no-run
       - name: Test
-        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+        run: node scripts/run-rust-tests.mjs --manifest-path src-tauri/Cargo.toml --timeout 60
       - name: Check generated Guard contracts
         run: npm run check:contracts
 
@@ -99,8 +123,24 @@ jobs:
         run: node scripts/run-rust-tests.mjs --manifest-path src-tauri/Cargo.toml --timeout 60
       - name: Run Guard paths contract target
         run: node scripts/run-rust-tests.mjs --manifest-path src-tauri/Cargo.toml --test guard_paths_contract --timeout 60
+      - name: Run Guard atomic store target
+        run: node scripts/run-rust-tests.mjs --manifest-path src-tauri/Cargo.toml --test guard_atomic_store --timeout 60
+      - name: Run Guard transaction recovery target
+        run: node scripts/run-rust-tests.mjs --manifest-path src-tauri/Cargo.toml --test guard_transaction_recovery --timeout 60
+      - name: Run Guard batch contract target
+        run: node scripts/run-rust-tests.mjs --manifest-path src-tauri/Cargo.toml --test guard_batch_contract --timeout 60
+      - name: Run Guard state migration target
+        run: node scripts/run-rust-tests.mjs --manifest-path src-tauri/Cargo.toml --test guard_state_migration --timeout 60
       - name: Run Guard command registry contract target
         run: node scripts/run-rust-tests.mjs --manifest-path src-tauri/Cargo.toml --test guard_command_registry --timeout 60
+      - name: Run Guard role capability target
+        run: node scripts/run-rust-tests.mjs --manifest-path src-tauri/Cargo.toml --test guard_roles_capability --timeout 60
+      - name: Run Guard role migration target
+        run: node scripts/run-rust-tests.mjs --manifest-path src-tauri/Cargo.toml --test guard_role_migration --timeout 60
+      - name: Run Guard runtime audit target
+        run: node scripts/run-rust-tests.mjs --manifest-path src-tauri/Cargo.toml --test guard_runtime_audit --timeout 60
+      - name: Run Guard operation audit target
+        run: node scripts/run-rust-tests.mjs --manifest-path src-tauri/Cargo.toml --test guard_operation_audit --timeout 60
       - name: Run Guard format parser target
         run: node scripts/run-rust-tests.mjs --manifest-path src-tauri/Cargo.toml --filter codex_guard::format --timeout 60
       - name: Check generated Guard contracts
