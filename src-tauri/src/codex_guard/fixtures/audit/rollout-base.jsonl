@@ -1,0 +1,3 @@
+{"type":"session_meta","timestamp_ms":1000,"payload":{"id":"child-1","parent_thread_id":"parent-1","agent_path":"root/worker","agent_role":"worker","source":{"subagent":{"agent_role":"worker"}},"encrypted":"ignored"}}
+{"type":"turn_context","thread_id":"child-1","timestamp_ms":1100,"payload":{"turn_id":"turn-1","model":"gpt-test","effort":"high","multi_agent_version":"v2","message":"ignored"}}
+{"type":"response_item","thread_id":"parent-1","timestamp_ms":900,"payload":{"name":"spawn_agent","arguments":{"task_name":"worker","agent_type":"worker","fork_turns":"none"},"message":"ignored"}}
