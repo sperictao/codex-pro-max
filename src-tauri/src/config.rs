@@ -1,9 +1,23 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::codex_guard::atomic_store::{AtomicFileWriter, PlatformAtomicFileWriter};
+use crate::codex_guard::engine::{execute_transaction_batch, TransactionWrite};
+use crate::codex_guard::journal::JournalParticipant;
 use crate::codex_guard::{AppPaths, GuardParam};
+
+const GUARD_SCHEMA_ENVELOPE_VERSION: u16 = 1;
+static NEXT_MIGRATION_BACKUP_ID: AtomicU64 = AtomicU64::new(1);
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GuardSchemaEnvelope {
+    schema_version: u16,
+    params: Vec<GuardParam>,
+}
 
 /// 启动器配置，持久化到 ~/.dashi-taskboard-launcher/config.json
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -178,6 +192,121 @@ impl ConfigStore {
         self.load_launcher_unlocked()
     }
 
+    /// Migrate a legacy Launcher config once, retaining the exact v0 bytes in a
+    /// durable backup before replacing the active config.  A failed replacement
+    /// leaves the original bytes untouched; callers can retry this operation.
+    pub(crate) fn migrate_guard_state(&self) -> Result<bool, String> {
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|_| "config store lock is poisoned".to_string())?;
+        let path = self.paths.config_file();
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => {
+                return Err(crate::i18n::trf(
+                    "Failed to read config file: {error}",
+                    &[("error", error.to_string())],
+                ))
+            }
+        };
+        let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
+            crate::i18n::trf(
+                "Failed to parse config file: {error}",
+                &[("error", error.to_string())],
+            )
+        })?;
+        let Some(guard) = value
+            .get("codex_guard")
+            .and_then(serde_json::Value::as_object)
+        else {
+            return Ok(false);
+        };
+        let needs_migration = guard
+            .get("schema_version")
+            .and_then(serde_json::Value::as_u64)
+            .is_none_or(|version| version < 1);
+        if !needs_migration {
+            return Ok(false);
+        }
+
+        let mut config: LauncherConfig = serde_json::from_value(value).map_err(|error| {
+            crate::i18n::trf(
+                "Failed to parse config file: {error}",
+                &[("error", error.to_string())],
+            )
+        })?;
+        config.codex_guard.normalize_groups();
+        let candidate = serde_json::to_vec_pretty(&config).map_err(|error| {
+            crate::i18n::trf(
+                "Failed to serialize config: {error}",
+                &[("error", error.to_string())],
+            )
+        })?;
+
+        let backup_dir = self.paths.launcher_root().join("migration-backups");
+        std::fs::create_dir_all(&backup_dir).map_err(|error| {
+            crate::i18n::trf(
+                "Failed to create migration backup: {error}",
+                &[("error", error.to_string())],
+            )
+        })?;
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or_default();
+        let serial = NEXT_MIGRATION_BACKUP_ID.fetch_add(1, Ordering::Relaxed);
+        let backup = backup_dir.join(format!("config-v0-{timestamp}-{serial}.json"));
+        let mut backup_file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&backup)
+            .map_err(|error| {
+                crate::i18n::trf(
+                    "Failed to create migration backup: {error}",
+                    &[("error", error.to_string())],
+                )
+            })?;
+        use std::io::Write;
+        backup_file
+            .write_all(&bytes)
+            .and_then(|_| backup_file.sync_all())
+            .map_err(|error| {
+                crate::i18n::trf(
+                    "Failed to sync migration backup: {error}",
+                    &[("error", error.to_string())],
+                )
+            })?;
+
+        self.commit_file(
+            JournalParticipant::Launcher,
+            "config.json",
+            Some(bytes),
+            candidate,
+        )?;
+        Ok(true)
+    }
+
+    /// Pure migration helper used by contract tests and startup composition.
+    #[cfg(test)]
+    #[allow(dead_code)]
+    pub(crate) fn migrate_guard_state_bytes(bytes: &[u8]) -> Result<Vec<u8>, String> {
+        let value: serde_json::Value = serde_json::from_slice(bytes)
+            .map_err(|error| format!("invalid launcher config: {error}"))?;
+        if value
+            .get("codex_guard")
+            .and_then(serde_json::Value::as_object)
+            .is_none()
+        {
+            return Ok(bytes.to_vec());
+        }
+        let mut config: LauncherConfig = serde_json::from_value(value)
+            .map_err(|error| format!("invalid launcher config: {error}"))?;
+        config.codex_guard.normalize_groups();
+        serde_json::to_vec_pretty(&config).map_err(|error| error.to_string())
+    }
+
     pub(crate) fn update_launcher<R>(
         &self,
         update: impl FnOnce(&mut LauncherConfig) -> Result<R, String>,
@@ -186,7 +315,7 @@ impl ConfigStore {
             .lock
             .lock()
             .map_err(|_| "config store lock is poisoned".to_string())?;
-        let mut config = self.load_launcher_unlocked()?;
+        let (original, mut config) = self.load_launcher_snapshot_unlocked()?;
         let result = update(&mut config)?;
         let bytes = serde_json::to_vec_pretty(&config).map_err(|error| {
             crate::i18n::trf(
@@ -194,7 +323,7 @@ impl ConfigStore {
                 &[("error", error.to_string())],
             )
         })?;
-        self.writer.replace(&self.paths.config_file(), &bytes)?;
+        self.commit_file(JournalParticipant::Launcher, "config.json", original, bytes)?;
         Ok(result)
     }
 
@@ -218,6 +347,66 @@ impl ConfigStore {
         operation(&mut transaction)
     }
 
+    /// Mutate the Launcher config and the disk schema under one lock and one
+    /// durable journal batch.  Commands that remove or rename schema-backed
+    /// files use this boundary so a failed second participant cannot leave the
+    /// schema and its persisted lifecycle state out of sync.
+    pub(crate) fn with_launcher_and_schema_transaction<R>(
+        &self,
+        operation: impl FnOnce(&mut LauncherConfig, &mut Vec<GuardParam>) -> Result<R, String>,
+    ) -> Result<R, String> {
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|_| "config store lock is poisoned".to_string())?;
+        let (launcher_original, mut launcher) = self.load_launcher_snapshot_unlocked()?;
+        let (schema_original, mut schema) = self.load_guard_schema_snapshot_unlocked()?;
+        let result = operation(&mut launcher, &mut schema)?;
+        let launcher_candidate = serde_json::to_vec_pretty(&launcher).map_err(|error| {
+            crate::i18n::trf(
+                "Failed to serialize config: {error}",
+                &[("error", error.to_string())],
+            )
+        })?;
+        let schema_candidate = serde_json::to_vec_pretty(&GuardSchemaEnvelope {
+            schema_version: GUARD_SCHEMA_ENVELOPE_VERSION,
+            params: schema,
+        })
+        .map_err(|error| {
+            crate::i18n::trf(
+                "Failed to serialize schema: {error}",
+                &[("error", error.to_string())],
+            )
+        })?;
+        let launcher_target = self.paths.config_file();
+        let schema_target = self.paths.guard_schema_file();
+        let writer = self.writer.as_ref();
+        execute_transaction_batch(
+            &self.paths,
+            vec![
+                TransactionWrite {
+                    participant: JournalParticipant::Launcher,
+                    relative_file: "config.json".to_string(),
+                    target: launcher_target,
+                    original: launcher_original,
+                    candidate_exists: true,
+                    candidate: launcher_candidate,
+                    writer,
+                },
+                TransactionWrite {
+                    participant: JournalParticipant::LauncherSchema,
+                    relative_file: "codex-guard-schema.json".to_string(),
+                    target: schema_target,
+                    original: schema_original,
+                    candidate_exists: true,
+                    candidate: schema_candidate,
+                    writer,
+                },
+            ],
+        )?;
+        Ok(result)
+    }
+
     pub(crate) fn load_guard_schema(&self) -> Result<Vec<GuardParam>, String> {
         let _guard = self
             .lock
@@ -234,16 +423,24 @@ impl ConfigStore {
             .lock
             .lock()
             .map_err(|_| "config store lock is poisoned".to_string())?;
-        let mut schema = self.load_guard_schema_unlocked()?;
+        let (original, mut schema) = self.load_guard_schema_snapshot_unlocked()?;
         let result = update(&mut schema)?;
-        let bytes = serde_json::to_vec_pretty(&schema).map_err(|error| {
+        let bytes = serde_json::to_vec_pretty(&GuardSchemaEnvelope {
+            schema_version: GUARD_SCHEMA_ENVELOPE_VERSION,
+            params: schema,
+        })
+        .map_err(|error| {
             crate::i18n::trf(
                 "Failed to serialize schema: {error}",
                 &[("error", error.to_string())],
             )
         })?;
-        self.writer
-            .replace(&self.paths.guard_schema_file(), &bytes)?;
+        self.commit_file(
+            JournalParticipant::LauncherSchema,
+            "codex-guard-schema.json",
+            original,
+            bytes,
+        )?;
         Ok(result)
     }
 
@@ -252,11 +449,34 @@ impl ConfigStore {
             .lock
             .lock()
             .map_err(|_| "config store lock is poisoned".to_string())?;
-        match std::fs::metadata(self.paths.guard_schema_file()) {
-            Ok(_) => Ok(()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => self
-                .writer
-                .replace(&self.paths.guard_schema_file(), default_bytes),
+        match std::fs::symlink_metadata(self.paths.guard_schema_file()) {
+            Ok(metadata) if metadata.file_type().is_file() => Ok(()),
+            Ok(_) => Err("guard schema target is not a regular file".to_string()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let params: Vec<GuardParam> =
+                    serde_json::from_slice(default_bytes).map_err(|error| {
+                        crate::i18n::trf(
+                            "Failed to parse built-in schema: {error}",
+                            &[("error", error.to_string())],
+                        )
+                    })?;
+                let bytes = serde_json::to_vec_pretty(&GuardSchemaEnvelope {
+                    schema_version: GUARD_SCHEMA_ENVELOPE_VERSION,
+                    params,
+                })
+                .map_err(|error| {
+                    crate::i18n::trf(
+                        "Failed to serialize schema: {error}",
+                        &[("error", error.to_string())],
+                    )
+                })?;
+                self.commit_file(
+                    JournalParticipant::LauncherSchema,
+                    "codex-guard-schema.json",
+                    None,
+                    bytes,
+                )
+            }
             Err(error) => Err(crate::i18n::trf(
                 "Failed to read schema file: {error}",
                 &[("error", error.to_string())],
@@ -294,10 +514,19 @@ impl ConfigStore {
     }
 
     fn load_guard_schema_unlocked(&self) -> Result<Vec<GuardParam>, String> {
+        self.load_guard_schema_snapshot_unlocked()
+            .map(|(_, schema)| schema)
+    }
+
+    fn load_guard_schema_snapshot_unlocked(
+        &self,
+    ) -> Result<(Option<Vec<u8>>, Vec<GuardParam>), String> {
         let path = self.paths.guard_schema_file();
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok((None, Vec::new()))
+            }
             Err(error) => {
                 return Err(crate::i18n::trf(
                     "Failed to read schema file: {error}",
@@ -305,12 +534,59 @@ impl ConfigStore {
                 ));
             }
         };
-        serde_json::from_slice(&bytes).map_err(|error| {
+        let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
             crate::i18n::trf(
                 "Failed to parse schema file: {error}",
                 &[("error", error.to_string())],
             )
-        })
+        })?;
+        if value.is_array() {
+            let schema = serde_json::from_value(value).map_err(|error| {
+                crate::i18n::trf(
+                    "Failed to parse schema file: {error}",
+                    &[("error", error.to_string())],
+                )
+            })?;
+            return Ok((Some(bytes), schema));
+        }
+        let envelope: GuardSchemaEnvelope = serde_json::from_value(value).map_err(|error| {
+            crate::i18n::trf(
+                "Failed to parse schema envelope: {error}",
+                &[("error", error.to_string())],
+            )
+        })?;
+        if envelope.schema_version != GUARD_SCHEMA_ENVELOPE_VERSION {
+            return Err("unsupported guard schema version".to_string());
+        }
+        Ok((Some(bytes), envelope.params))
+    }
+
+    fn commit_file(
+        &self,
+        participant: JournalParticipant,
+        relative_file: &str,
+        original: Option<Vec<u8>>,
+        candidate: Vec<u8>,
+    ) -> Result<(), String> {
+        let target = match participant {
+            JournalParticipant::Launcher if relative_file == "config.json" => {
+                self.paths.config_file()
+            }
+            JournalParticipant::LauncherSchema if relative_file == "codex-guard-schema.json" => {
+                self.paths.guard_schema_file()
+            }
+            _ => return Err("unsupported launcher transaction target".to_string()),
+        };
+        let write = TransactionWrite {
+            participant,
+            relative_file: relative_file.to_string(),
+            target,
+            original,
+            candidate_exists: true,
+            candidate,
+            writer: self.writer.as_ref(),
+        };
+        execute_transaction_batch(&self.paths, vec![write])
     }
 }
 
@@ -349,7 +625,7 @@ pub fn merge_settings(current: &mut LauncherConfig, settings: &LauncherConfig) {
 mod tests {
     use super::*;
     use crate::codex_guard::{AppPaths, CodexGuardState};
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Barrier;
 
@@ -363,30 +639,35 @@ mod tests {
 
     fn sample_guard_state() -> CodexGuardState {
         use crate::codex_guard::GuardParamState;
-        let mut params = HashMap::new();
-        params.insert(
-            "features.image_generation".to_string(),
-            GuardParamState {
-                value: Some(serde_json::json!(false)),
-                applied: true,
-                locked: true,
-                last_checked: Some(12345),
-                last_restored: Some(12340),
-            },
+        let mut params = BTreeMap::new();
+        let mut param = GuardParamState::from_lifecycle(
+            crate::codex_guard::lifecycle::ParameterLifecycle::Locked,
         );
+        param.value = Some(serde_json::json!(false));
+        param.last_checked = Some(12345);
+        param.last_restored = Some(12340);
+        params.insert("features.image_generation".to_string(), param);
         CodexGuardState {
+            schema_version: crate::codex_guard::CODEX_GUARD_SCHEMA_VERSION,
             enabled: true,
             params,
             files: Vec::new(),
+            groups: Vec::new(),
+            pending_lifecycle_migrations: BTreeMap::new(),
+            pending_format_migrations: BTreeMap::new(),
+            roles: Vec::new(),
+            capability_snapshot: None,
         }
     }
 
     #[test]
     fn merge_settings_preserves_codex_guard() {
-        let mut current = LauncherConfig::default();
-        current.codex_guard = sample_guard_state();
-        current.taskboard_path = "/old/path".to_string();
-        current.auto_open = true;
+        let mut current = LauncherConfig {
+            codex_guard: sample_guard_state(),
+            taskboard_path: "/old/path".to_string(),
+            auto_open: true,
+            ..Default::default()
+        };
 
         let settings = LauncherConfig {
             taskboard_path: "/new/path".to_string(),
@@ -399,26 +680,28 @@ mod tests {
 
         // 设置类字段被更新
         assert_eq!(current.taskboard_path, "/new/path");
-        assert_eq!(current.auto_open, false);
+        assert!(!current.auto_open);
         assert_eq!(current.cdp_port, 9999);
 
         // codex_guard 完整保留，没有被默认值覆盖
-        assert_eq!(current.codex_guard.enabled, true);
+        assert!(current.codex_guard.enabled);
         let p = current
             .codex_guard
             .params
             .get("features.image_generation")
             .unwrap();
-        assert_eq!(p.applied, true);
-        assert_eq!(p.locked, true);
+        assert!(p.applied);
+        assert!(p.locked);
         assert_eq!(p.last_checked, Some(12345));
         assert_eq!(p.value, Some(serde_json::json!(false)));
     }
 
     #[test]
     fn merge_settings_updates_all_setting_fields() {
-        let mut current = LauncherConfig::default();
-        current.codex_guard = sample_guard_state();
+        let mut current = LauncherConfig {
+            codex_guard: sample_guard_state(),
+            ..Default::default()
+        };
 
         let settings = LauncherConfig {
             taskboard_path: "tp".to_string(),
@@ -442,20 +725,20 @@ mod tests {
         assert_eq!(current.taskboard_port, 1111);
         assert_eq!(current.taskboard_host, "0.0.0.0");
         assert_eq!(current.cdp_port, 2222);
-        assert_eq!(current.auto_open, false);
-        assert_eq!(current.separate_window_mode, true);
-        assert_eq!(current.minimize_to_tray_on_close, true);
+        assert!(!current.auto_open);
+        assert!(current.separate_window_mode);
+        assert!(current.minimize_to_tray_on_close);
         assert_eq!(current.language, "zh-CN");
 
         // codex_guard 不变
-        assert_eq!(current.codex_guard.enabled, true);
+        assert!(current.codex_guard.enabled);
         assert_eq!(current.codex_guard.params.len(), 1);
     }
 
     #[test]
     fn default_guard_state_is_disabled_and_empty() {
         let cfg = LauncherConfig::default();
-        assert_eq!(cfg.codex_guard.enabled, false);
+        assert!(!cfg.codex_guard.enabled);
         assert!(cfg.codex_guard.params.is_empty());
     }
 
@@ -506,8 +789,10 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let paths = AppPaths::for_test(temp.path());
         std::fs::create_dir_all(paths.launcher_root()).unwrap();
-        let mut old_config = LauncherConfig::default();
-        old_config.language = "zh-CN".to_string();
+        let old_config = LauncherConfig {
+            language: "zh-CN".to_string(),
+            ..Default::default()
+        };
         let original = serde_json::to_vec_pretty(&old_config).unwrap();
         std::fs::write(paths.config_file(), &original).unwrap();
         let store = ConfigStore::with_writer(paths.clone(), Arc::new(FailingWriter));
@@ -517,8 +802,65 @@ mod tests {
             Ok(())
         });
 
-        assert_eq!(result.unwrap_err(), "injected replace failure");
+        assert_eq!(
+            result.unwrap_err(),
+            "guard transaction failed: replace_failed"
+        );
         assert_eq!(std::fs::read(paths.config_file()).unwrap(), original);
+        assert!(
+            !paths.transaction_root().exists()
+                || std::fs::read_dir(paths.transaction_root())
+                    .unwrap()
+                    .next()
+                    .is_none()
+        );
+    }
+
+    #[test]
+    fn failed_replace_preserves_old_guard_schema_bytes() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::for_test(temp.path());
+        std::fs::create_dir_all(paths.launcher_root()).unwrap();
+        let original = serde_json::to_vec_pretty(&GuardSchemaEnvelope {
+            schema_version: GUARD_SCHEMA_ENVELOPE_VERSION,
+            params: Vec::new(),
+        })
+        .unwrap();
+        std::fs::write(paths.guard_schema_file(), &original).unwrap();
+        let store = ConfigStore::with_writer(paths.clone(), Arc::new(FailingWriter));
+
+        let result = store.update_guard_schema(|schema| {
+            schema.push(GuardParam {
+                id: "custom.failure".into(),
+                label: "Failure".into(),
+                label_en: String::new(),
+                description: String::new(),
+                description_en: String::new(),
+                file: "config.toml".into(),
+                file_id: String::new(),
+                group_id: None,
+                apply_mode: "toml_key".into(),
+                path: "features.failure".into(),
+                value_type: "bool".into(),
+                default: serde_json::json!(false),
+                default_en: serde_json::Value::Null,
+                custom: true,
+            });
+            Ok(())
+        });
+
+        assert_eq!(
+            result.unwrap_err(),
+            "guard transaction failed: replace_failed"
+        );
+        assert_eq!(std::fs::read(paths.guard_schema_file()).unwrap(), original);
+        assert!(
+            !paths.transaction_root().exists()
+                || std::fs::read_dir(paths.transaction_root())
+                    .unwrap()
+                    .next()
+                    .is_none()
+        );
     }
 
     #[test]
@@ -526,8 +868,10 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let paths = AppPaths::for_test(temp.path());
         std::fs::create_dir_all(paths.launcher_root()).unwrap();
-        let mut original_config = LauncherConfig::default();
-        original_config.language = "zh-CN".into();
+        let original_config = LauncherConfig {
+            language: "zh-CN".into(),
+            ..Default::default()
+        };
         let original = serde_json::to_vec_pretty(&original_config).unwrap();
         std::fs::write(paths.config_file(), &original).unwrap();
         let store = ConfigStore::new(paths.clone());
@@ -582,5 +926,65 @@ mod tests {
         let config = store.load_launcher().unwrap();
         assert_eq!(config.language, "en");
         assert!(config.codex_guard.enabled);
+    }
+
+    #[test]
+    fn guard_state_migration_writes_v1_envelope_and_backup() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::for_test(temp.path());
+        std::fs::create_dir_all(paths.launcher_root()).unwrap();
+        let original = br#"{"codex_guard":{"enabled":true,"params":{"x":{"applied":false,"locked":true}},"files":[],"groups":[]}}"#;
+        std::fs::write(paths.config_file(), original).unwrap();
+        let store = ConfigStore::new(paths.clone());
+
+        assert!(store.migrate_guard_state().unwrap());
+        let migrated: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(paths.config_file()).unwrap()).unwrap();
+        assert_eq!(migrated["codex_guard"]["schema_version"], 1);
+        assert_eq!(
+            migrated["codex_guard"]["pending_lifecycle_migrations"]["x"]["locked"],
+            true
+        );
+        let backups = std::fs::read_dir(paths.launcher_root().join("migration-backups"))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(backups.len(), 1);
+        assert_eq!(std::fs::read(backups[0].path()).unwrap(), original);
+        assert!(!store.migrate_guard_state().unwrap());
+    }
+
+    #[test]
+    fn guard_schema_updates_use_a_versioned_envelope_but_read_legacy_arrays() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::for_test(temp.path());
+        std::fs::create_dir_all(paths.launcher_root()).unwrap();
+        let legacy = serde_json::json!([{
+            "id": "custom.demo",
+            "label": "Demo",
+            "file": "config.toml",
+            "apply_mode": "toml_key",
+            "path": "features.demo",
+            "value_type": "bool",
+            "default": false,
+            "custom": true
+        }]);
+        std::fs::write(
+            paths.guard_schema_file(),
+            serde_json::to_vec(&legacy).unwrap(),
+        )
+        .unwrap();
+        let store = ConfigStore::new(paths.clone());
+        assert_eq!(store.load_guard_schema().unwrap().len(), 1);
+        store
+            .update_guard_schema(|schema| {
+                schema[0].description = "changed".to_string();
+                Ok(())
+            })
+            .unwrap();
+        let value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(paths.guard_schema_file()).unwrap()).unwrap();
+        assert_eq!(value["schema_version"], 1);
+        assert!(value["params"].is_array());
     }
 }
