@@ -6,14 +6,15 @@
 //! model contract.  The command runner is kept behind a small trait so parser
 //! and timeout behavior can be tested with deterministic fixtures.
 
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -151,6 +152,87 @@ pub(crate) fn current_capability(
     let executable = resolve_codex_executable(configured_path)?;
     let runner = ProcessCapabilityCommandRunner;
     probe_with_runner(&executable, &runner, now_ms)
+}
+
+/// A live probe hashes the whole executable and spawns two CLI subprocesses (10s timeout
+/// each). A page load fans out into role list, discovery, and the capability view, and every
+/// one of them needs the same snapshot — without a cache each paid the full probe cost.
+const PROBE_CACHE_SUCCESS_TTL: Duration = Duration::from_secs(60);
+/// Failed probes are retried sooner than successful ones are refreshed, but still not on
+/// every command: a broken install must not cost two subprocess timeouts per page poll.
+const PROBE_CACHE_ERROR_TTL: Duration = Duration::from_secs(10);
+
+#[derive(Default)]
+struct ProbeCache {
+    entries: HashMap<String, (Instant, Result<CapabilitySnapshot, String>)>,
+}
+
+impl ProbeCache {
+    fn lookup_at(
+        &self,
+        configured_path: &str,
+        now: Instant,
+    ) -> Option<Result<CapabilitySnapshot, String>> {
+        let (probed_at, result) = self.entries.get(configured_path)?;
+        let ttl = if result.is_ok() {
+            PROBE_CACHE_SUCCESS_TTL
+        } else {
+            PROBE_CACHE_ERROR_TTL
+        };
+        (now.duration_since(*probed_at) < ttl).then(|| result.clone())
+    }
+
+    fn store_at(
+        &mut self,
+        configured_path: &str,
+        result: Result<CapabilitySnapshot, String>,
+        probed_at: Instant,
+    ) {
+        // The configured path is the only key the product produces; bound the map so a
+        // pathological caller cannot grow it without limit.
+        if self.entries.len() >= 8 && !self.entries.contains_key(configured_path) {
+            self.entries.clear();
+        }
+        self.entries
+            .insert(configured_path.to_string(), (probed_at, result));
+    }
+}
+
+static PROBE_CACHE: OnceLock<Mutex<ProbeCache>> = OnceLock::new();
+
+/// Outcome of a capability lookup. Callers decide whether to persist by comparing the
+/// snapshot with the stored one, which also skips the write when a live probe returned
+/// an unchanged result.
+pub(crate) struct CapabilityProbe {
+    pub result: Result<CapabilitySnapshot, String>,
+}
+
+fn probe_with_cache(configured_path: &str, now_ms: u64, force: bool) -> CapabilityProbe {
+    // The lock is held across the probe so concurrent commands single-flight: the second
+    // caller waits for the first probe and then reads the cache instead of spawning again.
+    let Ok(mut cache) = PROBE_CACHE.get_or_init(Mutex::default).lock() else {
+        // A poisoned cache must never block the capability path; probe without caching.
+        return CapabilityProbe {
+            result: current_capability(configured_path, now_ms),
+        };
+    };
+    if !force {
+        if let Some(result) = cache.lookup_at(configured_path, Instant::now()) {
+            return CapabilityProbe { result };
+        }
+    }
+    let result = current_capability(configured_path, now_ms);
+    cache.store_at(configured_path, result.clone(), Instant::now());
+    CapabilityProbe { result }
+}
+
+pub(crate) fn capability_with_ttl(configured_path: &str, now_ms: u64) -> CapabilityProbe {
+    probe_with_cache(configured_path, now_ms, false)
+}
+
+/// Force a live probe and make its outcome visible to subsequent cached lookups.
+pub(crate) fn probe_capability_fresh(configured_path: &str, now_ms: u64) -> CapabilityProbe {
+    probe_with_cache(configured_path, now_ms, true)
 }
 
 pub(crate) fn probe_with_runner<R: CapabilityCommandRunner + ?Sized>(
@@ -575,6 +657,61 @@ mod tests {
     fn success_status() -> ExitStatus {
         use std::os::unix::process::ExitStatusExt;
         ExitStatus::from_raw(0)
+    }
+
+    fn fixture_snapshot() -> CapabilitySnapshot {
+        CapabilitySnapshot::new(
+            vec![ModelCapability::new("gpt-5", "v2", vec!["low".to_string()]).unwrap()],
+            "fixture-identity",
+            1,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn probe_cache_serves_fresh_entries_per_path() {
+        let mut cache = ProbeCache::default();
+        let now = Instant::now();
+        cache.store_at("/app-a", Ok(fixture_snapshot()), now);
+        assert!(cache.lookup_at("/app-a", now).is_some());
+        assert!(cache.lookup_at("/app-b", now).is_none());
+        assert!(
+            cache
+                .lookup_at("/app-a", now + PROBE_CACHE_SUCCESS_TTL)
+                .is_none(),
+            "an entry at exactly the TTL boundary must be stale"
+        );
+    }
+
+    #[test]
+    fn probe_cache_retries_errors_sooner_than_successes() {
+        let mut cache = ProbeCache::default();
+        let now = Instant::now();
+        cache.store_at("/app", Err("capability_command_timeout".to_string()), now);
+        assert!(cache.lookup_at("/app", now).is_some());
+        assert!(
+            cache
+                .lookup_at("/app", now + PROBE_CACHE_ERROR_TTL)
+                .is_none(),
+            "errors must expire at the shorter TTL"
+        );
+        cache.store_at("/app", Ok(fixture_snapshot()), now);
+        assert!(
+            cache
+                .lookup_at("/app", now + PROBE_CACHE_ERROR_TTL + Duration::from_secs(1))
+                .is_some(),
+            "a success must outlive the error TTL"
+        );
+    }
+
+    #[test]
+    fn probe_cache_bounds_the_entry_count() {
+        let mut cache = ProbeCache::default();
+        let now = Instant::now();
+        for index in 0..16 {
+            cache.store_at(&format!("/app-{index}"), Ok(fixture_snapshot()), now);
+        }
+        assert!(cache.entries.len() <= 9, "clear + insert bounds growth");
     }
 
     #[cfg(windows)]

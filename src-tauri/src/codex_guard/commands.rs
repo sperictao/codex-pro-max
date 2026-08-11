@@ -588,32 +588,25 @@ fn return_guard_transaction_result<T>(
     result
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_get_view(state: State<'_, AppState>) -> Result<GuardView, String> {
-    let mut audit = OperationAuditGuard::new(&state.paths, "view:get", None);
-    let result = (|| {
-        let view = build_view(
-            &state.config_store,
-            &state.paths,
-            state.guard_coordinator.recovery_status(),
-        )?;
-        audit.success(0, view.affected_members, view.affected_files);
-        Ok(view)
-    })();
-    finish_command_result(&mut audit, result)
+    // Read-only query polled every few seconds: it must never append to the operation audit
+    // (see guard_operation_audit_list) or every poll would pay a full-file audit rewrite.
+    build_view(
+        &state.config_store,
+        &state.paths,
+        state.guard_coordinator.recovery_status(),
+    )
 }
 
 /// 返回启动恢复是否阻断了 Guard 写入。只暴露稳定 code，不泄漏 journal 细节。
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_get_recovery_status(
     state: State<'_, AppState>,
 ) -> Result<GuardRecoveryStatus, String> {
-    let mut audit = OperationAuditGuard::new(&state.paths, "recovery:status", None);
-    let status = state.guard_coordinator.recovery_status();
-    audit.success(0, 0, 0);
-    Ok(status)
+    Ok(state.guard_coordinator.recovery_status())
 }
 
 /// 重试未完成事务恢复；成功后按需启动唯一的 Guard 轮询任务。
@@ -1743,19 +1736,13 @@ pub fn guard_get_schema_file_path(state: State<'_, AppState>) -> Result<String, 
 
 // ============ 文件管理命令 ============
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_get_files(state: State<'_, AppState>) -> Result<Vec<GuardFile>, String> {
-    let mut audit = OperationAuditGuard::new(&state.paths, "file:list", None);
-    let result = (|| {
-        let files = load_files(&state.config_store)?;
-        let schema = load_schema(&state.config_store)?;
-        validate_configuration(&state.paths, &files, &schema)?;
-        let count = files.len().min(u32::MAX as usize) as u32;
-        audit.success(0, count, count);
-        Ok(files)
-    })();
-    finish_command_result(&mut audit, result)
+    let files = load_files(&state.config_store)?;
+    let schema = load_schema(&state.config_store)?;
+    validate_configuration(&state.paths, &files, &schema)?;
+    Ok(files)
 }
 
 #[tauri::command]

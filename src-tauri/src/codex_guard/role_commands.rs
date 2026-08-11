@@ -13,7 +13,7 @@ use specta::Type;
 use tauri::State;
 
 use super::atomic_store::PlatformAtomicFileWriter;
-use super::capability::current_capability;
+use super::capability::{capability_with_ttl, probe_capability_fresh};
 use crate::AppState;
 
 use super::engine::{execute_transaction_batch, TransactionWrite};
@@ -22,10 +22,10 @@ use super::operation_audit::OperationAuditGuard;
 use super::transaction::is_recovery_blocking_error;
 
 use super::roles::{
-    parse_role_toml, policy_hash_for_view, render_minimal_role_toml,
-    validate_copy_roles, validate_default_action, validate_role_id, CapabilitySnapshot,
-    ManagedRoleRecord, RoleAction, RoleEditableFields, RoleError, RoleErrorCode, RoleId,
-    RoleLifecycle, RoleMigrationChoice, RoleMigrationPlan, RoleMigrationResult, TextOrigin,
+    parse_role_toml, policy_hash_for_view, render_minimal_role_toml, validate_copy_roles,
+    validate_default_action, validate_role_id, CapabilitySnapshot, ManagedRoleRecord, RoleAction,
+    RoleEditableFields, RoleError, RoleErrorCode, RoleId, RoleLifecycle, RoleMigrationChoice,
+    RoleMigrationPlan, RoleMigrationResult, TextOrigin,
 };
 use super::roles_store::{
     content_sha256, discover_role_files, load_role_states, replace_role_directory_block,
@@ -303,33 +303,60 @@ fn state_detail(
     })
 }
 
+/// Write paths validate against a live probe; the fresh result also reseeds the shared
+/// cache so a save right after a page load does not pay for a second probe.
 fn refresh_capabilities(state: &AppState) -> Result<CapabilitySnapshot, String> {
     let config = state.config_store.load_launcher()?;
-    current_capability(&config.codex_app_path, now_secs().saturating_mul(1000))
+    probe_capability_fresh(&config.codex_app_path, now_secs().saturating_mul(1000)).result
 }
 
+/// Read paths share one probe through the TTL cache: role list, discovery, and the
+/// capability view all render from the same page load.
 fn optional_capabilities(state: &AppState) -> Option<CapabilitySnapshot> {
-    refresh_capabilities(state).ok()
+    let config = state.config_store.load_launcher().ok()?;
+    capability_with_ttl(&config.codex_app_path, now_secs().saturating_mul(1000))
+        .result
+        .ok()
 }
 
-fn capability_command_result(state: &AppState) -> Result<CapabilitySnapshotDto, String> {
+fn persist_capability_snapshot(state: &AppState, snapshot: CapabilitySnapshot) {
+    // Persisting is a best-effort cache write: a real operation holding the write lock must
+    // never fail a read-only capability query, and the next probe persists instead.
+    let Ok(_write) = state.guard_coordinator.try_guard_write() else {
+        return;
+    };
+    let result = state.config_store.update_launcher(|config| {
+        config.codex_guard.capability_snapshot = Some(snapshot);
+        Ok(())
+    });
+    if let Err(error) = &result {
+        if is_recovery_blocking_error(error) {
+            state
+                .guard_coordinator
+                .mark_recovery_blocked("recovery_failed");
+        }
+        log::error!("guard capability snapshot persist failed: {}", error);
+    }
+}
+
+fn capability_command_result(
+    state: &AppState,
+    force_probe: bool,
+) -> Result<CapabilitySnapshotDto, String> {
     let config = state.config_store.load_launcher()?;
-    match current_capability(&config.codex_app_path, now_secs().saturating_mul(1000)) {
+    let now_ms = now_secs().saturating_mul(1000);
+    let probe = if force_probe {
+        probe_capability_fresh(&config.codex_app_path, now_ms)
+    } else {
+        capability_with_ttl(&config.codex_app_path, now_ms)
+    };
+    match probe.result {
         Ok(snapshot) => {
-            let cached = snapshot.clone();
-            let _write = state.guard_coordinator.try_guard_write()?;
-            let result = state.config_store.update_launcher(|config| {
-                config.codex_guard.capability_snapshot = Some(cached);
-                Ok(())
-            });
-            if let Err(error) = &result {
-                if is_recovery_blocking_error(error) {
-                    state
-                        .guard_coordinator
-                        .mark_recovery_blocked("recovery_failed");
-                }
+            // Persist only when the stored snapshot is stale: cache hits must not pay for
+            // the write lock + fsync on every page load.
+            if config.codex_guard.capability_snapshot.as_ref() != Some(&snapshot) {
+                persist_capability_snapshot(state, snapshot.clone());
             }
-            result?;
             Ok(capability_snapshot_dto(snapshot, true, None))
         }
         Err(error) => match config.codex_guard.capability_snapshot {
@@ -339,23 +366,18 @@ fn capability_command_result(state: &AppState) -> Result<CapabilitySnapshotDto, 
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_role_get(state: State<'_, AppState>, id: String) -> Result<RoleDetailDto, String> {
-    let mut audit = OperationAuditGuard::new(&state.paths, "role:get", Some(&id));
-    let result = (|| {
-        let id = parse_id(&id)?;
-        let states = load_role_states(&state.config_store)?;
-        let role = states
-            .into_iter()
-            .find(|candidate| candidate.id() == &id)
-            .ok_or_else(|| "role_not_managed".to_string())?;
-        let capabilities = optional_capabilities(&state);
-        let detail = state_detail(&state.paths, role, capabilities.as_ref())?;
-        audit.success(0, 1, u32::from(detail.actual_file_present));
-        Ok(detail)
-    })();
-    finish_role_command_result(&mut audit, result)
+    // Read-only query: never appends to the operation audit (see guard_operation_audit_list).
+    let id = parse_id(&id)?;
+    let states = load_role_states(&state.config_store)?;
+    let role = states
+        .into_iter()
+        .find(|candidate| candidate.id() == &id)
+        .ok_or_else(|| "role_not_managed".to_string())?;
+    let capabilities = optional_capabilities(&state);
+    state_detail(&state.paths, role, capabilities.as_ref())
 }
 
 fn role_list_impl(state: &AppState) -> Result<RoleListDto, String> {
@@ -368,23 +390,10 @@ fn role_list_impl(state: &AppState) -> Result<RoleListDto, String> {
     Ok(RoleListDto { roles: summaries })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_role_list(state: State<'_, AppState>) -> Result<RoleListDto, String> {
-    let mut audit = OperationAuditGuard::new(&state.paths, "role:list", None);
-    let result = (|| {
-        let result = role_list_impl(&state)?;
-        let unchanged = result.roles.len().min(u32::MAX as usize) as u32;
-        let files = result
-            .roles
-            .iter()
-            .filter(|role| role.actual_file_present)
-            .count()
-            .min(u32::MAX as usize) as u32;
-        audit.success(0, unchanged, files);
-        Ok(result)
-    })();
-    finish_role_command_result(&mut audit, result)
+    role_list_impl(&state)
 }
 
 fn role_discover_impl(state: &AppState) -> Result<RoleDiscoveryDto, String> {
@@ -396,17 +405,10 @@ fn role_discover_impl(state: &AppState) -> Result<RoleDiscoveryDto, String> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_role_discover(state: State<'_, AppState>) -> Result<RoleDiscoveryDto, String> {
-    let mut audit = OperationAuditGuard::new(&state.paths, "role:discover", None);
-    let result = (|| {
-        let result = role_discover_impl(&state)?;
-        let count = result.roles.len().min(u32::MAX as usize) as u32;
-        audit.success(0, count, count);
-        Ok(result)
-    })();
-    finish_role_command_result(&mut audit, result)
+    role_discover_impl(&state)
 }
 
 fn discovery_item_dto(item: super::roles::DiscoveredRole) -> RoleDiscoveryItemDto {
@@ -978,26 +980,20 @@ pub(crate) fn migration_plan_dto(plan: RoleMigrationPlan) -> RoleMigrationDto {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_capability_get(state: State<'_, AppState>) -> Result<CapabilitySnapshotDto, String> {
-    let mut audit = OperationAuditGuard::new(&state.paths, "capability:get", None);
-    let result = (|| {
-        let result = capability_command_result(&state)?;
-        audit.success(0, result.models.len().min(u32::MAX as usize) as u32, 0);
-        Ok(result)
-    })();
-    finish_role_command_result(&mut audit, result)
+    capability_command_result(&state, false)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn guard_capability_refresh(
     state: State<'_, AppState>,
 ) -> Result<CapabilitySnapshotDto, String> {
     let mut audit = OperationAuditGuard::new(&state.paths, "capability:refresh", None);
     let result = (|| {
-        let result = capability_command_result(&state)?;
+        let result = capability_command_result(&state, true)?;
         audit.success(0, result.models.len().min(u32::MAX as usize) as u32, 0);
         Ok(result)
     })();
