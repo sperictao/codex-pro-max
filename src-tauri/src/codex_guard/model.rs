@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// 看守文件的物理解析格式。序列化值是稳定的 snake_case 字符串。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, specta::Type,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum GuardFileFormat {
     Toml,
@@ -32,7 +34,7 @@ impl fmt::Display for GuardFileFormat {
 }
 
 /// 稳定的、不会携带解析器原文的诊断代码。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum DiagnosticCode {
     InvalidUtf8,
@@ -76,20 +78,20 @@ impl DiagnosticCode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum DiagnosticSeverity {
     Error,
 }
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DiagnosticParams {
     pub expected_format: Option<GuardFileFormat>,
 }
 
 /// 传给 UI/审计层的结构化诊断；解析器错误文本和原文片段不得进入此对象。
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ValidationDiagnostic {
     pub code: DiagnosticCode,
