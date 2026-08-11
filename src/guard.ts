@@ -87,6 +87,32 @@ let guardUiState: GuardUiState = createGuardUiState();
 let lastGuardJson = "";
 let operationSequence = 0;
 
+// 离屏休眠：看守页不可见时不渲染、不轮询，迟到的响应一律丢弃。
+// epoch 单调递增，任何 enter/leave 都使在途 await 的结果失效，避免过期数据覆盖新状态。
+let guardActive = false;
+let guardEpoch = 0;
+
+/** shell 接线：进入看守页后调用。 */
+export function noteGuardPageEntered(): void {
+  guardActive = true;
+  guardEpoch += 1;
+}
+
+/** shell 接线：离开看守页后调用。离开后页面完全休眠。 */
+export function noteGuardPageLeft(): void {
+  guardActive = false;
+  guardEpoch += 1;
+}
+
+export function isGuardPageActive(): boolean {
+  return guardActive;
+}
+
+/** 在途响应是否已过期（页面离开过或又重新进入过）。 */
+function guardStale(epoch: number): boolean {
+  return epoch !== guardEpoch || !guardActive;
+}
+
 type GuardRoleWorkbenchState = {
   managed: RoleListDto | null;
   discovered: RoleDiscoveryDto | null;
@@ -294,8 +320,10 @@ export function renderGuardToggle(): void {
 export async function refreshGuardView(force = false): Promise<void> {
   const viewEl = document.getElementById("guard-view");
   if (!viewEl || viewEl.classList.contains("hidden")) return;
+  const epoch = guardEpoch;
   try {
     const view = await contractGetView();
+    if (guardStale(epoch)) return;
     const json = JSON.stringify(view);
     if (!force && json === lastGuardJson) {
       renderGuardWorkbench(false);
@@ -307,6 +335,7 @@ export async function refreshGuardView(force = false): Promise<void> {
     renderGuardWorkbench();
     renderGuardToggle();
   } catch (error) {
+    if (guardStale(epoch)) return;
     dispatchGuard({ type: "view/error", error: String(error) });
     renderGuardWorkbench();
   }
@@ -688,6 +717,8 @@ function renderGuardOperationAudit(): void {
 }
 
 function renderGuardRoleWorkbench(): void {
+  // 渲染硬门：离屏时绝不碰 DOM。设置页的看守文件列表是另一个界面区域，不在此门内。
+  if (!guardActive) return;
   renderManagedRoles();
   renderDiscoveredRoles();
   renderGuardCapability();
@@ -701,12 +732,22 @@ function renderGuardRoleWorkbench(): void {
 }
 
 export async function refreshGuardRoles(): Promise<void> {
+  const epoch = guardEpoch;
+  guardRoleState = { ...guardRoleState, busy: "roles", rolesError: null, discoveryError: null };
+  renderGuardRoleWorkbench();
   try {
-    guardRoleState = { ...guardRoleState, busy: "roles", rolesError: null, discoveryError: null };
-    renderGuardRoleWorkbench();
     const [managed, discovered] = await Promise.all([contractRoleList(), contractRoleDiscover()]);
+    // 过期响应只清 busy 不落地：状态可能已被重新进入后的新请求刷新
+    if (guardStale(epoch)) {
+      guardRoleState = { ...guardRoleState, busy: null };
+      return;
+    }
     guardRoleState = { ...guardRoleState, managed, discovered, busy: null, rolesError: null, discoveryError: null };
   } catch (error) {
+    if (guardStale(epoch)) {
+      guardRoleState = { ...guardRoleState, busy: null };
+      return;
+    }
     const message = guardErrorLabel(error);
     guardRoleState = { ...guardRoleState, busy: null, rolesError: message, discoveryError: message };
   }
@@ -737,12 +778,21 @@ export async function guardRoleMove(id: string, direction: "up" | "down"): Promi
 }
 
 export async function refreshGuardRoleDiscovery(): Promise<void> {
+  const epoch = guardEpoch;
+  guardRoleState = { ...guardRoleState, busy: "discovery", discoveryError: null };
+  renderGuardRoleWorkbench();
   try {
-    guardRoleState = { ...guardRoleState, busy: "discovery", discoveryError: null };
-    renderGuardRoleWorkbench();
     const discovered = await contractRoleDiscover();
+    if (guardStale(epoch)) {
+      guardRoleState = { ...guardRoleState, busy: null };
+      return;
+    }
     guardRoleState = { ...guardRoleState, discovered, busy: null };
   } catch (error) {
+    if (guardStale(epoch)) {
+      guardRoleState = { ...guardRoleState, busy: null };
+      return;
+    }
     guardRoleState = { ...guardRoleState, busy: null, discoveryError: guardErrorLabel(error) };
   }
   renderGuardRoleWorkbench();
@@ -816,12 +866,21 @@ export async function guardRoleDelete(id: string): Promise<void> {
 }
 
 export async function refreshGuardCapability(refresh = false): Promise<void> {
+  const epoch = guardEpoch;
+  guardRoleState = { ...guardRoleState, busy: refresh ? "capability" : guardRoleState.busy, capabilityError: null };
+  renderGuardRoleWorkbench();
   try {
-    guardRoleState = { ...guardRoleState, busy: refresh ? "capability" : guardRoleState.busy, capabilityError: null };
-    renderGuardRoleWorkbench();
     const capability = refresh ? await contractCapabilityRefresh() : await contractCapabilityGet();
+    if (guardStale(epoch)) {
+      guardRoleState = { ...guardRoleState, busy: null };
+      return;
+    }
     guardRoleState = { ...guardRoleState, capability, busy: null };
   } catch (error) {
+    if (guardStale(epoch)) {
+      guardRoleState = { ...guardRoleState, busy: null };
+      return;
+    }
     guardRoleState = { ...guardRoleState, busy: null, capabilityError: guardErrorLabel(error) };
   }
   renderGuardRoleWorkbench();
@@ -874,10 +933,13 @@ export async function runGuardRuntimeAudit(): Promise<void> {
 }
 
 export async function refreshGuardOperationAudit(): Promise<void> {
+  const epoch = guardEpoch;
   try {
     const records = await contractOperationAuditList();
+    if (guardStale(epoch)) return;
     guardRoleState = { ...guardRoleState, operationAudit: records, operationAuditError: null };
   } catch (error) {
+    if (guardStale(epoch)) return;
     guardRoleState = { ...guardRoleState, operationAuditError: guardErrorLabel(error) };
   }
   renderGuardRoleWorkbench();
@@ -1328,6 +1390,7 @@ function renderGuardGlobalActions(): void {
 }
 
 function renderGuardWorkbench(renderView = true): void {
+  if (!guardActive) return;
   const root = document.getElementById("guard-view");
   if (root) root.setAttribute("aria-busy", String(guardUiState.batch?.busy ?? false));
   if (renderView && guardUiState.view) {
@@ -1475,10 +1538,13 @@ export async function guardBatch(scope: BatchScope, action: BatchAction): Promis
 }
 
 export async function refreshGuardRecovery(): Promise<void> {
+  const epoch = guardEpoch;
   try {
     const recovery = await contractGetRecoveryStatus();
+    if (guardStale(epoch)) return;
     dispatchGuard({ type: "recovery/success", recovery });
   } catch (error) {
+    if (guardStale(epoch)) return;
     dispatchGuard({ type: "recovery/error", error: guardErrorCode(error) });
   }
   renderGuardWorkbench();

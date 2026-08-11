@@ -101,6 +101,9 @@ import {
   guardGroupMove,
   guardParameterMove,
   guardRoleMove,
+  noteGuardPageEntered,
+  noteGuardPageLeft,
+  isGuardPageActive,
 } from "./guard";
 import { renderFastctx, refreshFastctxStatus, toggleFastctx, openFastctxConsole } from "./fastctx";
 import {
@@ -287,8 +290,11 @@ export async function init(): Promise<void> {
     }
     statusPolling = setInterval(() => {
       void refreshStatus();
-      void refreshGuardView();
-      void refreshGuardRecovery();
+      // 看守页离屏即休眠：不为不可见的页面发起任何周期性调用
+      if (isGuardPageActive()) {
+        void refreshGuardView();
+        void refreshGuardRecovery();
+      }
     }, 3000);
   } catch (e) {
     toast(t("Initialization failed: {{error}}", { error: String(e) }), "error");
@@ -313,14 +319,19 @@ function delegate(containerId: string, event: "click" | "change", handlers: Reco
 }
 
 function wireEvents(): void {
-  // 顶部导航（进入视图后的数据刷新在调用点触发）
-  on("btn-home", "click", showHome);
+  // 顶部导航（进入视图后的数据刷新在调用点触发；看守页进入/离开要同步生命周期）
+  on("btn-home", "click", () => {
+    showHome();
+    noteGuardPageLeft();
+  });
   on("btn-skill", "click", () => {
     showSkill();
+    noteGuardPageLeft();
     void refreshSkillStatus();
   });
   on("btn-guard", "click", () => {
     showGuard();
+    noteGuardPageEntered();
     void refreshGuardView(true);
     void refreshGuardRecovery();
     void refreshGuardFiles();
@@ -328,7 +339,10 @@ function wireEvents(): void {
     void refreshGuardCapability();
     void refreshGuardOperationAudit();
   });
-  on("btn-settings", "click", toggleSettings);
+  on("btn-settings", "click", () => {
+    toggleSettings();
+    noteGuardPageLeft();
+  });
 
   // 主页
   on("btn-start-all", "click", () => void startAll());
