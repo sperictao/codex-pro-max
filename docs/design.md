@@ -12,17 +12,24 @@ Tauri v2 桌面启动器，用图形界面替代手写命令，管理两个后�
 ## 2. 架构
 
 ```
-┌────────────────────────────┐
-│ 前端 src/main.ts (TS + Vite) │  单页 UI：配置表单、进程状态卡片、主题切换
-│  invoke() / listen()        │  状态靠轮询 get_status 刷新
-└─────────────┬──────────────┘
-              ▼ Tauri commands
-┌─────────────────────────────┐
-│ Rust 后端 src-tauri/src/     │
-│  main.rs            命令入口  │
-│  config.rs          配置读写  │
-│  process_manager.rs 进程托管  │
-└─────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│ 前端 src/ (vanilla TS + ES modules)          │
+│ Guard 工作台：后端 DTO、进度事件、i18n/ARIA   │
+└──────────────────────┬──────────────────────┘
+                       ▼ typed Tauri commands/events
+┌─────────────────────────────────────────────┐
+│ Rust composition root / AppState             │
+│ ConfigStore + GuardCoordinator + poll         │
+└──────────────┬──────────────────┬───────────┘
+               ▼                  ▼
+      ┌────────────────┐  ┌──────────────────────┐
+      │ Guard planner   │  │ Transaction engine    │
+      │ format/semantic │  │ journal/snapshot/    │
+      │ ownership/role  │  │ atomic write/recover │
+      └────────┬───────┘  └──────────┬───────────┘
+               └──────────────┬──────┘
+                              ▼
+                Codex files + Launcher state
 ```
 
 ## 3. 模块
@@ -63,15 +70,14 @@ stopped → starting → running ⇄ stopping → stopped
 
 Codex 配置看守（词汇与边界见 [../CONTEXT.md](../CONTEXT.md) 与 [adr/0001](adr/0001-codex-config-guard-boundaries.md)）：
 
-- **schema**：内置 `guard_schema.json`（11 条 v1 参数），启动时与 `~/.dashi-taskboard-launcher/codex-guard-schema.json` 合并（同 id 内置覆盖磁盘，磁盘独有保留），UI 完全由合并结果驱动；用户可在 UI 增删自定义参数（id 前缀 `custom.`，可删除），写入该磁盘文件
-- **文件列表**：看守目标文件（内置 config.toml / AGENTS.md / agents/default.toml + 自定义）存于 `LauncherConfig.codex_guard.files`；视图分组与轮询只覆盖列表内文件，路径不可重复
-- **文件格式**：每个看守文件显式使用 `toml` / `json` / `markdown` / `plain_text`；旧配置中的 `md` 仅作为反序列化别名，下一次保存规范化为 `markdown`
-- **所有权预检**：保存、应用、锁定、启用、视图和轮询前统一规范化相对路径并校验根目录 containment；拒绝 symlink/物理别名、重复或父子文件路径、重复参数/TOML 路径、`file_overwrite` 共存和 FastCtx 保留键
-- **apply_mode**：`toml_key` / `toml_absent` / `file_overwrite` / `markdown_block`（`<!-- dashi:begin/end id -->` 标记区块）；TOML 读写走 `toml_edit`，保留注释与格式
-- **状态**：`LauncherConfig.codex_guard`（enabled + 每参数 value/applied/locked/last_checked/last_restored）
-- **轮询**：`poll_loop` tokio 任务，60s 固定间隔，仅看守文件列表内且锁定的参数；漂移即备份后改回
-- **备份**：任何写入前复制目标文件到 `~/.codex/dashi-backups/`，每文件保留 20 份
-- **命令**：`guard_get_view` / `guard_set_enabled` / `guard_set_value` / `guard_apply` / `guard_set_applied` / `guard_set_locked` / `guard_add_custom_param` / `guard_remove_custom_param` / `guard_get_schema_file_path` / `guard_get_files` / `guard_add_file` / `guard_update_file` / `guard_remove_file` / `guard_detect_file` / `guard_relativize_picked_path` / `guard_get_recovery_status` / `guard_retry_recovery`（路径检测：只搜顶层+一层子目录，结果落盘为检测记录，之后直接读记录不重复扫；恢复状态/重试命令只返回稳定 code）
+- **schema 与迁移**：内置 schema 与磁盘 schema 经过版本化 envelope 合并；启动时先完成迁移前置检查，再恢复未完成事务，最后才启动 poll。迁移未决时只暂停 Guard，其他启动器功能继续可用。
+- **文件格式**：每个看守文件显式使用 `toml` / `json` / `markdown` / `plain_text`；统一 bytes 校验在计划前和写后复用，旧 `md` 只作为迁移兼容值。
+- **计划与所有权**：格式、参数语义、Codex 能力和路径所有权先全部预检，再按物理文件聚合；拒绝 symlink、别名、重复/父子路径、重复 TOML 路径、`file_overwrite` 冲突和 FastCtx 保留键。
+- **事务边界**：`GuardCoordinator` 串行化 Guard、LauncherConfig、schema、FastCtx 和 poll 写入口。事务依次经过 Preflight、Snapshot、Writing、PostCheck、Restoring、Completed/Critical；journal、快照、durable backup 和 Launcher 状态共同提交/恢复。
+- **生命周期**：`Disabled` / `Applied` / `Locked` / `Mixed` 与 `Healthy` / `Drifted` / `Invalid` / `Unsupported` / `Error` 分开建模；四动作通过一个批量 command，前端不循环旧命令。
+- **多角色**：角色 ID、`agent_type` 和 `agents/<id>.toml` 主体恒等；最多托管 32 个角色，default 受保护，发现/纳入/复制/停止管理/删除均走同一事务边界。AGENTS 目录只写入转义后的角色摘要，运行证据由有界 JSONL 与双 SQLite 只读审计提供。
+- **备份与审计**：写入前保存 durable backup 并按每文件 20 份保留；操作审计只存最小白名单元数据，按 30 天或 500 条清理，append 失败通过稳定错误记录暴露。
+- **命令**：Guard command、DTO、event 和参数由 Rust Specta 单一来源生成到 `src/generated/guard-contracts.ts`，运行时 decoder 拒绝未知 schema/枚举；批量进度通过 `guard-operation-progress` 事件发送。
 
 ### 3.5 taskboard 集成与打包
 

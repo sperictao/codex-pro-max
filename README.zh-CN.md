@@ -19,7 +19,7 @@
 
 - 🟢 **Taskboard 服务** — 拉起/停止 [dashi-taskboard](https://github.com/chuspeeism/dashi-taskboard) 的 Node 服务，健康检查，首页聚合状态指示；内置 dashboard、列表、甘特图视图
 - 💉 **Codex 注入器** — 以独立 CDP 端口启动 Codex 桌面端并注入 Taskboard 面板（macOS / Windows 商店版均可识别）
-- 🔒 **Codex 配置看守** — 对 `~/.codex/` 下配置文件做 schema 驱动的参数托管、锁定与漂移自动恢复（词汇与边界见 [CONTEXT.md](CONTEXT.md)）
+- 🔒 **Codex 配置看守** — 对 `~/.codex/` 下配置文件做格式校验、分组原子操作（启用 / 锁定 / 解锁 / 禁用）、多角色管理与漂移自动恢复（词汇与边界见 [CONTEXT.md](CONTEXT.md)）
 - 🧰 **FastCtx 集成** — 一键安装 [FastCtx](https://github.com/yc-duan/fastctx) MCP 运行时并接入/摘除 Codex，全程委托 `fastctx` CLI
 - 🎨 **主题** — 42 个 tweakcn 主题族，原生支持亮 / 暗 / 跟随系统；28 种界面字体应用内自托管，完全离线
 - 🔄 **应用自更新** — 内置 Tauri Updater，检查更新、下载、重启一条龙
@@ -36,8 +36,20 @@
 
 1. **拉起服务** — 启动打包在内的 taskboard Node 服务，健康检查通过后标记就绪
 2. **注入面板** — 以独立 CDP 端口拉起 Codex 桌面端，把 Taskboard 面板注入其界面
-3. **看守配置** — 按 schema 托管 `~/.codex/` 参数；锁定后轮询（60s），发现漂移自动改回（写入前备份）
+3. **看守配置** — 写入前后统一校验 TOML、JSON、Markdown 和纯文本；可按逻辑组或角色执行原子启用 / 锁定 / 解锁 / 禁用。锁定后轮询（60s），发现漂移自动改回（写入前备份）。
 4. **自我更新** — 检查 GitHub Releases 的 `latest.json`，下载、验签、重启完成升级
+
+---
+
+## 🔒 使用 Codex 配置看守
+
+看守只管理你明确纳入 `~/.codex/` 的文件和参数。参数可以“启用”（写入一次期望值）、“锁定”（启动器运行期间持续把漂移改回）、“解锁”（停止自动恢复但保留当前值）或“禁用”（停止管理且不回滚文件）。对参数组或全部参数执行的动作都是全有全无：先校验整个作用域，每个物理文件只写一次，写入或写后复查失败时恢复整个批次。配置变更只影响新建任务；已经运行中的 Codex 任务继续使用启动时的配置快照。
+
+每次看守写入都会在替换前备份到 `~/.codex/dashi-backups/`。备份按文件保存，每个文件最多保留 20 份；看守没有自动还原按钮，需要排查变更时请保留该目录。事务被中断时，看守会进入“关键恢复”状态，暂停后续写入和轮询，显示稳定恢复码；只有显式重试成功（或你打开备份目录手动恢复）后才会继续。
+
+旧生命周期迁移遇到无法解释的 `applied=false, locked=true` 时不会猜测，请为该参数选择“禁用”或“启用”。旧角色内容冲突时必须三选一：“采用当前文件”“采用已存策略”或“使用安全默认”；作出选择前不会写盘。Codex 模型目录离线时，看守可以展示最近一次能力快照，并把编辑保留为页面内存草稿，但“启用”和“锁定”仍要求实时探测成功；“解锁”“禁用”和恢复操作仍可用。
+
+运行审计和操作审计只保留本地、有界的最小摘要，不上传数据，也不保存提示词、角色指令、文件原文、密钥、数据库路径或完整用户路径；运行证据同样不能声称服务端实际提供了哪个模型。
 
 ---
 
@@ -111,7 +123,7 @@ tag 推送触发 CI 五路构建（macOS aarch64 / x86_64 / universal、Windows�
 | 前端 | TypeScript 5 + Vite 6（单页 UI） |
 | UI 与主题 | Tailwind CSS v4 + tweakcn（shadcn token）主题体系；42 个主题族、28 种自托管字体（[ADR 0008](docs/adr/0008-tweakcn-token-theming.md)） |
 | taskboard 集成 | git submodule（fork 仓库消费上游） |
-| 配置看守 | schema 驱动，TOML / Markdown 区块 / 整文件三种比对模式 |
+| 配置看守 | schema 驱动，TOML / JSON / Markdown / 纯文本校验、逻辑分组、原子批量和结构化子代理角色 |
 | FastCtx 集成 | 委托 `fastctx` CLI（设置页支持一键 npm 全局安装） |
 | 自更新 | Tauri Updater + GitHub Releases |
 
@@ -139,6 +151,9 @@ npm run build:updater      # 生成 updater 产物
 | [scripts/build-themes.mjs](scripts/build-themes.mjs) | 主题构建：tweakcn registry → token + 本地字体 |
 | [docs/adr/0008](docs/adr/0008-tweakcn-token-theming.md) | tweakcn token 主题体系（取代 daisyUI 的 ADR 0007） |
 | [docs/adr/0001](docs/adr/0001-codex-config-guard-boundaries.md) | 看守的生命周期与回滚边界 |
+| [docs/adr/0010](docs/adr/0010-guard-logical-groups-atomic-batches-and-agent-roles.md) | 分组、原子批量、角色与生命周期边界 |
+| [docs/adr/0011](docs/adr/0011-guard-ipc-contract-generation.md) | Rust 单一来源 Guard IPC 合同 |
+| [docs/adr/0012](docs/adr/0012-guard-runtime-provenance-and-operation-audit.md) | 运行证据、隐私边界与本地操作审计 |
 | [docs/adr/0002](docs/adr/0002-taskboard-submodule-packaging.md) | taskboard submodule 集成与打包白名单 |
 | [docs/adr/0003](docs/adr/0003-fastctx-delegate-to-cli.md) | FastCtx 集成委托 fastctx CLI 的决策 |
 | [docs/release/GITHUB_RELEASE.md](docs/release/GITHUB_RELEASE.md) | 发布流程 |

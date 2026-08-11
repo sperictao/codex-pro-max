@@ -172,6 +172,9 @@ git diff --check
 
 ## Done
 
+JSONL 有界归并、双 SQLite 只读采样、冲突/截断降级、隐私白名单和操作审计存储已落地；
+状态保持 IN PROGRESS，操作审计命令覆盖和 append 失败的持久可见性仍需最终核验。
+
 - [ ] 每个 child turn 的 parent/client/outbound 证据确定性归并。
 - [ ] 任一冲突或多候选保持 ambiguous，不选 latest/first。
 - [ ] 多角色按 role ID 对照各自期望 model/effort。

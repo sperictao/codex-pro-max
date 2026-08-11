@@ -19,7 +19,7 @@
 
 - 🟢 **Taskboard Service** — start/stop the bundled [dashi-taskboard](https://github.com/chuspeeism/dashi-taskboard) Node service, with health checks and an aggregate status indicator on the home page; dashboard, list, and Gantt views included
 - 💉 **Codex Injector** — launches the Codex desktop app on a dedicated CDP port and injects the Taskboard panel (works with macOS and Windows Store builds)
-- 🔒 **Codex Config Guard** — schema-driven parameter management, locking, and automatic drift recovery for config files under `~/.codex/` (terminology and boundaries in [CONTEXT.md](CONTEXT.md))
+- 🔒 **Codex Config Guard** — format-validated, atomic grouped actions (apply / lock / unlock / disable), multi-role management, and automatic drift recovery for config files under `~/.codex/` (terminology and boundaries in [CONTEXT.md](CONTEXT.md))
 - 🧰 **FastCtx Integration** — one-click install of the [FastCtx](https://github.com/yc-duan/fastctx) MCP runtime and integrate/unapply it into Codex, delegated to the `fastctx` CLI
 - 🎨 **Themes** — 42 tweakcn theme families with native light / dark / system modes; 28 UI fonts self-hosted in-app, fully offline
 - 🔄 **Self-Update** — built-in Tauri Updater: check, download, restart, done
@@ -36,8 +36,37 @@ Grab the installer for your platform from [Releases](https://github.com/spericta
 
 1. **Start the service** — launches the bundled taskboard Node service and marks it ready once the health check passes
 2. **Inject the panel** — starts the Codex desktop app on a dedicated CDP port and injects the Taskboard panel into its UI
-3. **Guard the config** — manages `~/.codex/` parameters per schema; while locked, polling (60s) detects drift and restores the configured value (backing up before every write)
+3. **Guard the config** — validates TOML, JSON, Markdown, and plain text before and after writes; manage parameters by logical group or role with atomic apply / lock / unlock / disable actions. While locked, polling (60s) detects drift and restores the configured value (backing up before every write).
 4. **Update itself** — checks `latest.json` on GitHub Releases, downloads, verifies, and restarts
+
+---
+
+## 🔒 Using Codex Config Guard
+
+Guard manages the files and parameters you explicitly place under `~/.codex/`. A parameter can be
+`Apply`ed (write the expected value once), `Lock`ed (keep restoring drift while the launcher is
+running), `Unlock`ed (stop restoring but keep the value), or `Disable`d (stop managing it without
+rolling the file back). Actions on a group or on all parameters are all-or-nothing: Guard validates
+the whole scope, writes each physical file once, and restores the batch if a write or post-check
+fails. A configuration change affects new tasks; an already-running Codex task keeps the snapshot it
+started with.
+
+Every Guard write is backed up before replacement in `~/.codex/dashi-backups/`. Backups are kept per
+file, with at most 20 copies; Guard intentionally has no automatic restore button, so keep the
+backup directory when investigating a change. On an interrupted transaction, Guard enters **Critical
+recovery**, pauses further Guard writes and polling, shows a stable recovery code, and only resumes
+after an explicit retry succeeds (or after you open the backup directory and recover manually).
+
+On a legacy lifecycle migration, an invalid `applied=false, locked=true` state is never guessed:
+choose **Disabled** or **Apply** for that parameter. A conflicting legacy role migration has three
+explicit choices: **Adopt live file**, **Adopt stored policy**, or **Use safe default**; no file is
+written before the choice is made. If the Codex model directory is offline, Guard can show the most
+recent capability snapshot and keep an edit as an in-memory draft, but `Apply` and `Lock` still
+require a fresh successful probe. `Unlock`, `Disable`, and recovery actions remain available.
+
+Runtime and operation audits are local, bounded summaries only. They do not upload data or retain
+prompts, instructions, file contents, secrets, database paths, or full user paths; runtime evidence
+also cannot claim which model the server actually served.
 
 ---
 
@@ -111,7 +140,7 @@ Pushing the tag triggers five CI builds (macOS aarch64 / x86_64 / universal, Win
 | Frontend | TypeScript 5 + Vite 6 (single-page UI) |
 | UI and theming | Tailwind CSS v4 + tweakcn (shadcn token) theme system; 42 families, 28 self-hosted fonts ([ADR 0008](docs/adr/0008-tweakcn-token-theming.md)) |
 | taskboard integration | git submodule (consuming upstream via a fork) |
-| Config guard | schema-driven; TOML key / Markdown block / whole-file comparison modes |
+| Config guard | schema-driven; TOML / JSON / Markdown / plain-text validation, logical groups, atomic batches, and structured subagent roles |
 | FastCtx integration | delegated to the `fastctx` CLI (one-click npm global install in Settings) |
 | Self-update | Tauri Updater + GitHub Releases |
 
@@ -139,6 +168,9 @@ npm run build:updater      # generate updater artifacts
 | [scripts/build-themes.mjs](scripts/build-themes.mjs) | Theme build: tweakcn registry → tokens + local fonts |
 | [docs/adr/0008](docs/adr/0008-tweakcn-token-theming.md) | tweakcn token theming (supersedes daisyUI ADR 0007) |
 | [docs/adr/0001](docs/adr/0001-codex-config-guard-boundaries.md) | Guard lifecycle and rollback boundaries |
+| [docs/adr/0010](docs/adr/0010-guard-logical-groups-atomic-batches-and-agent-roles.md) | Groups, atomic batches, roles, and lifecycle boundaries |
+| [docs/adr/0011](docs/adr/0011-guard-ipc-contract-generation.md) | Rust-generated Guard IPC contracts |
+| [docs/adr/0012](docs/adr/0012-guard-runtime-provenance-and-operation-audit.md) | Runtime provenance, privacy, and local operation audit |
 | [docs/adr/0002](docs/adr/0002-taskboard-submodule-packaging.md) | taskboard submodule integration and packaging whitelist |
 | [docs/adr/0003](docs/adr/0003-fastctx-delegate-to-cli.md) | FastCtx integration delegates to the fastctx CLI |
 | [docs/release/GITHUB_RELEASE.md](docs/release/GITHUB_RELEASE.md) | Release pipeline |

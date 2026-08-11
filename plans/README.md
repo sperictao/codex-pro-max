@@ -1,7 +1,9 @@
 # Codex 配置看守：分组、原子批量与多子代理角色实施计划
 
 本计划由 `grill-with-docs` 决策会话生成，规划基线为 commit `6235f93`，
-领域边界以 `CONTEXT.md` 和 ADR 0010 为准。产品源码尚未修改。
+领域边界以 `CONTEXT.md`、ADR 0010 和 ADR 0012 为准。源码已完成主要功能实现，当前仍在
+补齐跨平台崩溃证据、操作审计覆盖、文档和隔离桌面验收；计划状态以本索引和各计划末尾的
+硬门清单为准。
 
 本目录替换此前围绕“仅 default 角色、无事务批量”的 001–004 草案；旧草案
 与已确认的多角色、跨文件逻辑组、崩溃恢复要求冲突，不得继续执行或局部叠加。
@@ -25,10 +27,10 @@
 | 计划 | 结果 | 依赖 | 风险 | 状态 |
 |---|---|---|---|---|
 | [001](001-guard-transaction-foundation.md) | 类型化格式管线、原子存储、单写协调器、事务日志和崩溃恢复 | 无 | HIGH | IN PROGRESS |
-| [002](002-logical-groups-and-bulk-lifecycle.md) | 逻辑组、生命周期枚举、全局/组级四动作、批量 DTO 与轮询接管 | 001 | HIGH | TODO |
-| [003](003-multi-subagent-role-management.md) | 结构化多角色、发现/纳入/停止/删除、能力探测、角色目录与旧 default 迁移 | 002 | HIGH | TODO |
-| [004](004-runtime-provenance-and-operation-audit.md) | 多角色运行时证据链、确定性归并、最小化本地审计 | 003 | HIGH | TODO |
-| [005](005-guard-workbench-and-release-acceptance.md) | 工作台 UI、迁移/恢复交互、i18n、CI、文档和隔离桌面验收 | 001–004 | MED | TODO |
+| [002](002-logical-groups-and-bulk-lifecycle.md) | 逻辑组、生命周期枚举、全局/组级四动作、批量 DTO 与轮询接管 | 001 | HIGH | IN PROGRESS |
+| [003](003-multi-subagent-role-management.md) | 结构化多角色、发现/纳入/停止/删除、能力探测、角色目录与旧 default 迁移 | 002 | HIGH | IN PROGRESS |
+| [004](004-runtime-provenance-and-operation-audit.md) | 多角色运行时证据链、确定性归并、最小化本地审计 | 003 | HIGH | IN PROGRESS |
+| [005](005-guard-workbench-and-release-acceptance.md) | 工作台 UI、迁移/恢复交互、i18n、CI、文档和隔离桌面验收 | 001–004 | MED | IN PROGRESS |
 
 状态只使用 `TODO`、`IN PROGRESS`、`DONE`、`BLOCKED: <原因>`。
 
@@ -109,6 +111,23 @@ git diff --check
 - 002：`guard_batch_contract`、`guard_state_migration`；
 - 003：`guard_roles_capability`、`guard_role_migration`、`guard_command_registry`；
 - 004：`guard_runtime_audit`、`guard_operation_audit`。
+
+## 当前证据快照（2026-08-11）
+
+- 已通过：`npm run check:contracts`、`npm test`、`npm run build`、TypeScript 检查、
+  `cargo fmt -- --check`、`cargo clippy --locked -- -D warnings`、`cargo +1.89.0 check
+  --locked`、`git diff --check`，以及 Rust 全量 runner（主 crate 200 个测试和所有 Guard
+  integration targets 均为非零且全绿）。
+- 已实现并有回归覆盖：四格式校验、所有权预检、原子事务/备份/journal/恢复、批量生命周期、
+  逻辑组、多角色管理、能力探测、运行时 provenance、双 SQLite 只读采样、最小操作审计、
+  进度事件和 Guard 工作台；普通事务回滚不再错误阻断，只有 Critical 恢复失败阻断，迁移
+  重试会先恢复 journal 再重试迁移（journal 恢复只依赖 journal 与目标文件字节，
+  不能被失败的迁移短路）。
+- 已取得 macOS 隔离 HOME 的 debug `.app` 真实交互证据：全局和组级四动作、确认框、成员/文件
+  统计、操作审计、能力不可用的 fail-closed、旧状态迁移的 pending/backup 展示均已验证。
+- 尚未满足 DONE 硬门：Windows 持久化/交叉编译环境和远程三平台矩阵的实际运行证据、完整桌面
+  验收矩阵（键盘、窄屏、200% 缩放、主题、角色表单、恢复重试等）、最终文档/ADR 逐项一致性
+  复核，以及公开命令在三平台上的最终审计覆盖证据。未完成这些项目时不得把计划标为 DONE。
 
 stable Rust 的全量测试和 Clippy 仍独立保留；矩阵不得用单个平台或模块过滤器代替上述
 公开边界目标。
