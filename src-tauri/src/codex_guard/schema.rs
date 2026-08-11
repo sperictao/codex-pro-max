@@ -1,11 +1,21 @@
 //! schema：内置 + 磁盘托管参数的加载、合并与按界面语言取值
 
+use std::sync::OnceLock;
+
 use crate::config::ConfigStore;
 
 use super::ownership::validate_param_ids;
 use super::{AppPaths, GuardFile, GuardParam};
 
 const BUILTIN_SCHEMA: &str = include_str!("guard_schema.json");
+
+/// 内置 schema 随二进制发布、永不变化，只解析一次；此前每次 load_schema
+/// （每个 view/poll/写命令至少一次）都重新解析 16KB JSON。
+fn builtin_schema() -> &'static [GuardParam] {
+    static BUILTIN: OnceLock<Vec<GuardParam>> = OnceLock::new();
+    BUILTIN
+        .get_or_init(|| serde_json::from_str(BUILTIN_SCHEMA).expect("内置 guard schema 必须可解析"))
+}
 
 /// 按界面语言挑文案：en 且有英文资源时用英文，否则用原文（纯函数，便于测试）
 pub(crate) fn pick_i18n<'a>(primary: &'a str, en: &'a str, lang: &str) -> &'a str {
@@ -33,11 +43,9 @@ pub(crate) fn schema_file_path(paths: &AppPaths) -> std::path::PathBuf {
 /// 例外：label_en/description_en/default_en 是随二进制发布的英文资源、不算用户数据，
 /// 始终以内置为准——否则旧版本释放到磁盘的中文副本会永久滞留（i18n 实机踩坑）
 pub(crate) fn load_schema(store: &ConfigStore) -> Result<Vec<GuardParam>, String> {
-    let builtin: Vec<GuardParam> =
-        serde_json::from_str(BUILTIN_SCHEMA).expect("内置 guard schema 必须可解析");
     let disk = store.load_guard_schema()?;
     validate_param_ids(&disk).map_err(|error| error.to_string())?;
-    let mut merged = merge_schema(builtin, disk);
+    let mut merged = merge_schema(builtin_schema().to_vec(), disk);
     let files = super::files::load_files(store)?;
     for param in &mut merged {
         if param.file_id.is_empty() {

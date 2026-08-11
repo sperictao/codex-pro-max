@@ -12,6 +12,55 @@ use crate::codex_guard::{AppPaths, GuardParam};
 const GUARD_SCHEMA_ENVELOPE_VERSION: u16 = 1;
 static NEXT_MIGRATION_BACKUP_ID: AtomicU64 = AtomicU64::new(1);
 
+struct CachedFile<T> {
+    mtime: SystemTime,
+    len: u64,
+    raw: Vec<u8>,
+    parsed: T,
+}
+
+/// Read + parse a store file once per on-disk change.  A page load otherwise reads and
+/// parses config.json ~10 times.  Writes always go through the journal, which renames a
+/// fresh file and bumps the mtime; even a pathological same-length write inside one mtime
+/// tick fails closed, because the transaction engine re-hashes the target and rejects a
+/// stale `original` precondition instead of writing.
+fn load_cached<T: Clone>(
+    cache: &Mutex<Option<CachedFile<T>>>,
+    path: &Path,
+    read_error: impl Fn(std::io::Error) -> String,
+    parse: impl FnOnce(Vec<u8>) -> Result<T, String>,
+) -> Result<Option<(Vec<u8>, T)>, String> {
+    let metadata = match std::fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(read_error(error)),
+    };
+    let mtime = metadata.modified().map_err(&read_error)?;
+    let len = metadata.len();
+    {
+        let guard = cache
+            .lock()
+            .map_err(|_| "config store lock is poisoned".to_string())?;
+        if let Some(cached) = guard.as_ref() {
+            if cached.mtime == mtime && cached.len == len {
+                return Ok(Some((cached.raw.clone(), cached.parsed.clone())));
+            }
+        }
+    }
+    let bytes = std::fs::read(path).map_err(read_error)?;
+    let parsed = parse(bytes.clone())?;
+    cache
+        .lock()
+        .map_err(|_| "config store lock is poisoned".to_string())?
+        .replace(CachedFile {
+            mtime,
+            len,
+            raw: bytes.clone(),
+            parsed: parsed.clone(),
+        });
+    Ok(Some((bytes, parsed)))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct GuardSchemaEnvelope {
@@ -126,6 +175,8 @@ pub(crate) struct ConfigStore {
     paths: AppPaths,
     lock: Arc<Mutex<()>>,
     writer: Arc<dyn AtomicFileWriter>,
+    launcher_cache: Arc<Mutex<Option<CachedFile<LauncherConfig>>>>,
+    schema_cache: Arc<Mutex<Option<CachedFile<Vec<GuardParam>>>>>,
 }
 
 pub(crate) struct LauncherTransaction<'a> {
@@ -172,6 +223,8 @@ impl ConfigStore {
             paths,
             lock: Arc::new(Mutex::new(())),
             writer: Arc::new(PlatformAtomicFileWriter),
+            launcher_cache: Arc::new(Mutex::new(None)),
+            schema_cache: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -181,6 +234,8 @@ impl ConfigStore {
             paths,
             lock: Arc::new(Mutex::new(())),
             writer,
+            launcher_cache: Arc::new(Mutex::new(None)),
+            schema_cache: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -491,24 +546,26 @@ impl ConfigStore {
 
     fn load_launcher_snapshot_unlocked(&self) -> Result<(Option<Vec<u8>>, LauncherConfig), String> {
         let path = self.paths.config_file();
-        let Some(bytes) = (match std::fs::read(&path) {
-            Ok(bytes) => Some(bytes),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-            Err(error) => {
-                return Err(crate::i18n::trf(
+        let Some((bytes, mut config)) = load_cached(
+            &self.launcher_cache,
+            &path,
+            |error| {
+                crate::i18n::trf(
                     "Failed to read config file: {error}",
                     &[("error", error.to_string())],
-                ));
-            }
-        }) else {
+                )
+            },
+            |bytes| {
+                serde_json::from_slice(&bytes).map_err(|error| {
+                    crate::i18n::trf(
+                        "Failed to parse config file: {error}",
+                        &[("error", error.to_string())],
+                    )
+                })
+            },
+        )? else {
             return Ok((None, LauncherConfig::default()));
         };
-        let mut config: LauncherConfig = serde_json::from_slice(&bytes).map_err(|error| {
-            crate::i18n::trf(
-                "Failed to parse config file: {error}",
-                &[("error", error.to_string())],
-            )
-        })?;
         config.taskboard_path = strip_unc(&config.taskboard_path);
         Ok((Some(bytes), config))
     }
@@ -522,43 +579,47 @@ impl ConfigStore {
         &self,
     ) -> Result<(Option<Vec<u8>>, Vec<GuardParam>), String> {
         let path = self.paths.guard_schema_file();
-        let bytes = match std::fs::read(&path) {
-            Ok(bytes) => bytes,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok((None, Vec::new()))
-            }
-            Err(error) => {
-                return Err(crate::i18n::trf(
+        load_cached(
+            &self.schema_cache,
+            &path,
+            |error| {
+                crate::i18n::trf(
                     "Failed to read schema file: {error}",
                     &[("error", error.to_string())],
-                ));
-            }
-        };
-        let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
-            crate::i18n::trf(
-                "Failed to parse schema file: {error}",
-                &[("error", error.to_string())],
-            )
-        })?;
-        if value.is_array() {
-            let schema = serde_json::from_value(value).map_err(|error| {
-                crate::i18n::trf(
-                    "Failed to parse schema file: {error}",
-                    &[("error", error.to_string())],
                 )
-            })?;
-            return Ok((Some(bytes), schema));
-        }
-        let envelope: GuardSchemaEnvelope = serde_json::from_value(value).map_err(|error| {
-            crate::i18n::trf(
-                "Failed to parse schema envelope: {error}",
-                &[("error", error.to_string())],
-            )
-        })?;
-        if envelope.schema_version != GUARD_SCHEMA_ENVELOPE_VERSION {
-            return Err("unsupported guard schema version".to_string());
-        }
-        Ok((Some(bytes), envelope.params))
+            },
+            |bytes| {
+                let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
+                    crate::i18n::trf(
+                        "Failed to parse schema file: {error}",
+                        &[("error", error.to_string())],
+                    )
+                })?;
+                if value.is_array() {
+                    return serde_json::from_value(value).map_err(|error| {
+                        crate::i18n::trf(
+                            "Failed to parse schema file: {error}",
+                            &[("error", error.to_string())],
+                        )
+                    });
+                }
+                let envelope: GuardSchemaEnvelope =
+                    serde_json::from_value(value).map_err(|error| {
+                        crate::i18n::trf(
+                            "Failed to parse schema envelope: {error}",
+                            &[("error", error.to_string())],
+                        )
+                    })?;
+                if envelope.schema_version != GUARD_SCHEMA_ENVELOPE_VERSION {
+                    return Err("unsupported guard schema version".to_string());
+                }
+                Ok(envelope.params)
+            },
+        )
+        .map(|cached| match cached {
+            Some((bytes, schema)) => (Some(bytes), schema),
+            None => (None, Vec::new()),
+        })
     }
 
     fn commit_file(
@@ -740,6 +801,41 @@ mod tests {
         let cfg = LauncherConfig::default();
         assert!(!cfg.codex_guard.enabled);
         assert!(cfg.codex_guard.params.is_empty());
+    }
+
+    #[test]
+    fn cached_loads_track_on_disk_rewrites() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::for_test(temp.path());
+        std::fs::create_dir_all(paths.launcher_root()).unwrap();
+        let store = ConfigStore::new(paths.clone());
+
+        // 缺文件 → 默认值，且不得把“缺文件”缓存下来挡住后续创建
+        assert!(store.load_launcher().unwrap().language == "system");
+        store
+            .update_launcher(|config| {
+                config.language = "en".to_string();
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(store.load_launcher().unwrap().language, "en");
+        // 重复加载走缓存，结果必须一致
+        assert_eq!(store.load_launcher().unwrap().language, "en");
+
+        // 进程外改写（不同长度）必须被下一次加载看到
+        let external = LauncherConfig {
+            language: "zh-CN".to_string(),
+            taskboard_port: 11111,
+            ..Default::default()
+        };
+        std::fs::write(
+            paths.config_file(),
+            serde_json::to_vec_pretty(&external).unwrap(),
+        )
+        .unwrap();
+        let reloaded = store.load_launcher().unwrap();
+        assert_eq!(reloaded.language, "zh-CN");
+        assert_eq!(reloaded.taskboard_port, 11111);
     }
 
     #[test]

@@ -172,7 +172,14 @@ pub(crate) fn read_role_file(paths: &AppPaths, id: &RoleId) -> Result<Option<Vec
 }
 
 pub(crate) fn role_file_present(paths: &AppPaths, id: &RoleId) -> Result<bool, String> {
-    Ok(read_role_file(paths, id)?.is_some())
+    // Presence must not read the whole file: role summaries call this once per role on every
+    // page load, and the bytes are discarded immediately.
+    let target = ensure_safe_role_target(paths, id, false)?;
+    match fs::symlink_metadata(&target) {
+        Ok(metadata) => Ok(metadata.is_file()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(_) => Err("role_file_stat_failed".to_string()),
+    }
 }
 
 /// Discover only direct agents/*.toml children. Nested files and symlink
