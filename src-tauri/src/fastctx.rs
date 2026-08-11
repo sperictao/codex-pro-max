@@ -55,9 +55,12 @@ fn cli_command(program: &str, args: &[&str]) -> Command {
 
 /// 跑一次 fastctx 子命令；失败统一成 stderr（空则 stdout）文本
 fn run_fastctx(args: &[&str]) -> Result<String, String> {
-    let output = cli_command("fastctx", args)
-        .output()
-        .map_err(|e| trf("Cannot execute fastctx: {error} (please run npm install --global fastctx first)", &[("error", e.to_string())]))?;
+    let output = cli_command("fastctx", args).output().map_err(|e| {
+        trf(
+            "Cannot execute fastctx: {error} (please run npm install --global fastctx first)",
+            &[("error", e.to_string())],
+        )
+    })?;
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     if output.status.success() {
@@ -86,9 +89,12 @@ pub(crate) fn is_fastctx_owned_toml_path(path: &str) -> bool {
 
 /// 接入状态唯一事实来源：config.toml 是否含 [mcp_servers.fastctx]
 fn integrated_in(content: &str) -> Result<bool, String> {
-    let doc = content
-        .parse::<toml_edit::DocumentMut>()
-        .map_err(|e| trf("Failed to parse config.toml: {error}", &[("error", e.to_string())]))?;
+    let doc = content.parse::<toml_edit::DocumentMut>().map_err(|e| {
+        trf(
+            "Failed to parse config.toml: {error}",
+            &[("error", e.to_string())],
+        )
+    })?;
     Ok(doc
         .get("mcp_servers")
         .and_then(|t| t.get("fastctx"))
@@ -125,7 +131,12 @@ pub fn fastctx_detect(state: State<'_, AppState>) -> Result<FastctxStatus, Strin
 pub fn fastctx_install() -> Result<(), String> {
     let output = cli_command("npm", &["install", "--global", "fastctx"])
         .output()
-        .map_err(|e| trf("Cannot execute npm: {error} (please install Node.js first)", &[("error", e.to_string())]))?;
+        .map_err(|e| {
+            trf(
+                "Cannot execute npm: {error} (please install Node.js first)",
+                &[("error", e.to_string())],
+            )
+        })?;
     if output.status.success() {
         Ok(())
     } else {
@@ -196,7 +207,12 @@ pub fn fastctx_open_console() -> Result<(), String> {
         Command::new("x-terminal-emulator")
             .args(["-e", "fastctx"])
             .spawn()
-            .map_err(|e| trf("Cannot open console (please run fastctx in a terminal yourself): {error}", &[("error", e.to_string())]))?;
+            .map_err(|e| {
+                trf(
+                    "Cannot open console (please run fastctx in a terminal yourself): {error}",
+                    &[("error", e.to_string())],
+                )
+            })?;
     }
     Ok(())
 }
@@ -208,7 +224,10 @@ mod tests {
     #[test]
     fn integrated_detection() {
         // 命中：fastctx 表存在（apply 后的形态）
-        assert!(integrated_in("[mcp_servers.fastctx]\ncommand = \"/home/u/.fastctx/bin/fastctx\"\n").unwrap());
+        assert!(integrated_in(
+            "[mcp_servers.fastctx]\ncommand = \"/home/u/.fastctx/bin/fastctx\"\n"
+        )
+        .unwrap());
         // 未命中：其它 MCP server 不算
         assert!(!integrated_in("[mcp_servers.other]\ncommand = \"x\"\n").unwrap());
         // 未命中：空文件 / 无 mcp_servers

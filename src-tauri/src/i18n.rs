@@ -226,7 +226,10 @@ mod tests {
     fn trf_replaces_named_placeholders() {
         set_current("en");
         assert_eq!(
-            trf("Path does not exist: {path}", &[("path", "/tmp/x".to_string())]),
+            trf(
+                "Path does not exist: {path}",
+                &[("path", "/tmp/x".to_string())]
+            ),
             "Path does not exist: /tmp/x"
         );
     }

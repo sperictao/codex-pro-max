@@ -1,11 +1,11 @@
 use serde::{Deserialize, Serialize};
+use std::process::Stdio;
 use std::sync::Arc;
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
-use std::process::Stdio;
 
-use crate::i18n::{tr, trf};
 use crate::codex_guard::AppPaths;
+use crate::i18n::{tr, trf};
 
 /// 为 Command 添加跨平台无窗口设置
 /// Windows: CREATE_NO_WINDOW 防止弹出终端窗口
@@ -96,7 +96,13 @@ pub fn resolve_node(paths: &AppPaths, node_path: &str) -> String {
             "/opt/homebrew/bin/node".to_string(),
             "/usr/local/bin/node".to_string(),
         ];
-        candidates.push(paths.home_root().join(".local/bin/node").to_string_lossy().to_string());
+        candidates.push(
+            paths
+                .home_root()
+                .join(".local/bin/node")
+                .to_string_lossy()
+                .to_string(),
+        );
         candidates.push("/usr/bin/node".to_string());
         for c in candidates {
             if std::path::Path::new(&c).exists() {
@@ -108,7 +114,9 @@ pub fn resolve_node(paths: &AppPaths, node_path: &str) -> String {
 }
 
 fn tail_of(buf: &Arc<std::sync::Mutex<String>>) -> String {
-    let Ok(b) = buf.lock() else { return String::new() };
+    let Ok(b) = buf.lock() else {
+        return String::new();
+    };
     let lines: Vec<&str> = b.lines().filter(|l| !l.trim().is_empty()).collect();
     lines[lines.len().saturating_sub(3)..].join(" | ")
 }
@@ -157,17 +165,23 @@ fn drain_child_output(child: &mut Child, buf: &Arc<std::sync::Mutex<String>>) {
 /// 不再让"运行中"掩盖秒退
 async fn fail_if_exited(proc: &mut ManagedProcess) -> Result<(), String> {
     tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-    let Some(child) = proc.child.as_mut() else { return Ok(()) };
+    let Some(child) = proc.child.as_mut() else {
+        return Ok(());
+    };
     match child.try_wait() {
         Ok(Some(status)) => {
             let tail = tail_of(&proc.output_tail);
-            let detail = if tail.is_empty() { String::new() } else { format!(": {}", tail) };
+            let detail = if tail.is_empty() {
+                String::new()
+            } else {
+                format!(": {}", tail)
+            };
             proc.child = None;
             proc.status = ProcessStatus::Failed;
-            proc.message = trf("Exited immediately after start ({status}){detail}", &[
-                ("status", status.to_string()),
-                ("detail", detail),
-            ]);
+            proc.message = trf(
+                "Exited immediately after start ({status}){detail}",
+                &[("status", status.to_string()), ("detail", detail)],
+            );
             crate::notify_process_failure(&proc.name, &proc.message);
             Err(proc.message.clone())
         }
@@ -181,16 +195,22 @@ fn refresh_liveness(proc: &mut ManagedProcess) {
     if proc.status != ProcessStatus::Running && proc.status != ProcessStatus::Starting {
         return;
     }
-    let Some(child) = proc.child.as_mut() else { return };
+    let Some(child) = proc.child.as_mut() else {
+        return;
+    };
     if let Ok(Some(status)) = child.try_wait() {
         let tail = tail_of(&proc.output_tail);
-        let detail = if tail.is_empty() { String::new() } else { format!(": {}", tail) };
+        let detail = if tail.is_empty() {
+            String::new()
+        } else {
+            format!(": {}", tail)
+        };
         proc.child = None;
         proc.status = ProcessStatus::Failed;
-        proc.message = trf("Process exited unexpectedly ({status}){detail}", &[
-            ("status", status.to_string()),
-            ("detail", detail),
-        ]);
+        proc.message = trf(
+            "Process exited unexpectedly ({status}){detail}",
+            &[("status", status.to_string()), ("detail", detail)],
+        );
         crate::notify_process_failure(&proc.name, &proc.message);
     }
 }
@@ -209,14 +229,19 @@ fn cdp_reachable(port: u16) -> bool {
 async fn taskboard_health_reachable(host: &str, port: u16) -> bool {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let timeout = std::time::Duration::from_millis(800);
-    let Ok(Ok(mut stream)) = tokio::time::timeout(
-        timeout,
-        tokio::net::TcpStream::connect((host, port)),
-    ).await else { return false };
+    let Ok(Ok(mut stream)) =
+        tokio::time::timeout(timeout, tokio::net::TcpStream::connect((host, port))).await
+    else {
+        return false;
+    };
     let req = format!("GET /health HTTP/1.1\r\nHost: {host}:{port}\r\nConnection: close\r\n\r\n");
-    if stream.write_all(req.as_bytes()).await.is_err() { return false; }
+    if stream.write_all(req.as_bytes()).await.is_err() {
+        return false;
+    }
     let mut buf = [0u8; 1024];
-    let Ok(Ok(n)) = tokio::time::timeout(timeout, stream.read(&mut buf)).await else { return false };
+    let Ok(Ok(n)) = tokio::time::timeout(timeout, stream.read(&mut buf)).await else {
+        return false;
+    };
     let head = String::from_utf8_lossy(&buf[..n]);
     head.starts_with("HTTP/1.1 200") || head.starts_with("HTTP/1.0 200")
 }
@@ -246,11 +271,16 @@ async fn ensure_codex_cdp(app_path: &str, port: u16, new_instance: bool) -> Resu
             cmd.arg("-n");
         }
         cmd.arg("-a").arg(app_path).arg("--args").args(&debug_args);
-        let out = cmd.output().map_err(|e| trf("Cannot launch Codex: {error}", &[("error", e.to_string())]))?;
+        let out = cmd
+            .output()
+            .map_err(|e| trf("Cannot launch Codex: {error}", &[("error", e.to_string())]))?;
         if !out.status.success() {
             return Err(trf(
                 "Failed to launch Codex: {error}",
-                &[("error", String::from_utf8_lossy(&out.stderr).trim().to_string())],
+                &[(
+                    "error",
+                    String::from_utf8_lossy(&out.stderr).trim().to_string(),
+                )],
             ));
         }
     }
@@ -265,20 +295,24 @@ async fn ensure_codex_cdp(app_path: &str, port: u16, new_instance: bool) -> Resu
             std::process::Command::new(app_path)
                 .args(&debug_args)
                 .spawn()
-                .map_err(|e| trf("Cannot launch Codex ({path}): {error}", &[
-                    ("path", app_path.to_string()),
-                    ("error", e.to_string()),
-                ]))?;
+                .map_err(|e| {
+                    trf(
+                        "Cannot launch Codex ({path}): {error}",
+                        &[("path", app_path.to_string()), ("error", e.to_string())],
+                    )
+                })?;
         }
         // Linux 直接带参数拉起 exe
         #[cfg(not(target_os = "windows"))]
         std::process::Command::new(app_path)
             .args(&debug_args)
             .spawn()
-            .map_err(|e| trf("Cannot launch Codex ({path}): {error}", &[
-                ("path", app_path.to_string()),
-                ("error", e.to_string()),
-            ]))?;
+            .map_err(|e| {
+                trf(
+                    "Cannot launch Codex ({path}): {error}",
+                    &[("path", app_path.to_string()), ("error", e.to_string())],
+                )
+            })?;
     }
     // 等窗口和 CDP 就绪，最多 15 秒
     for _ in 0..30 {
@@ -288,7 +322,10 @@ async fn ensure_codex_cdp(app_path: &str, port: u16, new_instance: bool) -> Resu
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
     Err(if new_instance {
-        trf("Timed out waiting for Codex CDP port {port} to be ready", &[("port", port.to_string())])
+        trf(
+            "Timed out waiting for Codex CDP port {port} to be ready",
+            &[("port", port.to_string())],
+        )
     } else {
         trf(
             "Timed out waiting for Codex CDP port {port} to be ready. If Codex is already running, quit it completely before using full launch mode",
@@ -324,10 +361,10 @@ impl ProcessManager {
         if taskboard_health_reachable(host, port).await {
             tb.child = None;
             tb.status = ProcessStatus::Running;
-            tb.message = trf("Reusing Taskboard server already running at http://{host}:{port}", &[
-                ("host", host.to_string()),
-                ("port", port.to_string()),
-            ]);
+            tb.message = trf(
+                "Reusing Taskboard server already running at http://{host}:{port}",
+                &[("host", host.to_string()), ("port", port.to_string())],
+            );
             return Ok(());
         }
 
@@ -353,17 +390,20 @@ impl ProcessManager {
                 tb.child = Some(child);
                 fail_if_exited(&mut tb).await?;
                 tb.status = ProcessStatus::Running;
-                tb.message = trf("Taskboard running at http://{host}:{port}", &[
-                    ("host", host.to_string()),
-                    ("port", port.to_string()),
-                ]);
+                tb.message = trf(
+                    "Taskboard running at http://{host}:{port}",
+                    &[("host", host.to_string()), ("port", port.to_string())],
+                );
                 Ok(())
             }
             Err(e) => {
                 tb.status = ProcessStatus::Failed;
                 tb.message = trf("Launch failed: {error}", &[("error", e.to_string())]);
                 crate::notify_process_failure(&tb.name, &tb.message);
-                Err(trf("Failed to start Taskboard server: {error}", &[("error", e.to_string())]))
+                Err(trf(
+                    "Failed to start Taskboard server: {error}",
+                    &[("error", e.to_string())],
+                ))
             }
         }
     }
@@ -399,10 +439,7 @@ impl ProcessManager {
                 }
             }
             // 等待退出，超时则强制 kill
-            match tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                child.wait(),
-            ).await {
+            match tokio::time::timeout(std::time::Duration::from_secs(5), child.wait()).await {
                 Ok(_) => {}
                 Err(_) => {
                     if let Some(child) = tb.child.as_mut() {
@@ -475,9 +512,15 @@ impl ProcessManager {
                 fail_if_exited(&mut inj).await?;
                 inj.status = ProcessStatus::Running;
                 if separate_window {
-                    inj.message = trf("Injector running (separate window, CDP port {port})", &[("port", cdp_port.to_string())]);
+                    inj.message = trf(
+                        "Injector running (separate window, CDP port {port})",
+                        &[("port", cdp_port.to_string())],
+                    );
                 } else {
-                    inj.message = trf("Injector running (full launch, CDP port {port})", &[("port", cdp_port.to_string())]);
+                    inj.message = trf(
+                        "Injector running (full launch, CDP port {port})",
+                        &[("port", cdp_port.to_string())],
+                    );
                 }
                 Ok(())
             }
@@ -485,7 +528,10 @@ impl ProcessManager {
                 inj.status = ProcessStatus::Failed;
                 inj.message = trf("Launch failed: {error}", &[("error", e.to_string())]);
                 crate::notify_process_failure(&inj.name, &inj.message);
-                Err(trf("Failed to start Codex injector: {error}", &[("error", e.to_string())]))
+                Err(trf(
+                    "Failed to start Codex injector: {error}",
+                    &[("error", e.to_string())],
+                ))
             }
         }
     }
@@ -519,10 +565,7 @@ impl ProcessManager {
                         .output();
                 }
             }
-            match tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                child.wait(),
-            ).await {
+            match tokio::time::timeout(std::time::Duration::from_secs(5), child.wait()).await {
                 Ok(_) => {}
                 Err(_) => {
                     if let Some(child) = inj.child.as_mut() {
@@ -569,7 +612,11 @@ mod tests {
         // 空配置：探测到的路径必须真实存在（或退回 PATH 查找）
         let node = resolve_node(&paths, "");
         if node != "node" {
-            assert!(std::path::Path::new(&node).exists(), "探测结果不存在: {}", node);
+            assert!(
+                std::path::Path::new(&node).exists(),
+                "探测结果不存在: {}",
+                node
+            );
         }
     }
 }
