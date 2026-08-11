@@ -5,8 +5,8 @@ use crate::i18n::{tr, trf};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 
-use super::atomic_store::{AtomicFileWriter, PlatformAtomicFileWriter};
-use super::backup::backup_before_write;
+use super::atomic_store::{remove_regular_file, AtomicFileWriter, PlatformAtomicFileWriter};
+use super::backup::backup_before_write_for_batch;
 use super::format::{diagnostics_message, parse_toml_document, validate_bytes};
 use super::journal::{self, JournalEntry, JournalEnvelope, JournalParticipant};
 use super::markdown_block::{block_begin, block_end, extract_block, upsert_block};
@@ -18,8 +18,8 @@ use super::toml_ops::{
     toml_matches_json,
 };
 use super::transaction::{
-    recovery_action, RecoveryAction, TransactionError, TransactionErrorCode, TransactionPhase,
-    TransactionState,
+    recovery_action, RecoveryAction, TransactionError, TransactionErrorCode, TransactionFaultPlan,
+    TransactionFaultPoint, TransactionPhase, TransactionState,
 };
 use super::validate::validate_param_for_file;
 use super::{AppPaths, GuardParam, GuardParamState};
@@ -71,6 +71,9 @@ pub(crate) struct TransactionWrite<'a> {
     pub(crate) relative_file: String,
     pub(crate) target: PathBuf,
     pub(crate) original: Option<Vec<u8>>,
+    /// `true` replaces/creates the target; `false` removes it after the same
+    /// durable snapshot and post-check protocol.
+    pub(crate) candidate_exists: bool,
     pub(crate) candidate: Vec<u8>,
     pub(crate) writer: &'a dyn AtomicFileWriter,
 }
@@ -483,6 +486,7 @@ pub(crate) fn check_many(
 }
 
 /// 比对某参数的期望状态与实际状态。格式解析失败只报结构化摘要，绝不重写文件。
+#[cfg(test)]
 pub(crate) fn check(
     paths: &AppPaths,
     param: &GuardParam,
@@ -584,6 +588,7 @@ fn check_loaded(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn prepare_single_plan(
     paths: &AppPaths,
     param: &GuardParam,
@@ -659,6 +664,7 @@ pub(crate) fn execute_single_plan(
             relative_file: plan.relative_file,
             target: file,
             original,
+            candidate_exists: true,
             candidate: plan.candidate,
             writer: &writer,
         }],
@@ -669,12 +675,41 @@ pub(crate) fn execute_transaction_batch(
     paths: &AppPaths,
     writes: Vec<TransactionWrite<'_>>,
 ) -> Result<(), String> {
+    let mut faults = TransactionFaultPlan::disabled();
+    execute_transaction_batch_inner(paths, writes, &mut faults)
+}
+
+#[cfg(test)]
+pub(crate) fn execute_transaction_batch_with_fault(
+    paths: &AppPaths,
+    writes: Vec<TransactionWrite<'_>>,
+    point: TransactionFaultPoint,
+) -> Result<(), String> {
+    let mut faults = TransactionFaultPlan::fail_at(point);
+    execute_transaction_batch_inner(paths, writes, &mut faults)
+}
+
+fn execute_transaction_batch_inner(
+    paths: &AppPaths,
+    writes: Vec<TransactionWrite<'_>>,
+    faults: &mut TransactionFaultPlan,
+) -> Result<(), String> {
+    for write in &writes {
+        let expected_target = participant_target(paths, write.participant, &write.relative_file)
+            .map_err(transaction_error_message)?;
+        if expected_target != write.target {
+            return Err(transaction_error_message(TransactionError::new(
+                TransactionErrorCode::JournalSchema,
+            )));
+        }
+    }
     let changed: Vec<&TransactionWrite<'_>> = writes
         .iter()
         .filter(|write| {
             let original_exists = write.original.is_some();
             let original = write.original.as_deref().unwrap_or_default();
-            !original_exists || sha256_hex(original) != sha256_hex(&write.candidate)
+            original_exists != write.candidate_exists
+                || (write.candidate_exists && sha256_hex(original) != sha256_hex(&write.candidate))
         })
         .collect();
     if changed.is_empty() {
@@ -705,7 +740,12 @@ pub(crate) fn execute_transaction_batch(
                 relative_file: write.relative_file.clone(),
                 original_exists: write.original.is_some(),
                 original_sha256: sha256_hex(write.original.as_deref().unwrap_or_default()),
-                candidate_sha256: sha256_hex(&write.candidate),
+                candidate_exists: write.candidate_exists,
+                candidate_sha256: if write.candidate_exists {
+                    sha256_hex(&write.candidate)
+                } else {
+                    empty_sha256().to_string()
+                },
                 snapshot_ref: format!("snapshots/entry-{index}.bin"),
                 completed: false,
                 post_checked: false,
@@ -714,9 +754,26 @@ pub(crate) fn execute_transaction_batch(
             .collect(),
     );
     let transaction_root = paths.transaction_root();
+    faults
+        .check(TransactionFaultPoint::JournalCreate)
+        .map_err(transaction_error_message)?;
     journal::write_journal(transaction_root, &journal).map_err(transaction_error_message)?;
+    faults
+        .check(TransactionFaultPoint::JournalSync)
+        .map_err(transaction_error_message)?;
+    crash_barrier("journal");
 
     for (index, write) in changed.iter().enumerate() {
+        faults
+            .check(TransactionFaultPoint::Snapshot(index))
+            .map_err(|error| {
+                mark_transaction_critical(
+                    transaction_root,
+                    &mut journal,
+                    &mut TransactionState::new(),
+                    error.code,
+                )
+            })?;
         if let Err(error) = journal::write_snapshot(
             transaction_root,
             &batch_id,
@@ -730,6 +787,7 @@ pub(crate) fn execute_transaction_batch(
                 error.code,
             ));
         }
+        crash_barrier("snapshot");
     }
 
     let mut state = TransactionState::new();
@@ -738,21 +796,28 @@ pub(crate) fn execute_transaction_batch(
         &mut journal,
         &mut state,
         TransactionPhase::Snapshot,
+        faults,
     )
     .map_err(transaction_error_message)?;
 
     for (index, write) in changed.iter().enumerate() {
-        let entry = &journal.entries[index];
-        if !target_matches(&write.target, entry.original_exists, &entry.original_sha256).map_err(
-            |_| {
-                mark_transaction_critical(
-                    transaction_root,
-                    &mut journal,
-                    &mut state,
-                    TransactionErrorCode::ReadFailed,
-                )
-            },
-        )? {
+        let (original_exists, original_sha256) = {
+            let entry = &journal.entries[index];
+            (entry.original_exists, entry.original_sha256.clone())
+        };
+        faults
+            .check(TransactionFaultPoint::PreWriteIdentity(index))
+            .map_err(|error| {
+                mark_transaction_critical(transaction_root, &mut journal, &mut state, error.code)
+            })?;
+        if !target_matches(&write.target, original_exists, &original_sha256).map_err(|_| {
+            mark_transaction_critical(
+                transaction_root,
+                &mut journal,
+                &mut state,
+                TransactionErrorCode::ReadFailed,
+            )
+        })? {
             return Err(mark_transaction_critical(
                 transaction_root,
                 &mut journal,
@@ -767,14 +832,27 @@ pub(crate) fn execute_transaction_batch(
         &mut journal,
         &mut state,
         TransactionPhase::Writing,
+        faults,
     )
     .map_err(transaction_error_message)?;
 
     for (index, write) in changed.iter().enumerate() {
-        let entry = &journal.entries[index];
-        let still_original =
-            target_matches(&write.target, entry.original_exists, &entry.original_sha256)
-                .map_err(|_| TransactionErrorCode::ReadFailed);
+        let (original_exists, original_sha256) = {
+            let entry = &journal.entries[index];
+            (entry.original_exists, entry.original_sha256.clone())
+        };
+        if let Err(error) = faults.check(TransactionFaultPoint::Write(index)) {
+            return restore_batch_after_failure(
+                transaction_root,
+                &mut journal,
+                &mut state,
+                &changed,
+                error.code,
+                faults,
+            );
+        }
+        let still_original = target_matches(&write.target, original_exists, &original_sha256)
+            .map_err(|_| TransactionErrorCode::ReadFailed);
         if !matches!(still_original, Ok(true)) {
             let failure = still_original
                 .err()
@@ -785,24 +863,52 @@ pub(crate) fn execute_transaction_batch(
                 &mut state,
                 &changed,
                 failure,
+                faults,
             );
         }
         let backup_name = match write.participant {
             JournalParticipant::Codex => write.relative_file.clone(),
-            JournalParticipant::Launcher => format!("launcher/{}", write.relative_file),
+            JournalParticipant::Launcher | JournalParticipant::LauncherSchema => {
+                format!("launcher/{}", write.relative_file)
+            }
         };
-        if backup_before_write(paths, &backup_name, &write.target).is_err()
-            || write
-                .writer
-                .replace(&write.target, &write.candidate)
-                .is_err()
-        {
+        if let Err(error) = faults.check(TransactionFaultPoint::DurableBackup(index)) {
+            return restore_batch_after_failure(
+                transaction_root,
+                &mut journal,
+                &mut state,
+                &changed,
+                error.code,
+                faults,
+            );
+        }
+        if backup_before_write_for_batch(paths, &backup_name, &write.target, &batch_id).is_err() {
+            return restore_batch_after_failure(
+                transaction_root,
+                &mut journal,
+                &mut state,
+                &changed,
+                TransactionErrorCode::DurableBackupFailed,
+                faults,
+            );
+        }
+        let replace_failed = faults.check(TransactionFaultPoint::Replace(index)).is_err()
+            || if write.candidate_exists {
+                write
+                    .writer
+                    .replace(&write.target, &write.candidate)
+                    .is_err()
+            } else {
+                remove_target(&write.target).is_err()
+            };
+        if replace_failed {
             return restore_batch_after_failure(
                 transaction_root,
                 &mut journal,
                 &mut state,
                 &changed,
                 TransactionErrorCode::ReplaceFailed,
+                faults,
             );
         }
         journal.entries[index].completed = true;
@@ -814,6 +920,7 @@ pub(crate) fn execute_transaction_batch(
                 error.code,
             ));
         }
+        crash_barrier("write");
     }
 
     transition_and_persist(
@@ -821,12 +928,26 @@ pub(crate) fn execute_transaction_batch(
         &mut journal,
         &mut state,
         TransactionPhase::PostCheck,
+        faults,
     )
     .map_err(transaction_error_message)?;
     for (index, write) in changed.iter().enumerate() {
+        if faults
+            .check(TransactionFaultPoint::PostCheck(index))
+            .is_err()
+        {
+            return restore_batch_after_failure(
+                transaction_root,
+                &mut journal,
+                &mut state,
+                &changed,
+                TransactionErrorCode::FaultInjected,
+                faults,
+            );
+        }
         let post_checked = target_matches(
             &write.target,
-            true,
+            journal.entries[index].candidate_exists,
             &journal.entries[index].candidate_sha256,
         )
         .map_err(|_| TransactionErrorCode::ReadFailed);
@@ -840,6 +961,7 @@ pub(crate) fn execute_transaction_batch(
                 &mut state,
                 &changed,
                 failure,
+                faults,
             );
         }
         journal.entries[index].post_checked = true;
@@ -851,6 +973,7 @@ pub(crate) fn execute_transaction_batch(
                 error.code,
             ));
         }
+        crash_barrier("post_check");
     }
 
     transition_and_persist(
@@ -858,11 +981,24 @@ pub(crate) fn execute_transaction_batch(
         &mut journal,
         &mut state,
         TransactionPhase::Completed,
+        faults,
     )
     .map_err(transaction_error_message)?;
+    faults
+        .check(TransactionFaultPoint::CommitMarkerBefore)
+        .map_err(transaction_error_message)?;
     journal.commit_marker = true;
     journal::write_journal(transaction_root, &journal).map_err(transaction_error_message)?;
-    journal::cleanup_batch(transaction_root, &batch_id).map_err(transaction_error_message)
+    faults
+        .check(TransactionFaultPoint::CommitMarkerAfter)
+        .map_err(transaction_error_message)?;
+    // 提交标记落盘即事务完成。清理只是回收 journal 目录，失败不改变已提交的结果——
+    // 上报失败会让调用方以为写入没发生，而 journal_io 还会把后续所有 Guard 写入
+    // 挡在恢复门后。遗留目录由下次启动的恢复按 commit marker 清掉。
+    let _ = faults
+        .check(TransactionFaultPoint::JournalCleanup)
+        .and_then(|()| journal::cleanup_batch(transaction_root, &batch_id));
+    Ok(())
 }
 
 fn transition_and_persist(
@@ -870,10 +1006,13 @@ fn transition_and_persist(
     journal: &mut JournalEnvelope,
     state: &mut TransactionState,
     next: TransactionPhase,
+    faults: &mut TransactionFaultPlan,
 ) -> Result<(), TransactionError> {
+    faults.check(TransactionFaultPoint::StateSaveBefore(next))?;
     state.transition(next)?;
     journal.phase = next;
-    journal::write_journal(root, journal).map(|_| ())
+    journal::write_journal(root, journal)?;
+    faults.check(TransactionFaultPoint::StateSaveAfter(next))
 }
 
 fn target_matches(
@@ -895,10 +1034,28 @@ fn restore_batch_after_failure(
     state: &mut TransactionState,
     writes: &[&TransactionWrite<'_>],
     failure: TransactionErrorCode,
+    faults: &mut TransactionFaultPlan,
 ) -> Result<(), String> {
-    transition_and_persist(root, journal, state, TransactionPhase::Restoring)
-        .map_err(transaction_error_message)?;
+    // 进到这里时已有参与者被替换到候选值。若连回滚都启动不了，就不能报成普通失败：
+    // 那会让调用方以为什么都没发生，而磁盘上留着半批已应用的写入，且启动恢复
+    // 不会被叫去处理。标记 critical，把这批交给恢复通路。
+    if transition_and_persist(root, journal, state, TransactionPhase::Restoring, faults).is_err() {
+        return Err(mark_transaction_critical(
+            root,
+            journal,
+            state,
+            TransactionErrorCode::RestoreFailedCritical,
+        ));
+    }
     for (index, write) in writes.iter().enumerate() {
+        if faults.check(TransactionFaultPoint::Restore(index)).is_err() {
+            return Err(mark_transaction_critical(
+                root,
+                journal,
+                state,
+                TransactionErrorCode::RestoreFailedCritical,
+            ));
+        }
         let entry = &journal.entries[index];
         let current = match read_existing(&write.target) {
             Ok(current) => current,
@@ -919,7 +1076,11 @@ fn restore_batch_after_failure(
             journal.entries[index].restored = true;
             continue;
         }
-        if !content_matches(current.as_deref(), true, &entry.candidate_sha256) {
+        if !content_matches(
+            current.as_deref(),
+            entry.candidate_exists,
+            &entry.candidate_sha256,
+        ) {
             return Err(mark_transaction_critical(
                 root,
                 journal,
@@ -939,19 +1100,9 @@ fn restore_batch_after_failure(
         ) {
             return Err(mark_transaction_critical(root, journal, state, error.code));
         }
-        if !target_matches(
-            &write.target,
-            entry.original_exists,
-            &entry.original_sha256,
-        )
-        .map_err(|_| {
-            mark_transaction_critical(
-                root,
-                journal,
-                state,
-                TransactionErrorCode::ReadFailed,
-            )
-        })? {
+        if !target_matches(&write.target, entry.original_exists, &entry.original_sha256).map_err(
+            |_| mark_transaction_critical(root, journal, state, TransactionErrorCode::ReadFailed),
+        )? {
             return Err(mark_transaction_critical(
                 root,
                 journal,
@@ -961,16 +1112,30 @@ fn restore_batch_after_failure(
         }
         journal.entries[index].restored = true;
     }
-    transition_and_persist(root, journal, state, TransactionPhase::Completed)
+    transition_and_persist(root, journal, state, TransactionPhase::Completed, faults)
+        .map_err(transaction_error_message)?;
+    faults
+        .check(TransactionFaultPoint::CommitMarkerBefore)
         .map_err(transaction_error_message)?;
     journal.commit_marker = true;
     journal::write_journal(root, journal).map_err(transaction_error_message)?;
-    journal::cleanup_batch(root, &journal.batch_id).map_err(transaction_error_message)?;
+    faults
+        .check(TransactionFaultPoint::CommitMarkerAfter)
+        .map_err(transaction_error_message)?;
+    // 回滚已完整完成并标记提交；清理失败不得盖掉真实的失败原因，也不得把一次
+    // 干净的回滚升级成恢复阻断错误。
+    let _ = faults
+        .check(TransactionFaultPoint::JournalCleanup)
+        .and_then(|()| journal::cleanup_batch(root, &journal.batch_id));
     Err(transaction_error_message(TransactionError::new(failure)))
 }
 
 /// 启动时处理上一次事务留下的 durable journal。若当前内容既不是原始值也
 /// 不是候选值，则 fail closed，保留 journal 供人工/后续 recovery 处理，不覆盖外部修改。
+///
+/// 单个批次失败不得中断其余批次：一个坏目录会让所有待恢复批次永远得不到处理，
+/// 而 Guard 写入已被恢复阻断，用户在应用内没有任何出路。所有错误先收集，
+/// 全部批次处理完再一起上报。
 pub(crate) fn recover_pending_transactions(paths: &AppPaths) -> Result<(), String> {
     let root = paths.transaction_root();
     let batches = match std::fs::read_dir(root) {
@@ -982,43 +1147,72 @@ pub(crate) fn recover_pending_transactions(paths: &AppPaths) -> Result<(), Strin
             )))
         }
     };
+    let mut first_error: Option<String> = None;
+    let fail = |error: String, first_error: &mut Option<String>| {
+        if first_error.is_none() {
+            *first_error = Some(error);
+        }
+    };
     for batch in batches {
-        let batch = batch.map_err(|_| {
-            transaction_error_message(TransactionError::new(TransactionErrorCode::JournalIo))
-        })?;
-        if !batch
-            .file_type()
-            .map_err(|_| {
-                transaction_error_message(TransactionError::new(TransactionErrorCode::JournalIo))
-            })?
-            .is_dir()
-        {
+        let Ok(batch) = batch else {
+            fail(
+                transaction_error_message(TransactionError::new(TransactionErrorCode::JournalIo)),
+                &mut first_error,
+            );
+            continue;
+        };
+        if !batch.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
             continue;
         }
         let batch_id = batch.file_name();
         let Some(batch_id) = batch_id.to_str() else {
-            return Err(transaction_error_message(TransactionError::new(
-                TransactionErrorCode::JournalSchema,
-            )));
+            fail(
+                transaction_error_message(TransactionError::new(
+                    TransactionErrorCode::JournalSchema,
+                )),
+                &mut first_error,
+            );
+            continue;
         };
         let journal_path = batch.path().join("journal.json");
-        let mut journal =
-            journal::read_journal(&journal_path).map_err(transaction_error_message)?;
-        if journal.batch_id != batch_id {
-            return Err(transaction_error_message(TransactionError::new(
-                TransactionErrorCode::JournalSchema,
-            )));
+        // 批次目录先于 journal.json 建立。崩在这个窗口时目录里没有 journal，
+        // 也就不可能已经写过任何目标文件——直接清理，不能让它永久阻断恢复。
+        if !journal_path.exists() {
+            if let Err(error) = journal::cleanup_batch(root, batch_id) {
+                fail(transaction_error_message(error), &mut first_error);
+            }
+            continue;
         }
-        match recovery_action(&journal) {
+        let mut journal = match journal::read_journal(&journal_path) {
+            Ok(journal) => journal,
+            Err(error) => {
+                fail(transaction_error_message(error), &mut first_error);
+                continue;
+            }
+        };
+        if journal.batch_id != batch_id {
+            fail(
+                transaction_error_message(TransactionError::new(
+                    TransactionErrorCode::JournalSchema,
+                )),
+                &mut first_error,
+            );
+            continue;
+        }
+        let outcome = match recovery_action(&journal) {
             RecoveryAction::CleanupCompleted => {
-                journal::cleanup_batch(root, batch_id).map_err(transaction_error_message)?;
+                journal::cleanup_batch(root, batch_id).map_err(transaction_error_message)
             }
-            RecoveryAction::RestorePending => {
-                recover_one_batch(paths, &mut journal)?;
-            }
+            RecoveryAction::RestorePending => recover_one_batch(paths, &mut journal),
+        };
+        if let Err(error) = outcome {
+            fail(error, &mut first_error);
         }
     }
-    Ok(())
+    match first_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
 }
 
 fn recover_one_batch(paths: &AppPaths, journal: &mut JournalEnvelope) -> Result<(), String> {
@@ -1028,12 +1222,20 @@ fn recover_one_batch(paths: &AppPaths, journal: &mut JournalEnvelope) -> Result<
     journal::write_journal(root, journal).map_err(transaction_error_message)?;
     let batch_id = journal.batch_id.clone();
     for index in 0..journal.entries.len() {
-        let (relative_file, original_exists, original_sha256, candidate_sha256, snapshot_ref) = {
+        let (
+            relative_file,
+            original_exists,
+            original_sha256,
+            candidate_exists,
+            candidate_sha256,
+            snapshot_ref,
+        ) = {
             let entry = &journal.entries[index];
             (
                 entry.relative_file.clone(),
                 entry.original_exists,
                 entry.original_sha256.clone(),
+                entry.candidate_exists,
                 entry.candidate_sha256.clone(),
                 entry.snapshot_ref.clone(),
             )
@@ -1052,7 +1254,7 @@ fn recover_one_batch(paths: &AppPaths, journal: &mut JournalEnvelope) -> Result<
             }
         };
         let is_original = content_matches(current.as_deref(), original_exists, &original_sha256);
-        let is_candidate = content_matches(current.as_deref(), true, &candidate_sha256);
+        let is_candidate = content_matches(current.as_deref(), candidate_exists, &candidate_sha256);
         if !is_original && !is_candidate {
             journal.phase = TransactionPhase::Critical;
             journal.critical = true;
@@ -1121,7 +1323,7 @@ fn restore_entry_snapshot(
             .replace(target, snapshot)
             .map_err(|_| TransactionError::new(TransactionErrorCode::RestoreFailedCritical))
     } else {
-        remove_new_target(target)
+        remove_target(target)
     }
 }
 
@@ -1133,10 +1335,20 @@ fn participant_target(
     match participant {
         JournalParticipant::Codex => Ok(paths.codex_file(relative_file)),
         JournalParticipant::Launcher if relative_file == "config.json" => Ok(paths.config_file()),
+        JournalParticipant::LauncherSchema if relative_file == "codex-guard-schema.json" => {
+            Ok(paths.guard_schema_file())
+        }
         JournalParticipant::Launcher => {
             Err(TransactionError::new(TransactionErrorCode::JournalSchema))
         }
+        JournalParticipant::LauncherSchema => {
+            Err(TransactionError::new(TransactionErrorCode::JournalSchema))
+        }
     }
+}
+
+fn empty_sha256() -> &'static str {
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 }
 
 fn content_matches(current: Option<&[u8]>, expected_exists: bool, expected_sha256: &str) -> bool {
@@ -1147,18 +1359,9 @@ fn content_matches(current: Option<&[u8]>, expected_exists: bool, expected_sha25
     }
 }
 
-fn remove_new_target(target: &std::path::Path) -> Result<(), TransactionError> {
-    match std::fs::symlink_metadata(target) {
-        Ok(metadata) if metadata.file_type().is_symlink() || metadata.is_dir() => Err(
-            TransactionError::new(TransactionErrorCode::RestoreFailedCritical),
-        ),
-        Ok(_) => std::fs::remove_file(target)
-            .map_err(|_| TransactionError::new(TransactionErrorCode::RestoreFailedCritical)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(_) => Err(TransactionError::new(
-            TransactionErrorCode::RestoreFailedCritical,
-        )),
-    }
+fn remove_target(target: &std::path::Path) -> Result<(), TransactionError> {
+    remove_regular_file(target)
+        .map_err(|_| TransactionError::new(TransactionErrorCode::RestoreFailedCritical))
 }
 
 fn mark_transaction_critical(
@@ -1171,18 +1374,79 @@ fn mark_transaction_critical(
     journal.phase = TransactionPhase::Critical;
     journal.critical = true;
     let _ = journal::write_journal(root, journal);
-    transaction_error_message(TransactionError::new(code))
+    format!(
+        "guard transaction failed: restore_failed_critical:{}",
+        code.as_str()
+    )
 }
 
 fn transaction_error_message(error: TransactionError) -> String {
     format!("guard transaction failed: {}", error.code.as_str())
 }
 
+/// Test-only process barrier used by the crash-recovery integration test. The hook is compiled
+/// out of production builds, and is activated only when the test child supplies both environment
+/// variables. A parent test can therefore terminate a real transaction process after a durable
+/// journal, snapshot, write, or post-check boundary and exercise the normal startup recovery path.
+#[cfg(test)]
+fn crash_barrier(phase: &str) {
+    use std::time::Duration;
+
+    let Ok(expected) = std::env::var("DASHI_GUARD_CRASH_PHASE") else {
+        return;
+    };
+    if expected != phase {
+        return;
+    }
+    let Ok(root) = std::env::var("DASHI_GUARD_CRASH_ROOT") else {
+        return;
+    };
+    let root = std::path::PathBuf::from(root);
+    let ready = root.join(format!(".guard-crash-{phase}.ready"));
+    let release = root.join(".guard-crash-release");
+    if std::fs::write(&ready, b"ready\n").is_err() {
+        return;
+    }
+    while !release.exists() {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[cfg(not(test))]
+fn crash_barrier(_phase: &str) {}
+
 fn read_existing(file: &std::path::Path) -> Result<Option<Vec<u8>>, String> {
-    match std::fs::read(file) {
-        Ok(bytes) => Ok(Some(bytes)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(trf("Read failed: {error}", &[("error", error.to_string())])),
+    let metadata = match std::fs::symlink_metadata(file) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(trf("Read failed: {error}", &[("error", error.to_string())])),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err("Read failed: target is not a regular file".to_string());
+    }
+
+    #[cfg(unix)]
+    {
+        use rustix::fs::{openat, Mode, OFlags, CWD};
+        use rustix::io::Errno;
+        use std::io::Read;
+
+        let fd = match openat(CWD, file, OFlags::RDONLY | OFlags::NOFOLLOW, Mode::empty()) {
+            Ok(fd) => fd,
+            Err(error) if error == Errno::NOENT => return Ok(None),
+            Err(error) => return Err(trf("Read failed: {error}", &[("error", error.to_string())])),
+        };
+        let mut file = std::fs::File::from(fd);
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)
+            .map_err(|error| trf("Read failed: {error}", &[("error", error.to_string())]))?;
+        Ok(Some(bytes))
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::read(file)
+            .map(Some)
+            .map_err(|error| trf("Read failed: {error}", &[("error", error.to_string())]))
     }
 }
 
@@ -1238,6 +1502,8 @@ mod tests {
             description: String::new(),
             description_en: String::new(),
             file: file.into(),
+            file_id: String::new(),
+            group_id: None,
             apply_mode: apply_mode.into(),
             path: path.into(),
             value_type: value_type.into(),
@@ -1591,6 +1857,7 @@ mod tests {
                 relative_file: "config.toml".into(),
                 original_exists: true,
                 original_sha256: sha256_hex(original),
+                candidate_exists: true,
                 candidate_sha256: sha256_hex(candidate),
                 snapshot_ref: snapshot_ref.into(),
                 completed: true,
@@ -1606,6 +1873,108 @@ mod tests {
         recover_pending_transactions(&paths).unwrap();
 
         assert_eq!(std::fs::read(&target).unwrap(), original);
+        assert!(!paths.transaction_root().join(batch_id).exists());
+    }
+
+    /// The batch directory is created before `journal.json` is durable. Crashing inside
+    /// that window leaves a directory with no journal — and no target was written yet.
+    /// It must be cleaned instead of aborting the whole scan, otherwise every other
+    /// pending batch stays unrecovered while Guard writes remain blocked.
+    #[test]
+    fn recovery_isolates_a_broken_batch_and_still_restores_the_others() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::for_test(temp.path());
+        let target = paths.codex_file("config.toml");
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        let original = b"[features]\nenabled = false\n";
+        let candidate = b"[features]\nenabled = true\n";
+        std::fs::write(&target, candidate).unwrap();
+
+        // A batch directory that never got its journal written.
+        let orphan = paths.transaction_root().join("aaa-orphan-batch");
+        std::fs::create_dir_all(&orphan).unwrap();
+
+        let batch_id = "zzz-recoverable-batch";
+        let snapshot_ref = "snapshots/entry-0.bin";
+        let mut journal = JournalEnvelope::new(
+            batch_id.into(),
+            vec![JournalEntry {
+                participant: JournalParticipant::Codex,
+                relative_file: "config.toml".into(),
+                original_exists: true,
+                original_sha256: sha256_hex(original),
+                candidate_exists: true,
+                candidate_sha256: sha256_hex(candidate),
+                snapshot_ref: snapshot_ref.into(),
+                completed: true,
+                post_checked: false,
+                restored: false,
+            }],
+        );
+        journal.phase = TransactionPhase::Writing;
+        journal::write_journal(paths.transaction_root(), &journal).unwrap();
+        journal::write_snapshot(paths.transaction_root(), batch_id, snapshot_ref, original)
+            .unwrap();
+
+        recover_pending_transactions(&paths).expect("a journal-less directory must not fail");
+
+        assert_eq!(
+            std::fs::read(&target).unwrap(),
+            original,
+            "the recoverable batch must still be restored"
+        );
+        assert!(!orphan.exists(), "the journal-less batch must be cleaned");
+        assert!(!paths.transaction_root().join(batch_id).exists());
+    }
+
+    /// Journal recovery reads only journal bytes and target files. It must therefore work
+    /// while `config.json` is unparseable — that is exactly the state a failed migration
+    /// leaves behind, and gating recovery on migration makes "corrupt config + pending
+    /// transaction" unrecoverable from inside the app.
+    #[test]
+    fn recovery_completes_while_the_launcher_config_is_corrupt() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::for_test(temp.path());
+        let target = paths.codex_file("config.toml");
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(paths.launcher_root()).unwrap();
+        // 迁移会在这份字节上失败。
+        std::fs::write(paths.config_file(), b"{ this is not json").unwrap();
+
+        let original = b"[features]\nenabled = false\n";
+        let candidate = b"[features]\nenabled = true\n";
+        std::fs::write(&target, candidate).unwrap();
+
+        let batch_id = "pending-batch";
+        let snapshot_ref = "snapshots/entry-0.bin";
+        let mut journal = JournalEnvelope::new(
+            batch_id.into(),
+            vec![JournalEntry {
+                participant: JournalParticipant::Codex,
+                relative_file: "config.toml".into(),
+                original_exists: true,
+                original_sha256: sha256_hex(original),
+                candidate_exists: true,
+                candidate_sha256: sha256_hex(candidate),
+                snapshot_ref: snapshot_ref.into(),
+                completed: true,
+                post_checked: false,
+                restored: false,
+            }],
+        );
+        journal.phase = TransactionPhase::Writing;
+        journal::write_journal(paths.transaction_root(), &journal).unwrap();
+        journal::write_snapshot(paths.transaction_root(), batch_id, snapshot_ref, original)
+            .unwrap();
+
+        recover_pending_transactions(&paths)
+            .expect("recovery must not depend on a parseable config.json");
+
+        assert_eq!(
+            std::fs::read(&target).unwrap(),
+            original,
+            "the pending batch must be rolled back even though migration cannot run"
+        );
         assert!(!paths.transaction_root().join(batch_id).exists());
     }
 
@@ -1628,6 +1997,7 @@ mod tests {
                 relative_file: "config.toml".into(),
                 original_exists: true,
                 original_sha256: sha256_hex(original),
+                candidate_exists: true,
                 candidate_sha256: sha256_hex(candidate),
                 snapshot_ref: snapshot_ref.into(),
                 completed: true,
@@ -1644,6 +2014,57 @@ mod tests {
 
         assert!(error.contains("identity_changed"));
         assert_eq!(std::fs::read(&target).unwrap(), external);
+        let saved =
+            journal::read_journal(&paths.transaction_root().join(batch_id).join("journal.json"))
+                .unwrap();
+        assert!(saved.critical);
+        assert_eq!(saved.phase, TransactionPhase::Critical);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_rejects_a_symlink_even_when_it_points_to_the_original_content() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::for_test(temp.path());
+        let target = paths.codex_file("config.toml");
+        let outside = temp.path().join("outside-original.toml");
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        let original = b"original";
+        let candidate = b"candidate";
+        std::fs::write(&outside, original).unwrap();
+        symlink(&outside, &target).unwrap();
+
+        let batch_id = "batch-symlink-original";
+        let snapshot_ref = "snapshots/entry-0.bin";
+        let mut journal = JournalEnvelope::new(
+            batch_id.into(),
+            vec![JournalEntry {
+                participant: JournalParticipant::Codex,
+                relative_file: "config.toml".into(),
+                original_exists: true,
+                original_sha256: sha256_hex(original),
+                candidate_exists: true,
+                candidate_sha256: sha256_hex(candidate),
+                snapshot_ref: snapshot_ref.into(),
+                completed: true,
+                post_checked: false,
+                restored: false,
+            }],
+        );
+        journal.phase = TransactionPhase::Writing;
+        journal::write_journal(paths.transaction_root(), &journal).unwrap();
+        journal::write_snapshot(paths.transaction_root(), batch_id, snapshot_ref, original)
+            .unwrap();
+
+        let error = recover_pending_transactions(&paths).unwrap_err();
+
+        assert!(error.contains("read_failed"));
+        assert!(std::fs::symlink_metadata(&target)
+            .unwrap()
+            .file_type()
+            .is_symlink());
         let saved =
             journal::read_journal(&paths.transaction_root().join(batch_id).join("journal.json"))
                 .unwrap();
@@ -1669,6 +2090,7 @@ mod tests {
                 relative_file: "config.toml".into(),
                 original_exists: true,
                 original_sha256: sha256_hex(original),
+                candidate_exists: true,
                 candidate_sha256: sha256_hex(candidate),
                 snapshot_ref: snapshot_ref.into(),
                 completed: true,
@@ -1679,7 +2101,8 @@ mod tests {
         journal.phase = TransactionPhase::Critical;
         journal.critical = true;
         journal::write_journal(paths.transaction_root(), &journal).unwrap();
-        journal::write_snapshot(paths.transaction_root(), batch_id, snapshot_ref, original).unwrap();
+        journal::write_snapshot(paths.transaction_root(), batch_id, snapshot_ref, original)
+            .unwrap();
 
         recover_pending_transactions(&paths).unwrap();
 
@@ -1716,6 +2139,7 @@ mod tests {
                 relative_file: "config.toml".into(),
                 target: codex_target.clone(),
                 original: Some(codex_original.clone()),
+                candidate_exists: true,
                 candidate: b"new codex".to_vec(),
                 writer: &codex_writer,
             },
@@ -1724,6 +2148,7 @@ mod tests {
                 relative_file: "config.json".into(),
                 target: launcher_target.clone(),
                 original: Some(launcher_original.clone()),
+                candidate_exists: true,
                 candidate: b"new launcher".to_vec(),
                 writer: &launcher_writer,
             },
@@ -1741,6 +2166,162 @@ mod tests {
                     .next()
                     .is_none()
         );
+    }
+
+    #[test]
+    fn injected_replace_failure_restores_all_changed_participants() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::for_test(temp.path());
+        let codex_target = paths.codex_file("config.toml");
+        let launcher_target = paths.config_file();
+        std::fs::create_dir_all(codex_target.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(launcher_target.parent().unwrap()).unwrap();
+        let codex_original = b"old codex".to_vec();
+        let launcher_original = b"old launcher".to_vec();
+        std::fs::write(&codex_target, &codex_original).unwrap();
+        std::fs::write(&launcher_target, &launcher_original).unwrap();
+        let writer = PlatformAtomicFileWriter;
+        let writes = vec![
+            TransactionWrite {
+                participant: JournalParticipant::Codex,
+                relative_file: "config.toml".into(),
+                target: codex_target.clone(),
+                original: Some(codex_original.clone()),
+                candidate_exists: true,
+                candidate: b"new codex".to_vec(),
+                writer: &writer,
+            },
+            TransactionWrite {
+                participant: JournalParticipant::Launcher,
+                relative_file: "config.json".into(),
+                target: launcher_target.clone(),
+                original: Some(launcher_original.clone()),
+                candidate_exists: true,
+                candidate: b"new launcher".to_vec(),
+                writer: &writer,
+            },
+        ];
+
+        let error =
+            execute_transaction_batch_with_fault(&paths, writes, TransactionFaultPoint::Replace(1))
+                .unwrap_err();
+
+        assert!(error.contains("replace_failed"));
+        assert_eq!(std::fs::read(codex_target).unwrap(), codex_original);
+        assert_eq!(std::fs::read(launcher_target).unwrap(), launcher_original);
+    }
+
+    /// Cleanup runs after the commit marker is durable. A batch whose data is fully
+    /// written, post-checked and committed must report success: the leftover journal
+    /// directory is reclaimed by the next startup recovery. Reporting failure here tells
+    /// the caller the write did not happen while it actually did, and a `journal_io`
+    /// code additionally freezes every later Guard write behind the recovery gate.
+    #[test]
+    fn cleanup_failure_after_commit_still_reports_success() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::for_test(temp.path());
+        let codex_target = paths.codex_file("config.toml");
+        std::fs::create_dir_all(codex_target.parent().unwrap()).unwrap();
+        let original = b"old codex".to_vec();
+        let candidate = b"new codex".to_vec();
+        std::fs::write(&codex_target, &original).unwrap();
+        let writer = PlatformAtomicFileWriter;
+
+        let result = execute_transaction_batch_with_fault(
+            &paths,
+            vec![TransactionWrite {
+                participant: JournalParticipant::Codex,
+                relative_file: "config.toml".into(),
+                target: codex_target.clone(),
+                original: Some(original),
+                candidate_exists: true,
+                candidate: candidate.clone(),
+                writer: &writer,
+            }],
+            TransactionFaultPoint::JournalCleanup,
+        );
+
+        assert!(
+            result.is_ok(),
+            "committed batch must not report failure when only cleanup failed: {result:?}"
+        );
+        assert_eq!(std::fs::read(&codex_target).unwrap(), candidate);
+
+        // 遗留的 journal 目录必须能被下次启动回收，且不得回滚已提交的数据。
+        recover_pending_transactions(&paths).expect("committed leftovers must recover cleanly");
+        assert_eq!(std::fs::read(&codex_target).unwrap(), candidate);
+    }
+
+    /// The rollback path opens with a journal write. If that write fails the batch has
+    /// already replaced some participants on disk, so returning early leaves a partially
+    /// applied batch behind while reporting a plain, non-critical error: the caller sees
+    /// "nothing happened", nothing rolls back, and startup recovery is never told to
+    /// look at this batch. A failure that cannot roll back must be marked critical.
+    #[cfg(unix)]
+    #[test]
+    fn restore_that_cannot_start_is_marked_critical_and_leaves_no_silent_partial_batch() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::for_test(temp.path());
+        let first = paths.codex_file("config.toml");
+        let second = paths.codex_file("nested/second.toml");
+        std::fs::create_dir_all(first.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(second.parent().unwrap()).unwrap();
+        let first_original = b"first original".to_vec();
+        let second_original = b"second original".to_vec();
+        std::fs::write(&first, &first_original).unwrap();
+        std::fs::write(&second, &second_original).unwrap();
+
+        // 第二个参与者只读：写入会自然失败并触发回滚，把唯一的注入名额留给回滚入口。
+        let restore_permissions = std::fs::metadata(&second).unwrap().permissions();
+        let mut readonly = restore_permissions.clone();
+        readonly.set_readonly(true);
+        std::fs::set_permissions(&second, readonly).unwrap();
+
+        let writer = PlatformAtomicFileWriter;
+        let error = execute_transaction_batch_with_fault(
+            &paths,
+            vec![
+                TransactionWrite {
+                    participant: JournalParticipant::Codex,
+                    relative_file: "config.toml".into(),
+                    target: first.clone(),
+                    original: Some(first_original.clone()),
+                    candidate_exists: true,
+                    candidate: b"first candidate".to_vec(),
+                    writer: &writer,
+                },
+                TransactionWrite {
+                    participant: JournalParticipant::Codex,
+                    relative_file: "nested/second.toml".into(),
+                    target: second.clone(),
+                    original: Some(second_original.clone()),
+                    candidate_exists: true,
+                    candidate: b"second candidate".to_vec(),
+                    writer: &writer,
+                },
+            ],
+            TransactionFaultPoint::StateSaveBefore(TransactionPhase::Restoring),
+        )
+        .expect_err("a batch that cannot roll back must fail");
+
+        std::fs::set_permissions(&second, restore_permissions).unwrap();
+
+        let first_now = std::fs::read(&first).unwrap();
+        if first_now != first_original {
+            assert!(
+                super::super::transaction::is_recovery_blocking_error(&error),
+                "a partially applied batch must block until recovery runs, got: {error}"
+            );
+            // 标记为 critical 的批次必须留下 journal，供启动恢复接手。
+            let batches = std::fs::read_dir(paths.transaction_root())
+                .expect("transaction root")
+                .filter_map(Result::ok)
+                .count();
+            assert!(
+                batches > 0,
+                "critical batch must leave a journal to recover"
+            );
+        }
     }
 
     #[test]
@@ -1767,6 +2348,7 @@ mod tests {
                     relative_file: "config.toml".into(),
                     target: codex_target.clone(),
                     original: Some(codex_original),
+                    candidate_exists: true,
                     candidate: codex_candidate.clone(),
                     writer: &writer,
                 },
@@ -1775,6 +2357,7 @@ mod tests {
                     relative_file: "config.json".into(),
                     target: launcher_target.clone(),
                     original: Some(launcher_original),
+                    candidate_exists: true,
                     candidate: launcher_candidate.clone(),
                     writer: &writer,
                 },
@@ -1811,6 +2394,7 @@ mod tests {
                 relative_file: "config.json".into(),
                 original_exists: true,
                 original_sha256: sha256_hex(original),
+                candidate_exists: true,
                 candidate_sha256: sha256_hex(candidate),
                 snapshot_ref: snapshot_ref.into(),
                 completed: true,
@@ -1827,5 +2411,234 @@ mod tests {
 
         assert_eq!(std::fs::read(&target).unwrap(), original);
         assert!(!paths.transaction_root().join(batch_id).exists());
+    }
+
+    #[test]
+    fn recovery_restores_launcher_schema_participant_from_candidate() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::for_test(temp.path());
+        let target = paths.guard_schema_file();
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        let original = b"{\"schema_version\":1,\"params\":[]}";
+        let candidate = b"{\"schema_version\":1,\"params\":[{\"id\":\"x\"}]}";
+        std::fs::write(&target, candidate).unwrap();
+        let batch_id = "batch-launcher-schema-recovery";
+        let snapshot_ref = "snapshots/entry-0.bin";
+        let mut journal = JournalEnvelope::new(
+            batch_id.into(),
+            vec![JournalEntry {
+                participant: JournalParticipant::LauncherSchema,
+                relative_file: "codex-guard-schema.json".into(),
+                original_exists: true,
+                original_sha256: sha256_hex(original),
+                candidate_exists: true,
+                candidate_sha256: sha256_hex(candidate),
+                snapshot_ref: snapshot_ref.into(),
+                completed: true,
+                post_checked: false,
+                restored: false,
+            }],
+        );
+        journal.phase = TransactionPhase::Writing;
+        journal::write_journal(paths.transaction_root(), &journal).unwrap();
+        journal::write_snapshot(paths.transaction_root(), batch_id, snapshot_ref, original)
+            .unwrap();
+
+        recover_pending_transactions(&paths).unwrap();
+
+        assert_eq!(std::fs::read(&target).unwrap(), original);
+        assert!(!paths.transaction_root().join(batch_id).exists());
+    }
+
+    #[test]
+    fn deletion_commits_without_leaving_a_transaction_and_recovery_can_restore_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::for_test(temp.path());
+        let target = paths.codex_file("agents/temporary.toml");
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        let original = b"temporary role".to_vec();
+        std::fs::write(&target, &original).unwrap();
+        let writer = PlatformAtomicFileWriter;
+
+        execute_transaction_batch(
+            &paths,
+            vec![TransactionWrite {
+                participant: JournalParticipant::Codex,
+                relative_file: "agents/temporary.toml".into(),
+                target: target.clone(),
+                original: Some(original.clone()),
+                candidate_exists: false,
+                candidate: Vec::new(),
+                writer: &writer,
+            }],
+        )
+        .unwrap();
+        assert!(!target.exists());
+        assert_eq!(
+            std::fs::read_dir(paths.transaction_root())
+                .map(|entries| entries.count())
+                .unwrap_or(0),
+            0
+        );
+
+        let batch_id = "batch-delete-recovery";
+        let snapshot_ref = "snapshots/entry-0.bin";
+        let mut journal = JournalEnvelope::new(
+            batch_id.into(),
+            vec![JournalEntry {
+                participant: JournalParticipant::Codex,
+                relative_file: "agents/temporary.toml".into(),
+                original_exists: true,
+                original_sha256: sha256_hex(&original),
+                candidate_exists: false,
+                candidate_sha256: empty_sha256().into(),
+                snapshot_ref: snapshot_ref.into(),
+                completed: true,
+                post_checked: false,
+                restored: false,
+            }],
+        );
+        journal.phase = TransactionPhase::Writing;
+        journal::write_journal(paths.transaction_root(), &journal).unwrap();
+        journal::write_snapshot(paths.transaction_root(), batch_id, snapshot_ref, &original)
+            .unwrap();
+
+        recover_pending_transactions(&paths).unwrap();
+
+        assert_eq!(std::fs::read(target).unwrap(), original);
+        assert!(!paths.transaction_root().join(batch_id).exists());
+    }
+
+    #[test]
+    fn transaction_rejects_a_target_that_does_not_match_its_journal_reference() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::for_test(temp.path());
+        let target = paths.codex_file("config.toml");
+        let other = paths.codex_file("other.toml");
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        let writer = PlatformAtomicFileWriter;
+
+        let error = execute_transaction_batch(
+            &paths,
+            vec![TransactionWrite {
+                participant: JournalParticipant::Codex,
+                relative_file: "config.toml".into(),
+                target: other,
+                original: None,
+                candidate_exists: true,
+                candidate: b"candidate".to_vec(),
+                writer: &writer,
+            }],
+        )
+        .unwrap_err();
+
+        assert!(error.contains("journal_schema"));
+        assert!(!target.exists());
+    }
+
+    /// Child process for `crash_recovery_survives_process_termination`. It pauses only after the
+    /// requested durable boundary; the parent terminates this process and then invokes the normal
+    /// startup recovery function in a fresh process context.
+    #[test]
+    fn crash_worker() {
+        if std::env::var_os("DASHI_GUARD_CRASH_PHASE").is_none() {
+            return;
+        }
+        let root = std::env::var("DASHI_GUARD_CRASH_ROOT").unwrap();
+        let paths = AppPaths::for_test(std::path::Path::new(&root));
+        let target = paths.codex_file("config.toml");
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        let launcher_target = paths.config_file();
+        std::fs::create_dir_all(launcher_target.parent().unwrap()).unwrap();
+        let original = b"[features]\nenabled = false\n";
+        let candidate = b"[features]\nenabled = true\n";
+        let launcher_original = br#"{"lifecycle":"disabled"}"#;
+        let launcher_candidate = br#"{"lifecycle":"applied"}"#;
+        std::fs::write(&target, original).unwrap();
+        std::fs::write(&launcher_target, launcher_original).unwrap();
+        let writer = PlatformAtomicFileWriter;
+        execute_transaction_batch(
+            &paths,
+            vec![
+                TransactionWrite {
+                    participant: JournalParticipant::Codex,
+                    relative_file: "config.toml".to_string(),
+                    target,
+                    original: Some(original.to_vec()),
+                    candidate_exists: true,
+                    candidate: candidate.to_vec(),
+                    writer: &writer,
+                },
+                TransactionWrite {
+                    participant: JournalParticipant::Launcher,
+                    relative_file: "config.json".to_string(),
+                    target: launcher_target,
+                    original: Some(launcher_original.to_vec()),
+                    candidate_exists: true,
+                    candidate: launcher_candidate.to_vec(),
+                    writer: &writer,
+                },
+            ],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn crash_recovery_survives_process_termination_at_durable_boundaries() {
+        use std::process::Command;
+        use std::time::{Duration, Instant};
+
+        let phases = ["journal", "snapshot", "write", "post_check"];
+        let executable = std::env::current_exe().unwrap();
+        let filter = "codex_guard::engine::tests::crash_worker";
+        for phase in phases {
+            let temp = tempfile::tempdir().unwrap();
+            let root = temp.path().to_string_lossy().into_owned();
+            let mut child = Command::new(&executable)
+                .args(["--exact", filter, "--nocapture"])
+                .env("DASHI_GUARD_CRASH_ROOT", &root)
+                .env("DASHI_GUARD_CRASH_PHASE", phase)
+                .spawn()
+                .unwrap();
+            let ready = temp.path().join(format!(".guard-crash-{phase}.ready"));
+            let deadline = Instant::now() + Duration::from_secs(15);
+            loop {
+                if ready.exists() {
+                    break;
+                }
+                if let Some(status) = child.try_wait().unwrap() {
+                    panic!("crash worker exited before {phase} barrier: {status}");
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "timed out waiting for {phase} barrier"
+                );
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            child.kill().unwrap();
+            let status = child.wait().unwrap();
+            assert!(
+                !status.success(),
+                "terminated crash worker unexpectedly succeeded"
+            );
+
+            let paths = AppPaths::for_test(temp.path());
+            recover_pending_transactions(&paths).unwrap();
+            let target = paths.codex_file("config.toml");
+            assert_eq!(
+                std::fs::read(&target).unwrap(),
+                b"[features]\nenabled = false\n",
+                "recovery did not restore original bytes after {phase}"
+            );
+            assert_eq!(
+                std::fs::read(paths.config_file()).unwrap(),
+                br#"{"lifecycle":"disabled"}"#,
+                "recovery did not restore launcher state after {phase}"
+            );
+            let batches = std::fs::read_dir(paths.transaction_root())
+                .map(|entries| entries.filter_map(Result::ok).count())
+                .unwrap_or(0);
+            assert_eq!(batches, 0, "recovery left journal state after {phase}");
+        }
     }
 }
