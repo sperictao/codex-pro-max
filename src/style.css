@@ -406,6 +406,9 @@
 .guard-param-actions { opacity: 0; visibility: hidden; transition: opacity 0.15s ease, visibility 0.15s ease; }
 .guard-param-card:hover .guard-param-actions,
 .guard-param-card:focus-within .guard-param-actions { opacity: 1; visibility: visible; }
+@media (pointer: coarse) {
+  .guard-param-actions { opacity: 1; visibility: visible; }
+}
 /* 通用带文字开关：胶囊内部显示状态文字，旋钮位移随宽度自动计算
    用法：<input type="checkbox" class="text-switch" data-state-text="已启用" style="--sw-width: 4rem">
    - data-state-text：胶囊内的文字（随状态切换由调用方更新）
@@ -479,4 +482,214 @@
   border-radius: 9999px;
   background-color: var(--primary);
   transition: width 200ms;
+}
+
+/* Guard workbench: the two state axes remain textual, while action controls keep a
+   stable footprint for mouse, keyboard and coarse pointers. */
+.guard-summary-region,
+.guard-action-region,
+.guard-diagnostics-region,
+.guard-operation-region,
+.guard-recovery-region {
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 8px);
+  background: var(--card);
+  color: var(--card-foreground);
+  padding: 12px;
+}
+.guard-summary-heading,
+.guard-group-header,
+.guard-operation-status {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.guard-summary-heading { font-size: 13px; font-weight: 600; }
+.guard-summary-enabled {
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.guard-summary-enabled.is-on { border-color: var(--status-ok); color: var(--status-ok); }
+.guard-summary-enabled.is-off { border-color: var(--muted-foreground); color: var(--muted-foreground); }
+.guard-axis-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.guard-axis-grid.compact { margin-top: 8px; }
+.guard-axis { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
+.guard-axis-label { color: var(--muted-foreground); font-size: 11px; }
+.guard-axis strong { font-size: 12px; font-weight: 600; }
+.guard-tone-positive { color: var(--status-ok); }
+.guard-tone-warning { color: var(--status-warn); }
+.guard-tone-negative { color: var(--destructive); }
+.guard-tone-neutral { color: var(--muted-foreground); }
+.guard-section-heading { margin-bottom: 8px; color: var(--muted-foreground); font-size: 11px; font-weight: 600; text-transform: uppercase; }
+.guard-action-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.guard-action-button {
+  display: inline-flex;
+  min-width: 98px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--background);
+  color: var(--foreground);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: border-color 150ms, background-color 150ms, color 150ms;
+}
+.guard-action-button svg { width: 15px; height: 15px; flex: 0 0 15px; }
+.guard-action-button:hover:not(:disabled) { border-color: var(--primary); background: var(--accent); color: var(--accent-foreground); }
+.guard-action-button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.guard-action-button:disabled { cursor: not-allowed; opacity: .48; }
+.guard-action-button.is-danger { margin-left: 8px; color: var(--destructive); }
+.guard-action-button.is-danger:hover:not(:disabled) { border-color: var(--destructive); background: color-mix(in srgb, var(--destructive) 10%, var(--background)); }
+.guard-action-reasons { margin-top: 7px; color: var(--muted-foreground); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+.guard-group-card { overflow: visible; }
+.guard-legacy-group-meta { display: none; }
+.guard-group-header { margin: -4px -4px 12px; padding: 4px; border-bottom: 1px solid var(--border); }
+.guard-group-title { min-width: 0; flex: 1; }
+.guard-group-title > span:first-child { display: block; }
+.guard-group-files { display: block; margin-top: 3px; color: var(--muted-foreground); font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
+.guard-group-diagnostic { margin: 8px 0; color: var(--destructive); font-size: 12px; }
+.guard-group-header .guard-action-bar { flex: 0 0 auto; align-self: center; }
+.guard-group-header-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+.guard-group-controls { display: flex; flex-wrap: wrap; gap: 4px; }
+.guard-group-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.guard-diagnostics-region { color: var(--muted-foreground); font-size: 12px; }
+.guard-diagnostics-region ul { display: grid; gap: 4px; margin: 7px 0 0; padding-left: 18px; }
+.guard-diagnostic-code { color: var(--destructive); font-family: var(--font-mono); font-size: 11px; }
+.guard-diagnostic-location { margin-left: 8px; color: var(--muted-foreground); font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
+.guard-diagnostic-error { color: var(--destructive); }
+.guard-operation-region { min-height: 38px; padding-block: 9px; }
+.guard-operation-status { align-items: center; min-height: 20px; font-size: 12px; }
+.guard-operation-phases { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px; margin: 10px 0 7px; padding: 0; list-style: none; }
+.guard-operation-phase { display: grid; gap: 3px; color: var(--muted-foreground); font-size: 9px; text-align: center; }
+.guard-operation-phase-dot { width: 9px; height: 9px; margin: auto; border: 1px solid var(--border); border-radius: 50%; background: var(--background); }
+.guard-operation-phase.is-current { color: var(--primary); font-weight: 700; }
+.guard-operation-phase.is-current .guard-operation-phase-dot { border-color: var(--primary); background: var(--primary); }
+.guard-operation-phase.is-done .guard-operation-phase-dot { border-color: var(--status-ok); background: var(--status-ok); }
+.guard-operation-progress { height: 3px; overflow: hidden; border-radius: 999px; background: var(--muted); }
+.guard-operation-progress span { display: block; height: 100%; border-radius: inherit; background: var(--primary); transition: width 180ms ease; }
+.guard-operation-spinner { width: 13px; height: 13px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: guard-spin 700ms linear infinite; }
+@keyframes guard-spin { to { transform: rotate(360deg); } }
+.guard-recovery-region { border-color: var(--destructive); color: var(--destructive); font-size: 12px; }
+.guard-recovery-region[role="alert"] { display: grid; gap: 6px; }
+.guard-recovery-title { font-weight: 700; }
+.guard-recovery-code { font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
+.guard-recovery-files ul { margin: 3px 0 0; padding-left: 18px; font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
+.guard-recovery-retry { width: fit-content; border: 1px solid var(--destructive); border-radius: 6px; padding: 6px 10px; background: transparent; color: var(--destructive); cursor: pointer; font-size: 12px; }
+.guard-recovery-retry:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.guard-recovery-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.guard-recovery-open { width: fit-content; border: 1px solid var(--destructive); border-radius: 6px; padding: 6px 10px; background: transparent; color: var(--destructive); cursor: pointer; font-size: 12px; }
+.guard-copyable { cursor: copy; user-select: text; }
+.guard-role-region { margin-bottom: 12px; border: 1px solid var(--border); border-radius: var(--radius, 8px); background: var(--card); color: var(--card-foreground); padding: 12px; }
+.guard-workbench-heading, .guard-workbench-subheading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.guard-workbench-subheading { align-items: center; margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; color: var(--muted-foreground); font-size: 11px; font-weight: 600; text-transform: uppercase; }
+.guard-section-note { margin: 3px 0 0; color: var(--muted-foreground); font-size: 11px; line-height: 1.45; }
+.guard-role-button { min-height: 28px; border: 1px solid var(--border); border-radius: 5px; padding: 5px 9px; background: var(--background); color: var(--foreground); cursor: pointer; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.guard-role-button:hover:not(:disabled) { border-color: var(--primary); background: var(--accent); color: var(--accent-foreground); }
+.guard-role-button:focus-visible, .guard-role-disclosure:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.guard-role-button:disabled { cursor: not-allowed; opacity: .45; }
+.guard-role-button.is-primary { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
+.guard-role-create-row { display: flex; justify-content: flex-end; margin-bottom: 7px; }
+.guard-role-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.guard-role-form-grid > div, .guard-role-modal-card > div:not(.guard-modal-actions) { display: grid; gap: 4px; }
+.guard-role-modal-card label { color: var(--muted-foreground); font-size: 11px; font-weight: 600; }
+.guard-role-modal-card input, .guard-role-modal-card select, .guard-role-form-textarea { min-height: 34px; border: 1px solid var(--input); border-radius: 5px; background: var(--background); color: var(--foreground); padding: 6px 8px; font-size: 12px; }
+.guard-role-form-textarea { min-height: 120px; resize: vertical; font-family: var(--font-mono); }
+.guard-modal-actions { display: flex; justify-content: flex-end; gap: 7px; }
+.guard-role-button.is-danger { border-color: color-mix(in srgb, var(--destructive) 55%, var(--border)); color: var(--destructive); }
+.guard-role-card { border-top: 1px solid var(--border); padding: 10px 0; }
+.guard-role-card:first-child { border-top: 0; padding-top: 2px; }
+.guard-role-summary { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; }
+.guard-role-disclosure { display: flex; min-width: 0; align-items: center; gap: 7px; border: 0; background: transparent; color: var(--foreground); cursor: pointer; padding: 2px 0; text-align: left; }
+.guard-role-chevron { width: 12px; color: var(--muted-foreground); font-family: var(--font-mono); }
+.guard-role-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 650; }
+.guard-role-disclosure code, .guard-role-axis code { color: var(--muted-foreground); font-family: var(--font-mono); font-size: 10px; }
+.guard-role-axes { display: flex; flex-wrap: wrap; gap: 5px; }
+.guard-role-axis { display: inline-flex; align-items: center; gap: 4px; color: var(--muted-foreground); font-size: 10px; white-space: nowrap; }
+.guard-role-axis > span { color: var(--muted-foreground); }
+.guard-role-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
+.guard-role-batch-actions { margin: 8px 0 0 19px; }
+.guard-role-details { margin: 8px 0 0 19px; border-left: 2px solid var(--border); padding: 9px 0 2px 12px; }
+.guard-role-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; font-size: 12px; }
+.guard-role-detail-grid > div { display: grid; gap: 2px; min-width: 0; }
+.guard-role-detail-grid code, .guard-role-detail-grid span:last-child { overflow-wrap: anywhere; }
+.guard-role-detail-label, .guard-migration-label { color: var(--muted-foreground); font-size: 10px; font-weight: 600; text-transform: uppercase; }
+.guard-role-instructions { margin-top: 9px; }
+.guard-role-instructions pre { max-height: 180px; margin: 4px 0 0; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--border); border-radius: 5px; background: var(--background); padding: 8px; font-family: var(--font-mono); font-size: 11px; line-height: 1.5; }
+.guard-discovered-role { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; border-top: 1px solid var(--border); padding: 8px 0; font-size: 12px; }
+.guard-discovered-role:first-child { border-top: 0; }
+.guard-discovered-main, .guard-discovered-meta { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 7px; }
+.guard-role-file { color: var(--muted-foreground); font-family: var(--font-mono); font-size: 10px; overflow-wrap: anywhere; }
+.guard-discovered-meta { justify-content: flex-end; color: var(--muted-foreground); font-size: 10px; }
+.guard-role-diagnostic { color: var(--destructive); font-family: var(--font-mono); font-size: 10px; overflow-wrap: anywhere; }
+.guard-inline-error { color: var(--destructive); font-size: 11px; overflow-wrap: anywhere; }
+.guard-capability-status, .guard-migration-status, .guard-audit-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 11px; }
+.guard-capability-status code { color: var(--muted-foreground); font-family: var(--font-mono); font-size: 10px; overflow-wrap: anywhere; }
+.guard-capability-fetched { color: var(--muted-foreground); }
+.guard-capability-models { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 7px; margin-top: 9px; }
+.guard-capability-model { display: grid; gap: 3px; border-top: 1px solid var(--border); padding-top: 7px; font-size: 11px; }
+.guard-capability-model span { color: var(--muted-foreground); font-family: var(--font-mono); font-size: 10px; overflow-wrap: anywhere; }
+.guard-migration-label { display: block; margin-top: 10px; }
+.guard-migration-input { display: block; width: 100%; min-height: 94px; margin-top: 5px; resize: vertical; border: 1px solid var(--input); border-radius: 5px; background: var(--background); color: var(--foreground); padding: 8px; font-family: var(--font-mono); font-size: 11px; line-height: 1.45; outline: none; }
+.guard-migration-input:focus-visible { box-shadow: 0 0 0 2px var(--ring); }
+.guard-migration-result { display: grid; gap: 7px; margin-top: 9px; }
+.guard-migration-role { font-size: 12px; }
+.guard-audit-agents { display: grid; gap: 6px; margin-top: 8px; }
+.guard-audit-agent { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; border-top: 1px solid var(--border); padding-top: 6px; font-size: 11px; }
+.guard-audit-agent > div { display: flex; min-width: 0; flex-wrap: wrap; align-items: baseline; gap: 7px; }
+.guard-audit-agent > div span { color: var(--muted-foreground); font-family: var(--font-mono); font-size: 10px; overflow-wrap: anywhere; }
+.guard-audit-agent-heading { display: flex; justify-content: space-between; gap: 8px; }
+.guard-audit-evidence { display: grid; gap: 3px; color: var(--muted-foreground); font-size: 10px; overflow-wrap: anywhere; }
+.guard-audit-turns { display: grid; gap: 4px; margin-top: 5px; }
+.guard-audit-turn { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, auto) minmax(0, 1fr); gap: 6px; color: var(--muted-foreground); font-size: 10px; }
+.guard-audit-outbound { overflow-wrap: anywhere; }
+.guard-audit-privacy { color: var(--muted-foreground); font-size: 10px; }
+.guard-audit-notices { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+.guard-operation-audit-row { display: grid; grid-template-columns: minmax(132px, auto) minmax(100px, 1fr) auto auto minmax(170px, auto) minmax(0, 1fr); align-items: center; gap: 8px; border-top: 1px solid var(--border); padding: 6px 0; font-size: 10px; }
+.guard-operation-counts { color: var(--muted-foreground); }
+.guard-operation-audit-time, .guard-operation-audit-row code { color: var(--muted-foreground); font-family: var(--font-mono); font-size: 10px; overflow-wrap: anywhere; }
+.guard-param-card { border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--card-foreground); padding: 12px; }
+.guard-bool-input { width: 20px; height: 20px; accent-color: var(--primary); }
+.guard-value-input { width: 100%; height: 36px; border: 1px solid var(--input); border-radius: 6px; background: var(--background); color: var(--foreground); padding: 6px 10px; font-family: var(--font-mono); font-size: 13px; outline: none; }
+.guard-value-input:focus-visible, .guard-textarea:focus-visible { box-shadow: 0 0 0 2px var(--ring); }
+.guard-inline-button, .guard-add-parameter { border: 1px solid var(--border); border-radius: 5px; padding: 4px 8px; background: var(--background); color: var(--foreground); cursor: pointer; font-size: 11px; }
+.guard-inline-button:hover, .guard-add-parameter:hover { border-color: var(--primary); background: var(--accent); }
+.guard-inline-button.danger { border-color: color-mix(in srgb, var(--destructive) 55%, var(--border)); color: var(--destructive); }
+.guard-add-parameter { margin-top: 10px; }
+
+@media (max-width: 720px), (pointer: coarse) {
+  .guard-group-header { display: block; }
+  .guard-group-header .guard-action-bar { margin-top: 10px; }
+  .guard-action-button { min-width: 42px; width: 42px; padding: 0; }
+  .guard-action-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  .guard-action-button.is-danger { margin-left: 0; }
+  .guard-role-summary { grid-template-columns: minmax(0, 1fr) auto; }
+  .guard-role-axes { grid-column: 1 / -1; }
+  .guard-role-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  .guard-discovered-role { grid-template-columns: minmax(0, 1fr) auto; }
+  .guard-discovered-meta { grid-column: 1 / -1; justify-content: flex-start; }
+  .guard-operation-audit-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .guard-operation-audit-time, .guard-operation-audit-row code, .guard-operation-counts { grid-column: span 3; }
+  .guard-operation-phases { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 8px; }
+  .guard-audit-turn { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 460px) {
+  .guard-axis-grid { grid-template-columns: 1fr; }
+  .guard-group-header .guard-action-bar { gap: 5px; }
+  .guard-action-button { width: 38px; min-width: 38px; height: 36px; }
+  .guard-role-detail-grid { grid-template-columns: 1fr; }
+  .guard-role-form-grid { grid-template-columns: 1fr; }
+  .guard-workbench-heading { display: block; }
+  .guard-workbench-heading > .guard-role-button { margin-top: 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .guard-operation-spinner { animation: none; }
 }

@@ -63,12 +63,44 @@ import {
   guardAddCustom,
   guardRemoveCustom,
   guardOpenSchemaFile,
+  guardBatch,
+  guardRetryRecovery,
+  refreshGuardRecovery,
   guardApply,
   guardDisable,
   guardSetLocked,
   guardToggleBool,
   guardToggleApplied,
   guardSetValue,
+  refreshGuardRoles,
+  refreshGuardRoleDiscovery,
+  toggleGuardRole,
+  guardRoleAdopt,
+  guardRoleStopManaging,
+  guardRoleDelete,
+  guardRoleEdit,
+  guardRoleCopy,
+  openGuardRoleCreate,
+  closeGuardRoleModal,
+  saveGuardRoleForm,
+  handleGuardRoleModelChange,
+  guardOpenBackupDir,
+  handleGuardProgressEvent,
+  copyGuardValue,
+  closeGuardModalOnEscape,
+  refreshGuardCapability,
+  planGuardRoleMigration,
+  resolveGuardRoleMigration,
+  runGuardRuntimeAudit,
+  refreshGuardOperationAudit,
+  openGuardGroupCreate,
+  openGuardGroupRename,
+  closeGuardGroupModal,
+  saveGuardGroupForm,
+  guardGroupDelete,
+  guardGroupMove,
+  guardParameterMove,
+  guardRoleMove,
 } from "./guard";
 import { renderFastctx, refreshFastctxStatus, toggleFastctx, openFastctxConsole } from "./fastctx";
 import {
@@ -158,6 +190,9 @@ async function setupEventListener(): Promise<void> {
   await listen<DownloadProgress>("updater-download-progress", (event) => {
     renderDownloadProgress(event.payload);
   });
+  for (const eventName of ["guard-operation-progress", "guard-progress"]) {
+    await listen<unknown>(eventName, (event) => handleGuardProgressEvent(event.payload));
+  }
 }
 
 // ============ 初始化 ============
@@ -240,6 +275,9 @@ export async function init(): Promise<void> {
     // 设置事件监听
     await setupEventListener();
 
+    // Recovery must be visible before the first Guard view/poll can render writes.
+    await refreshGuardRecovery();
+
     // 刷新状态
     await refreshStatus();
 
@@ -250,6 +288,7 @@ export async function init(): Promise<void> {
     statusPolling = setInterval(() => {
       void refreshStatus();
       void refreshGuardView();
+      void refreshGuardRecovery();
     }, 3000);
   } catch (e) {
     toast(t("Initialization failed: {{error}}", { error: String(e) }), "error");
@@ -283,7 +322,11 @@ function wireEvents(): void {
   on("btn-guard", "click", () => {
     showGuard();
     void refreshGuardView(true);
+    void refreshGuardRecovery();
     void refreshGuardFiles();
+    void refreshGuardRoles();
+    void refreshGuardCapability();
+    void refreshGuardOperationAudit();
   });
   on("btn-settings", "click", toggleSettings);
 
@@ -359,6 +402,23 @@ function wireEvents(): void {
   document.getElementById("guard-add-modal")?.addEventListener("click", (ev) => {
     if (ev.target === ev.currentTarget) closeGuardAddModal();
   });
+  on("guard-role-cancel", "click", closeGuardRoleModal);
+  on("guard-role-submit", "click", () => void saveGuardRoleForm());
+  document.getElementById("guard-role-model")?.addEventListener("change", () => {
+    // Render function reads the draft and filters effort choices.
+    handleGuardRoleModelChange();
+  });
+  document.getElementById("guard-role-modal")?.addEventListener("click", (ev) => {
+    if (ev.target === ev.currentTarget) closeGuardRoleModal();
+  });
+  on("guard-group-cancel", "click", closeGuardGroupModal);
+  on("guard-group-submit", "click", () => void saveGuardGroupForm());
+  document.getElementById("guard-group-modal")?.addEventListener("click", (ev) => {
+    if (ev.target === ev.currentTarget) closeGuardGroupModal();
+  });
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") closeGuardModalOnEscape();
+  });
 
   // 文件弹窗
   on("guard-file-cancel", "click", toggleGuardFileForm);
@@ -370,20 +430,54 @@ function wireEvents(): void {
 
   // 动态内容委托
   delegate("guard-view", "click", {
+    guardBatch: (el) => {
+      const action = el.dataset.batchAction as "apply" | "lock" | "unlock" | "disable";
+      const rawScope = el.dataset.scope ?? "all";
+      const scope = rawScope === "all" ? "all" : JSON.parse(rawScope) as import("./generated/guard-contracts").BatchScope;
+      void guardBatch(scope, action);
+    },
+    guardRetryRecovery: () => void guardRetryRecovery(),
+    guardOpenBackupDir: () => void guardOpenBackupDir(),
+    guardRoleCreate: () => openGuardRoleCreate(),
+    guardRoleEdit: (el) => void guardRoleEdit(el.dataset.roleId!),
+    guardRoleCopy: (el) => void guardRoleCopy(el.dataset.roleId!),
+    guardRoleMoveUp: (el) => void guardRoleMove(el.dataset.roleId!, "up"),
+    guardRoleMoveDown: (el) => void guardRoleMove(el.dataset.roleId!, "down"),
+    guardGroupCreate: () => openGuardGroupCreate(),
+    guardGroupRename: (el) => openGuardGroupRename(el.dataset.id!),
+    guardGroupDelete: (el) => void guardGroupDelete(el.dataset.id!),
+    guardGroupMoveUp: (el) => void guardGroupMove(el.dataset.id!, "up"),
+    guardGroupMoveDown: (el) => void guardGroupMove(el.dataset.id!, "down"),
     guardApply: (el) => void guardApply(el.dataset.id!),
     guardDisable: (el) => void guardDisable(el.dataset.id!),
     guardSetLocked: (el) => void guardSetLocked(el.dataset.id!, el.dataset.locked === "true"),
     guardRemoveCustom: (el) => void guardRemoveCustom(el.dataset.id!),
     openGuardAddFormFor: (el) => openGuardAddFormFor(el.dataset.id!),
+    guardRoleRefresh: () => void refreshGuardRoles(),
+    guardRoleDiscoverRefresh: () => void refreshGuardRoleDiscovery(),
+    guardRoleToggle: (el) => void toggleGuardRole(el.dataset.roleId!),
+    guardRoleAdopt: (el) => void guardRoleAdopt(el.dataset.roleId!),
+    guardRoleStopManaging: (el) => void guardRoleStopManaging(el.dataset.roleId!),
+    guardRoleDelete: (el) => void guardRoleDelete(el.dataset.roleId!),
+    guardCapabilityRefresh: () => void refreshGuardCapability(true),
+    guardRoleMigrationPlan: () => void planGuardRoleMigration(),
+    guardRoleMigrationResolve: (el) => void resolveGuardRoleMigration(el.dataset.choice!),
+    guardRunRuntimeAudit: () => void runGuardRuntimeAudit(),
+    guardOperationAuditRefresh: () => void refreshGuardOperationAudit(),
   });
   delegate("guard-view", "change", {
     guardToggleBool: (el) => void guardToggleBool(el.dataset.id!),
     guardToggleApplied: (el) => void guardToggleApplied(el.dataset.id!),
     guardSetValue: (el) => void guardSetValue(el.dataset.id!, el as HTMLInputElement),
+    guardParameterMove: (el) => void guardParameterMove(el.dataset.id!, (el as HTMLSelectElement).value),
   });
   delegate("settings-guard-files", "click", {
     guardRemoveFile: (el) => void guardRemoveFile(el.dataset.id!),
     guardDetectFile: (el) => void guardDetectFile(el.dataset.id!),
     guardEditFile: (el) => guardEditFile(el.dataset.id!),
+  });
+  document.getElementById("guard-view")?.addEventListener("click", (ev) => {
+    const target = (ev.target as HTMLElement).closest<HTMLElement>("[data-copy-value]");
+    if (target?.dataset.copyValue) void copyGuardValue(target.dataset.copyValue);
   });
 }

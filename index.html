@@ -407,6 +407,50 @@
         <span data-i18n="Apply = write the parameter value into its file (auto-backup to">Apply = write the parameter value into its file (auto-backup to</span> <code class="rounded bg-muted px-1 font-mono">~/.codex/dashi-backups/</code> <span data-i18n="before writing); Lock = verify every 60 seconds and revert drift automatically. Locked parameters are read-only; unlock before editing. The master switch and file management are in Settings → Guard.">before writing); Lock = verify every 60 seconds and revert drift automatically. Locked parameters are read-only; unlock before editing. The master switch and file management are in Settings → Guard.</span>
       </p>
 
+      <section class="guard-summary-region" id="guard-global-summary" aria-live="polite">
+        <div class="guard-summary-heading"><span data-i18n="Global summary">Global summary</span><span class="guard-summary-enabled is-off" data-i18n="Disabled">Disabled</span></div>
+        <div class="guard-axis-grid"><div class="guard-axis"><span class="guard-axis-label" data-i18n="Lifecycle">Lifecycle</span><strong class="guard-tone-warning" data-i18n="Unknown">Unknown</strong></div><div class="guard-axis"><span class="guard-axis-label" data-i18n="Health">Health</span><strong class="guard-tone-warning" data-i18n="Unknown">Unknown</strong></div></div>
+      </section>
+      <section class="guard-action-region" id="guard-global-actions" aria-label="Global actions" data-i18n-aria="Global actions">
+        <div class="guard-section-heading" data-i18n="Global actions">Global actions</div>
+        <div class="guard-action-bar">
+          <button class="guard-action-button" data-action="guardBatch" data-scope="all" data-batch-action="apply" aria-label="Apply" data-i18n-aria="Apply" disabled><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></svg><span class="guard-action-label" data-i18n="Apply">Apply</span></button>
+          <button class="guard-action-button" data-action="guardBatch" data-scope="all" data-batch-action="lock" aria-label="Lock" data-i18n-aria="Lock" disabled><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="11" x="4" y="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><span class="guard-action-label" data-i18n="Lock">Lock</span></button>
+          <button class="guard-action-button" data-action="guardBatch" data-scope="all" data-batch-action="unlock" aria-label="Unlock" data-i18n-aria="Unlock" disabled><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="11" x="4" y="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 7.7-1.5"/></svg><span class="guard-action-label" data-i18n="Unlock">Unlock</span></button>
+          <button class="guard-action-button is-danger" data-action="guardBatch" data-scope="all" data-batch-action="disable" aria-label="Disable" data-i18n-aria="Disable" disabled><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m6 6 12 12"/></svg><span class="guard-action-label" data-i18n="Disable">Disable</span></button>
+        </div>
+        <div class="guard-action-reasons hidden" data-action-reasons aria-live="polite"></div>
+      </section>
+      <section class="guard-diagnostics-region" id="guard-diagnostics" aria-live="polite"><span data-i18n="No diagnostics">No diagnostics</span></section>
+      <section class="guard-operation-region" id="guard-operation-region" role="status" aria-live="polite"><span data-i18n="No operation in progress">No operation in progress</span></section>
+      <section class="guard-recovery-region hidden" id="guard-recovery-region"></section>
+
+      <section class="guard-role-region" id="guard-role-region">
+        <div class="guard-workbench-heading"><div><div class="guard-section-heading" data-i18n="Managed roles">Managed roles</div><p class="guard-section-note" data-i18n="Role policies are managed independently from parameter groups.">Role policies are managed independently from parameter groups.</p></div><button class="guard-role-button" data-action="guardRoleRefresh" data-i18n="Refresh roles">Refresh roles</button></div>
+        <div id="guard-managed-roles" aria-live="polite"><span class="guard-empty-diagnostic" data-i18n="Loading roles">Loading roles</span></div>
+        <div class="guard-workbench-subheading"><span data-i18n="Discovered roles">Discovered roles</span><button class="guard-role-button" data-action="guardRoleDiscoverRefresh" data-i18n="Scan roles">Scan roles</button></div>
+        <div id="guard-discovered-roles" aria-live="polite"><span class="guard-empty-diagnostic" data-i18n="Loading discovered roles">Loading discovered roles</span></div>
+      </section>
+
+      <section class="guard-role-region" id="guard-capability-region">
+        <div class="guard-workbench-heading"><div><div class="guard-section-heading" data-i18n="Capability snapshot">Capability snapshot</div><p class="guard-section-note" data-i18n="Model and reasoning support comes from the configured Codex executable.">Model and reasoning support comes from the configured Codex executable.</p></div><button class="guard-role-button" data-action="guardCapabilityRefresh" data-i18n="Refresh capabilities">Refresh capabilities</button></div>
+        <div id="guard-capability-content" aria-live="polite"><span class="guard-empty-diagnostic" data-i18n="Capability snapshot unavailable">Capability snapshot unavailable</span></div>
+      </section>
+
+      <section class="guard-role-region" id="guard-migration-region">
+        <div class="guard-workbench-heading"><div><div class="guard-section-heading" data-i18n="Role migration">Role migration</div><p class="guard-section-note" data-i18n="Resolve the legacy default-role owner before enabling role management.">Resolve the legacy default-role owner before enabling role management.</p></div><button class="guard-role-button" data-action="guardRoleMigrationPlan" data-i18n="Plan migration">Plan migration</button></div>
+        <label class="guard-migration-label" for="guard-migration-default" data-i18n="Safe default TOML">Safe default TOML</label>
+        <textarea class="guard-migration-input" id="guard-migration-default" placeholder="Paste a valid role TOML used only when selected" data-i18n-placeholder="Paste a valid role TOML used only when selected"></textarea>
+        <div id="guard-migration-result" class="guard-migration-result" aria-live="polite"><span class="guard-empty-diagnostic" data-i18n="No migration plan">No migration plan</span></div>
+      </section>
+
+      <section class="guard-role-region" id="guard-audit-region">
+        <div class="guard-workbench-heading"><div><div class="guard-section-heading" data-i18n="Runtime audit">Runtime audit</div><p class="guard-section-note" data-i18n="Audit sampled subagent dispatches against managed role policy.">Audit sampled subagent dispatches against managed role policy.</p></div><button class="guard-role-button" data-action="guardRunRuntimeAudit" data-i18n="Run audit">Run audit</button></div>
+        <div id="guard-runtime-audit" aria-live="polite"><span class="guard-empty-diagnostic" data-i18n="No runtime audit yet">No runtime audit yet</span></div>
+        <div class="guard-workbench-subheading"><span data-i18n="Operation audit">Operation audit</span><button class="guard-role-button" data-action="guardOperationAuditRefresh" data-i18n="Refresh audit">Refresh audit</button></div>
+        <div id="guard-operation-audit" aria-live="polite"><span class="guard-empty-diagnostic" data-i18n="No operation audit records">No operation audit records</span></div>
+      </section>
+
       <div class="flex flex-col gap-4" id="guard-groups"></div>
 
       <div class="mt-4">
@@ -422,16 +466,16 @@
     <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2" id="toast-container"></div>
 
     <!-- ============ 看守文件 添加/编辑弹窗 ============ -->
-    <div class="modal-overlay hidden" id="guard-file-modal">
+    <div class="modal-overlay hidden" id="guard-file-modal" role="dialog" aria-modal="true" aria-labelledby="guard-file-modal-title">
       <div class="modal-card">
         <h3 class="text-sm font-semibold" id="guard-file-modal-title" data-i18n="Add Guard File">Add Guard File</h3>
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="mb-1 block text-xs font-medium" data-i18n="Name">Name</label>
+            <label class="mb-1 block text-xs font-medium" for="settings-guard-file-name" data-i18n="Name">Name</label>
             <input type="text" class="h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" id="settings-guard-file-name" placeholder="e.g. my-config.toml" data-i18n-placeholder="e.g. my-config.toml" />
           </div>
           <div>
-            <label class="mb-1 block text-xs font-medium" data-i18n="Format">Format</label>
+            <label class="mb-1 block text-xs font-medium" for="settings-guard-file-format" data-i18n="Format">Format</label>
             <select class="h-9 w-full rounded-md border border-input bg-background px-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50" id="settings-guard-file-format">
               <option value="toml">TOML</option>
               <option value="json">JSON</option>
@@ -441,7 +485,7 @@
           </div>
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium" data-i18n="Path (relative to ~/.codex)">Path (relative to ~/.codex)</label>
+          <label class="mb-1 block text-xs font-medium" for="settings-guard-file-path" data-i18n="Path (relative to ~/.codex)">Path (relative to ~/.codex)</label>
           <div class="flex gap-2">
             <input type="text" class="h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 font-mono" id="settings-guard-file-path" placeholder="e.g. my-config.toml" data-i18n-placeholder="e.g. my-config.toml" />
             <button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-8 px-3 text-xs" id="btn-guard-pick-path" data-i18n="Pick…">Pick…</button>
@@ -455,19 +499,19 @@
     </div>
 
     <!-- ============ 自定义参数 添加弹窗 ============ -->
-    <div class="modal-overlay hidden" id="guard-add-modal">
+    <div class="modal-overlay hidden" id="guard-add-modal" role="dialog" aria-modal="true" aria-labelledby="guard-add-modal-title">
       <div class="modal-card" style="width: 560px">
-        <h3 class="text-sm font-semibold" data-i18n="Add Custom Parameter">Add Custom Parameter</h3>
+        <h3 class="text-sm font-semibold" id="guard-add-modal-title" data-i18n="Add Custom Parameter">Add Custom Parameter</h3>
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="mb-1 block text-xs font-medium">ID</label>
+            <label class="mb-1 block text-xs font-medium" for="guard-add-id">ID</label>
             <div class="flex items-center">
               <span class="rounded-l-md border border-r-0 border-border bg-muted px-2 py-2 font-mono text-xs opacity-70">custom.</span>
               <input type="text" class="h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 rounded-l-none font-mono" id="guard-add-id" placeholder="my_param" />
             </div>
           </div>
           <div>
-            <label class="mb-1 block text-xs font-medium" data-i18n="Type">Type</label>
+            <label class="mb-1 block text-xs font-medium" for="guard-add-mode" data-i18n="Type">Type</label>
             <select class="h-9 w-full rounded-md border border-input bg-background px-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50" id="guard-add-mode">
               <option value="toml_key" data-i18n="toml_key (TOML key value)">toml_key (TOML key value)</option>
               <option value="toml_absent" data-i18n="toml_absent (ensure absent)">toml_absent (ensure absent)</option>
@@ -478,22 +522,22 @@
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="mb-1 block text-xs font-medium" data-i18n="Name">Name</label>
+            <label class="mb-1 block text-xs font-medium" for="guard-add-label" data-i18n="Name">Name</label>
             <input type="text" class="h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" id="guard-add-label" placeholder="Display name" data-i18n-placeholder="Display name" />
           </div>
           <div>
-            <label class="mb-1 block text-xs font-medium" data-i18n="Target File">Target File</label>
+            <label class="mb-1 block text-xs font-medium" for="guard-add-file-select" data-i18n="Target File">Target File</label>
             <select class="h-9 w-full rounded-md border border-input bg-background px-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50" id="guard-add-file-select">
               <!-- 由 JS 动态填充 -->
             </select>
           </div>
         </div>
         <div id="guard-add-path-row">
-          <label class="mb-1 block text-xs font-medium" data-i18n="TOML Path">TOML Path</label>
+          <label class="mb-1 block text-xs font-medium" for="guard-add-path" data-i18n="TOML Path">TOML Path</label>
           <input type="text" class="h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 font-mono" id="guard-add-path" placeholder="e.g. features.foo.enabled" data-i18n-placeholder="e.g. features.foo.enabled" />
         </div>
         <div id="guard-add-value-type-row">
-          <label class="mb-1 block text-xs font-medium" data-i18n="Value Type">Value Type</label>
+          <label class="mb-1 block text-xs font-medium" for="guard-add-value-type" data-i18n="Value Type">Value Type</label>
           <select class="h-9 w-full rounded-md border border-input bg-background px-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50" id="guard-add-value-type">
             <option value="bool">bool</option>
             <option value="int">int</option>
@@ -503,17 +547,43 @@
           </select>
         </div>
         <div id="guard-add-default-row">
-          <label class="mb-1 block text-xs font-medium" data-i18n="Default Value">Default Value</label>
+          <label class="mb-1 block text-xs font-medium" for="guard-add-default" data-i18n="Default Value">Default Value</label>
           <input type="text" class="h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" id="guard-add-default" />
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium" data-i18n="Description (optional)">Description (optional)</label>
+          <label class="mb-1 block text-xs font-medium" for="guard-add-desc" data-i18n="Description (optional)">Description (optional)</label>
           <input type="text" class="h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" id="guard-add-desc" placeholder="What this parameter does" data-i18n-placeholder="What this parameter does" />
         </div>
         <div class="mt-1 flex justify-end gap-2">
           <button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-8 px-3 text-xs" id="guard-add-cancel" data-i18n="Cancel">Cancel</button>
           <button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-8 px-3 text-xs" id="guard-add-submit" data-i18n="Add">Add</button>
         </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay hidden" id="guard-role-modal" role="dialog" aria-modal="true" aria-labelledby="guard-role-modal-title">
+      <div class="modal-card guard-role-modal-card">
+        <h3 class="text-sm font-semibold" id="guard-role-modal-title" data-i18n="Create role">Create role</h3>
+        <div class="guard-role-form-grid">
+          <div><label for="guard-role-id" data-i18n="Role ID">Role ID</label><input id="guard-role-id" type="text" autocomplete="off" /></div>
+          <div><label for="guard-role-displayName" data-i18n="Display name">Display name</label><input id="guard-role-displayName" type="text" /></div>
+          <div><label for="guard-role-purpose" data-i18n="Purpose">Purpose</label><input id="guard-role-purpose" type="text" /></div>
+          <div><label for="guard-role-selectionCriteria" data-i18n="Selection criteria">Selection criteria</label><input id="guard-role-selectionCriteria" type="text" /></div>
+          <div><label for="guard-role-model" data-i18n="Model">Model</label><select id="guard-role-model"></select></div>
+          <div><label for="guard-role-effort" data-i18n="Reasoning effort">Reasoning effort</label><select id="guard-role-effort"></select></div>
+        </div>
+        <div><label for="guard-role-instructions" data-i18n="Instructions">Instructions</label><textarea id="guard-role-instructions" class="guard-role-form-textarea"></textarea></div>
+        <div id="guard-role-capability-warning" class="guard-inline-error hidden" role="status"></div>
+        <div class="guard-modal-actions"><button class="guard-role-button" id="guard-role-cancel" data-i18n="Cancel">Cancel</button><button class="guard-role-button is-primary" id="guard-role-submit" data-i18n="Create">Create</button></div>
+      </div>
+    </div>
+
+    <div class="modal-overlay hidden" id="guard-group-modal" role="dialog" aria-modal="true" aria-labelledby="guard-group-modal-title">
+      <div class="modal-card guard-role-modal-card">
+        <h3 class="text-sm font-semibold" id="guard-group-modal-title" data-i18n="Create group">Create group</h3>
+        <label for="guard-group-name" data-i18n="Group name">Group name</label>
+        <input id="guard-group-name" type="text" autocomplete="off" data-i18n-placeholder="e.g. Subagent optimization" placeholder="e.g. Subagent optimization" />
+        <div class="guard-modal-actions"><button class="guard-role-button" id="guard-group-cancel" data-i18n="Cancel">Cancel</button><button class="guard-role-button is-primary" id="guard-group-submit" data-i18n="Create">Create</button></div>
       </div>
     </div>
 

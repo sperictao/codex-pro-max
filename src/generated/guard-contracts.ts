@@ -152,12 +152,218 @@ async guardRetryRecovery() : Promise<Result<null, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * 预检一次全局/组级批量动作。预检只读取文件，不落盘，并在进程内保留五分钟。
+ */
+async guardPreviewBatch(request: BatchRequest) : Promise<Result<BatchPreview, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_preview_batch", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async guardExecuteBatch(request: BatchRequest, previewId: string | null) : Promise<Result<BatchReport, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_execute_batch", { request, previewId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async guardGroupCreate(name: string) : Promise<Result<GuardGroup, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_group_create", { name }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async guardGroupRename(id: string, name: string) : Promise<Result<GuardGroup, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_group_rename", { id, name }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async guardGroupReorder(ids: string[]) : Promise<Result<GuardGroup[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_group_reorder", { ids }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async guardGroupDelete(id: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_group_delete", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async guardParameterMove(parameterId: string, groupId: string) : Promise<Result<GuardParam, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_parameter_move", { parameterId, groupId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async guardLifecycleMigrationResolve(parameterId: string, choice: LifecycleMigrationChoice) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_lifecycle_migration_resolve", { parameterId, choice }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async guardFileFormatMigrationResolve(fileId: string, format: GuardFileFormat) : Promise<Result<GuardFile, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_file_format_migration_resolve", { fileId, format }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async guardRoleGet(id: string) : Promise<Result<RoleDetailDto, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_role_get", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async guardRoleList() : Promise<Result<RoleListDto, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_role_list") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async guardRoleSave(input: RoleSaveInput) : Promise<Result<RoleDetailDto, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_role_save", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async guardRoleCopy(source: string, input: RoleCopyInput) : Promise<Result<RoleDetailDto, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_role_copy", { source, input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async guardRoleDiscover() : Promise<Result<RoleDiscoveryDto, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_role_discover") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async guardRoleAdopt(id: string) : Promise<Result<RoleDetailDto, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_role_adopt", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async guardRoleReorder(input: RoleReorderInput) : Promise<Result<RoleListDto, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_role_reorder", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async guardRoleStopManaging(id: string) : Promise<Result<RoleDiscoveryDto, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_role_stop_managing", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async guardRoleDelete(id: string) : Promise<Result<RoleDeleteReport, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_role_delete", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async guardCapabilityGet() : Promise<Result<CapabilitySnapshotDto, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_capability_get") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async guardCapabilityRefresh() : Promise<Result<CapabilitySnapshotDto, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_capability_refresh") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async guardRoleMigrationPlan(safeDefaultToml: string) : Promise<Result<RoleMigrationDto, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_role_migration_plan", { safeDefaultToml }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async guardRoleMigrationResolve(input: RoleMigrationResolveInput) : Promise<Result<RoleMigrationDto, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_role_migration_resolve", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Run the bounded runtime audit against the current Codex rollout and sampling stores.
+ */
+async guardRunSubagentAudit() : Promise<Result<SubagentAuditResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_run_subagent_audit") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Return retained local operation-audit records. The store owns parsing and retention.
+ */
+async guardOperationAuditList() : Promise<Result<OperationAuditRecord[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("guard_operation_audit_list") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
 /** user-defined events **/
 
 
+export const events = __makeEvents__<{
+guardOperationProgress: GuardOperationProgress
+}>({
+guardOperationProgress: "guard-operation-progress"
+})
 
 /** user-defined constants **/
 
@@ -165,11 +371,73 @@ export const GUARD_CONTRACT = {"applyModes":["toml_key","toml_absent","file_over
 
 /** user-defined types **/
 
-export type CodexGuardState = { enabled?: boolean; params?: Partial<{ [key in string]: GuardParamState }>;
+export type ActionEligibilityView = { enabled: boolean; reason: string | null; affectedMembers: number; affectedFiles: number }
+export type ActionStatesView = { apply: ActionEligibilityView; lock: ActionEligibilityView; unlock: ActionEligibilityView; disable: ActionEligibilityView }
+export type AgentAudit = { threadId: string; roleId: string; expectedPolicyRevision: number | null; expectedPolicyHash: string | null; expectedModel: string | null; expectedEffort: string | null; parent: ParentDispatchAudit; turns: TurnAudit[]; verdict: AuditVerdict }
+/**
+ * A notice has a stable code only.  It intentionally does not contain parser error text or
+ * any source identifier.
+ */
+export type AuditNotice = { code: string }
+/**
+ * The source layer observed by the audit.  `RolloutOnly` is intentionally not green: sampling
+ * evidence from the SQLite layer is required before a complete result can be claimed.
+ */
+export type AuditSourceSupport = "unsupported" | "rollout_only" | "full"
+export type AuditVerdict = "match" | "missing" | "incomplete" | "unsupported" | "ambiguous" | "mismatch"
+/**
+ * 批量生命周期动作。
+ */
+export type BatchAction = "apply" | "lock" | "unlock" | "disable"
+/**
+ * 批量事务的最终结果；业务操作不返回部分成功。
+ */
+export type BatchOutcome = "committed" | "rejected" | "rolled_back" | "critical_recovery"
+export type BatchPreview = { schemaVersion: number; previewId: string;
+/**
+ * SHA-256 revision of the semantic Launcher configuration used for the preview.
+ */
+revision: string; scope: BatchScope; action: BatchAction; memberIds: string[]; affectedMembers: number; affectedFiles: number; changed: number; unchanged: number; files: number; eligible: boolean; blockers: ValidationDiagnostic[]; diagnostics: ValidationDiagnostic[] }
+/**
+ * 批量事务报告。诊断使用 Guard 统一的稳定 code，不携带解析器原文。
+ *
+ * 当前 `ValidationDiagnostic` 仍是内部类型，所以报告暂不派生 `specta::Type`；接入公开
+ * command 合同时由合同层统一提升诊断 DTO 的可见性。
+ */
+export type BatchReport = { schemaVersion: number; batchId: string; outcome: BatchOutcome; changed: number; unchanged: number; files: number; diagnostics: ValidationDiagnostic[] }
+/**
+ * 批量请求合同。`schema_version` 是持久/IPC 边界的显式版本，不接受隐式默认。
+ */
+export type BatchRequest = { schemaVersion: number; scope: BatchScope; action: BatchAction }
+/**
+ * 批量命令作用域。Role 由托管角色记录展开为角色文件和角色目录成员。
+ */
+export type BatchScope = "all" | { group: { groupId: string } } | { parameter: { parameterId: string } } | { role: { roleId: string } }
+export type CapabilityModelDto = { slug: string; multiAgentVersion: string; efforts: string[] }
+export type CapabilitySnapshotDto = { available: boolean; executableIdentity: string | null; fetchedAtMs: number | null; models: CapabilityModelDto[];
+/**
+ * Stable failure code when the most recent probe was unavailable but a
+ * prior successful snapshot is being shown offline.
+ */
+error: string | null }
+export type CodexGuardState = { schema_version: number; enabled: boolean; params: Partial<{ [key in string]: GuardParamState }>;
 /**
  * 看守目标文件列表（内置 + 自定义）
  */
-files?: GuardFile[] }
+files: GuardFile[];
+/**
+ * 逻辑参数组定义；缺失时由 schema 参数的 group_id 派生。
+ */
+groups: GuardGroup[];
+/**
+ * v0 非法布尔组合等待显式迁移选择；未决项不会进入批量/轮询写计划。
+ */
+pending_lifecycle_migrations: Partial<{ [key in string]: PendingLifecycleMigration }>;
+/**
+ * File entries with a missing/unknown format.  These block Guard writes
+ * until `guard_file_format_migration_resolve` chooses one candidate.
+ */
+pending_format_migrations: Partial<{ [key in string]: PendingFormatMigration }> }
 /**
  * 一次路径检测的结果记录
  */
@@ -178,7 +446,19 @@ export type DetectRecord = {
  * 检测到的相对 ~/.codex 路径；None = 未找到该文件
  */
 path: string | null; at: number }
-export type GroupView = { id: string; name: string; file: string; format: GuardFileFormat; builtin: boolean; error: string | null; params: ParamView[] }
+/**
+ * 稳定的、不会携带解析器原文的诊断代码。
+ */
+export type DiagnosticCode = "invalid_utf_8" | "nul_byte" | "toml_invalid" | "json_invalid" | "json_duplicate_key" | "markdown_malformed_marker" | "markdown_duplicate_marker" | "markdown_crossing_marker" | "markdown_unmatched_marker" | "markdown_unclosed_marker" | "plan_empty_members" | "plan_unknown_mode" | "plan_mode_incompatible" | "plan_invalid_path" | "plan_expected_type_mismatch" | "plan_conflict"
+export type DiagnosticParams = { expectedFormat: GuardFileFormat | null }
+export type DiagnosticSeverity = "error"
+export type GroupFileRef = { file: string; format: GuardFileFormat }
+export type GroupView = { id: string; name: string; file: string; format: GuardFileFormat; builtin: boolean; lifecycle: LifecycleSummary; health: HealthStatus; actions: ActionStatesView; affectedMembers: number; affectedFiles: number; error: string | null; diagnostics: ValidationDiagnostic[]; params: ParamView[];
+/**
+ * A logical group may span multiple physical files. `file` remains the first
+ * reference for old clients; new clients should use this complete list.
+ */
+files: GroupFileRef[] }
 /**
  * 看守目标文件
  */
@@ -199,6 +479,13 @@ detection?: DetectRecord | null }
  * 看守文件的物理解析格式。序列化值是稳定的 snake_case 字符串。
  */
 export type GuardFileFormat = "toml" | "json" | "markdown" | "plain_text"
+export type GuardGroup = { id: string; name: string; builtin?: boolean; order?: number }
+/**
+ * Stable lifecycle stages emitted while a batch is executing.  The payload deliberately
+ * contains no path, file contents, or parameter values; consumers can only render progress.
+ */
+export type GuardOperationPhase = "preflight" | "snapshot" | "write" | "verify" | "completed" | "recovery"
+export type GuardOperationProgress = { batchId: string; phase: GuardOperationPhase; completed: number; total: number }
 /**
  * schema 中的一条托管参数
  */
@@ -215,6 +502,14 @@ description_en?: string;
  * 相对 ~/.codex 的路径，如 config.toml / AGENTS.md / agents/default.toml
  */
 file: string;
+/**
+ * 稳定的物理文件身份；旧 schema 缺失时由加载边界按路径生成兼容 ID。
+ */
+fileId?: string;
+/**
+ * 逻辑组 ID；旧配置缺失时归入 uncategorized。
+ */
+groupId?: string | null;
 /**
  * toml_key | toml_absent | file_overwrite | markdown_block
  */
@@ -236,24 +531,81 @@ default_en?: JsonValue;
  */
 custom?: boolean }
 /**
- * 单个参数的托管状态，持久化在 LauncherConfig.codex_guard.params
+ * 单个参数的托管状态，持久化在 LauncherConfig.codex_guard.params。
+ *
+ * `applied`/`locked` 保留为旧 IPC 的兼容投影；序列化时额外写出合法的
+ * `lifecycle` 枚举，反序列化时以枚举为准并同步布尔值。
  */
 export type GuardParamState = {
 /**
  * 用户改后的值；None = 用 schema 推荐值
  */
-value?: JsonValue | null; applied?: boolean; locked?: boolean; last_checked?: number | null; last_restored?: number | null }
+value: JsonValue | null; applied: boolean; locked: boolean; last_checked: number | null; last_restored: number | null }
 /**
  * 前端可见的恢复状态。只返回稳定 code，不暴露 journal 路径、文件内容或底层错误。
  */
 export type GuardRecoveryStatus = { blocked: boolean; code: string | null }
-export type GuardView = { schemaVersion: number; enabled: boolean; groups: GroupView[] }
+export type GuardRuntimeState = "running" | "suspended"
+export type GuardView = { schemaVersion: number; enabled: boolean; runtimeState: GuardRuntimeState; lifecycle: LifecycleSummary; health: HealthStatus; actions: ActionStatesView; affectedMembers: number; affectedFiles: number; files: PhysicalFileView[]; recovery: GuardRecoveryStatus; groups: GroupView[]; pendingFormatMigrations: PendingFormatMigration[] }
+/**
+ * 健康状态独立于生命周期，数值越大优先级越高。
+ */
+export type HealthStatus = "healthy" | "drifted" | "invalid" | "unsupported" | "error"
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
-export type ParamView = { id: string; label: string; description: string; applyMode: string; valueType: string; path: string; default: JsonValue; value: JsonValue; applied: boolean; locked: boolean; actual: string | null;
+/**
+ * 用户在生命周期迁移向导中作出的选择。
+ */
+export type LifecycleMigrationChoice = "disabled" | "apply"
+/**
+ * 组或全局成员生命周期的派生摘要。
+ */
+export type LifecycleSummary = "disabled" | "applied" | "locked" | "mixed"
+export type ManagedRoleSnapshot = { roleId: string; policyRevision: number | null; policyHash: string | null; expectedModel: string | null; expectedEffort: string | null; policyUpdatedAtMs: number | null; managed: boolean }
+export type OperationAuditPhase = "preflight" | "snapshot" | "write" | "verify" | "completed" | "rolled_back" | "recovery" | "audit"
+export type OperationAuditRecord = { schemaVersion: number; atMs: number; batchId: string; scope: string; relativeFile: string | null; phase: OperationAuditPhase; result: OperationAuditResult; errorCode: string | null; changed: number; unchanged: number; files: number; roleId: string | null; model: string | null; effort: string | null }
+export type OperationAuditResult = "success" | "failed" | "rejected" | "busy" | "rolled_back" | "critical"
+export type OutboundObservation = { threadId: string; turnId: string; requestedModel: string; observedAtMs: number | null }
+export type ParamView = { id: string; groupId: string; label: string; description: string; applyMode: string; valueType: string; path: string; default: JsonValue; value: JsonValue; applied: boolean; locked: boolean; lifecycle: ParameterLifecycle; health: HealthStatus; actions: ActionStatesView; affectedMembers: number; affectedFiles: number; actual: string | null;
 /**
  * match | drift | missing | error
  */
-status: string; error: string | null; lastChecked: number | null; lastRestored: number | null; custom: boolean }
+status: string; error: string | null; diagnostics: ValidationDiagnostic[]; lastChecked: number | null; lastRestored: number | null; custom: boolean }
+/**
+ * 单个参数的合法托管生命周期。
+ */
+export type ParameterLifecycle = "disabled" | "applied" | "locked"
+export type ParentDispatchAudit = { verdict: AuditVerdict; observedAgentType: string | null; observedForkTurns: string | null; overrideModel: string | null; overrideEffort: string | null }
+/**
+ * A persisted file entry whose physical format cannot be selected safely yet.
+ *
+ * The marker deliberately keeps only the file identity and a bounded list of
+ * candidate formats.  It never silently chooses `plain_text`; the file stays
+ * out of all write plans until the user resolves it explicitly.
+ */
+export type PendingFormatMigration = { id: string; name: string; file: string; builtin: boolean; detection: DetectRecord | null; rawFormat: string | null; candidates: GuardFileFormat[] }
+/**
+ * v0 中 `applied`/`locked` 两个布尔值无法表达的组合。
+ */
+export type PendingLifecycleMigration = { applied: boolean; locked: boolean }
+export type PhysicalFileView = { id: string; name: string; file: string; format: GuardFileFormat; builtin: boolean; detection: DetectRecord | null; health: HealthStatus; diagnostics: ValidationDiagnostic[] }
+export type RoleCopyInput = { id: string; displayName: string; selectionCriteria: string }
+export type RoleDeleteReport = { id: string; fileRemoved: boolean; directoryUpdated: boolean; filesRemoved: number; backupSummary: string | null }
+export type RoleDetailDto = { id: string; displayName: string; purpose: string; selectionCriteria: string; model: string; effort: string; instructions: string; lifecycle: string; health: string; actualFilePresent: boolean; policyRevision: number; policyHash: string }
+export type RoleDiscoveryDiagnosticDto = { code: string; field: string | null }
+export type RoleDiscoveryDto = { roles: RoleDiscoveryItemDto[] }
+export type RoleDiscoveryItemDto = { id: string; relativeFileName: string; syntax: string; capability: string; canAdopt: boolean; managed: boolean; diagnostics: RoleDiscoveryDiagnosticDto[] }
+export type RoleListDto = { roles: RoleSummaryDto[] }
+export type RoleMigrationDto = { status: string; reason: string | null; choices: string[]; role: RoleSummaryDto | null }
+export type RoleMigrationResolveInput = { choice: string; safeDefaultToml: string }
+export type RoleReorderInput = { ids: string[] }
+export type RoleSaveInput = { id: string; displayName: string; purpose: string; selectionCriteria: string; model: string; effort: string; instructions: string }
+export type RoleSummaryDto = { id: string; displayName: string; purpose: string; selectionCriteria: string; model: string; effort: string; order: number; lifecycle: string; health: string; actualFilePresent: boolean }
+export type SubagentAuditResult = { schemaVersion: number; checkedAtMs: number; sourceSupport: AuditSourceSupport; agents: AgentAudit[]; notices: AuditNotice[] }
+export type TurnAudit = { turnId: string; startedAtMs: number | null; model: string | null; effort: string | null; multiAgentVersion: string | null; clientVerdict: AuditVerdict; outboundRequestedModel: string | null; outboundEvidenceCount: number; outboundVerdict: AuditVerdict; verdict: AuditVerdict }
+/**
+ * 传给 UI/审计层的结构化诊断；解析器错误文本和原文片段不得进入此对象。
+ */
+export type ValidationDiagnostic = { code: DiagnosticCode; severity: DiagnosticSeverity; scopeId: string; relativeFile: string | null; field: string | null; line: number | null; column: number | null; params: DiagnosticParams }
 
 /** tauri-specta globals **/
 
