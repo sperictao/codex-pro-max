@@ -18,6 +18,8 @@ pub struct FastctxStatus {
     pub version: Option<String>,
     /// ~/.codex/config.toml 含 [mcp_servers.fastctx]
     pub integrated: bool,
+    /// npm 最新版本号；仅当比已装版本新时返回（UI 右侧更新胶囊），否则 None
+    pub latest_version: Option<String>,
 }
 
 /// 接入结果（apply 成功后的 status 自检）
@@ -85,9 +87,10 @@ fn read_integrated() -> Result<bool, String> {
     }
 }
 
-/// 检测：安装状态（PATH 探测）+ 接入状态（读 config.toml），每次实时，不落盘
+/// 检测：安装状态（PATH 探测）+ 接入状态（读 config.toml），每次实时，不落盘。
+/// async 使 npm view 网络查询跑在 Tokio runtime，不阻塞 UI 主线程（同 updater::check_update 约定）
 #[tauri::command]
-pub fn fastctx_detect() -> Result<FastctxStatus, String> {
+pub async fn fastctx_detect() -> Result<FastctxStatus, String> {
     let (installed, version) = match cli_command("fastctx", &["--version"]).output() {
         Ok(o) if o.status.success() => {
             let v = String::from_utf8_lossy(&o.stdout).trim().to_string();
@@ -95,11 +98,50 @@ pub fn fastctx_detect() -> Result<FastctxStatus, String> {
         }
         _ => (false, None),
     };
+    // 有可执行版时向 npm 查最新版，仅比已装版新才带上（网络/查询失败静默降级为 None）
+    let latest_version = match &version {
+        Some(cur) => latest_version(cur).ok().flatten(),
+        None => None,
+    };
     Ok(FastctxStatus {
         installed,
         version,
         integrated: read_integrated()?,
+        latest_version,
     })
+}
+
+/// 查 npm 最新 fastctx 版本；返回 Some 仅当比已装版本新。网络不可达/解析失败回 None
+fn latest_version(current: &str) -> Result<Option<String>, String> {
+    let output = cli_command("npm", &["view", "fastctx", "version"])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Ok(None);
+    }
+    let latest = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if latest.is_empty() {
+        return Ok(None);
+    }
+    Ok(is_newer(&latest, current).then_some(latest))
+}
+
+/// 语义版本号比较：cur < latest 才算有更新；解析失败按无更新处理
+fn is_newer(latest: &str, current: &str) -> bool {
+    match (parse_version(latest), parse_version(current)) {
+        (Some(a), Some(b)) => a > b,
+        _ => false,
+    }
+}
+
+/// 解析 "1.2.3" → (1,2,3)；容忍 npm view 可能带 `v` 前缀。解析失败返回 None
+fn parse_version(v: &str) -> Option<(u64, u64, u64)> {
+    let parts: Vec<&str> = v.trim().trim_start_matches('v').split('.').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let (a, b, c) = (parts[0].parse().ok()?, parts[1].parse().ok()?, parts[2].parse().ok()?);
+    Some((a, b, c))
 }
 
 /// 安装：npm install --global fastctx（设置页开关在未检测到安装时自动触发）
@@ -183,7 +225,7 @@ pub fn fastctx_open_console() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::integrated_in;
+    use super::{integrated_in, is_newer, parse_version};
 
     #[test]
     fn integrated_detection() {
@@ -195,5 +237,29 @@ mod tests {
         assert!(!integrated_in("model = \"gpt-5\"\n").unwrap());
         // 解析失败要报错而不是谎报未接入
         assert!(integrated_in("[mcp_servers\n").is_err());
+    }
+
+    #[test]
+    fn version_compare() {
+        // 有更新
+        assert!(is_newer("1.2.3", "1.2.2"));
+        assert!(is_newer("1.3.0", "1.2.9"));
+        assert!(is_newer("2.0.0", "1.9.9"));
+        // 相同 / 已装更新 → 无更新
+        assert!(!is_newer("1.2.3", "1.2.3"));
+        assert!(!is_newer("1.2.2", "1.2.3"));
+        // 任意一侧解析失败 → 无更新
+        assert!(!is_newer("v1.2.3", "abc"));
+        assert!(!is_newer("", "1.2.3"));
+    }
+
+    #[test]
+    fn version_parse() {
+        assert_eq!(parse_version("1.2.3"), Some((1, 2, 3)));
+        assert_eq!(parse_version("v1.2.3"), Some((1, 2, 3)));
+        assert_eq!(parse_version(" 1.2.3 "), Some((1, 2, 3)));
+        assert_eq!(parse_version("1.2"), None);
+        assert_eq!(parse_version("a.b.c"), None);
+        assert_eq!(parse_version("1.2.x"), None);
     }
 }

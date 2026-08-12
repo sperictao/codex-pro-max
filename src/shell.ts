@@ -24,7 +24,7 @@ import {
   updateAutoOpenLabel,
   validatePaths,
 } from "./core";
-import { toggleSettings, showHome, showSkill, showGuard, switchSection } from "./nav";
+import { toggleSettings, showHome, showSkill, showGuard, showIntegration, switchSection } from "./nav";
 import {
   startAll,
   stopAll,
@@ -286,6 +286,10 @@ function wireEvents(): void {
     void refreshGuardFiles();
   });
   on("btn-settings", "click", toggleSettings);
+  on("btn-integration", "click", () => {
+    showIntegration();
+    void refreshFastctxStatus();
+  });
 
   // 主页
   on("btn-start-all", "click", () => void startAll());
@@ -296,12 +300,11 @@ function wireEvents(): void {
   on("btn-start-inj", "click", () => void startInjector());
   on("btn-stop-inj", "click", () => void stopInjector());
 
-  // 设置侧栏（guard/integration 分区的数据刷新在调用点触发）
-  for (const s of ["general", "appearance", "network", "mode", "guard", "integration", "about"]) {
+  // 设置侧栏（guard 分区的数据刷新在调用点触发）
+  for (const s of ["general", "appearance", "network", "mode", "guard", "about"]) {
     on(`nav-${s}`, "click", () => {
       switchSection(s);
       if (s === "guard") void refreshGuardFiles();
-      if (s === "integration") void refreshFastctxStatus();
     });
   }
 

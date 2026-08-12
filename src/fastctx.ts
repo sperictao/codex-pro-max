@@ -9,6 +9,7 @@ interface FastctxStatus {
   installed: boolean;
   version: string | null;
   integrated: boolean;
+  latestVersion: string | null;
 }
 
 interface FastctxApplyResult {
@@ -16,13 +17,19 @@ interface FastctxApplyResult {
   selfCheckOutput: string;
 }
 
-let fastctxState: FastctxStatus = { installed: false, version: null, integrated: false };
+let fastctxState: FastctxStatus = { installed: false, version: null, integrated: false, latestVersion: null };
 let fastctxBusy = false;
 
 export function renderFastctx(): void {
   (document.getElementById("toggle-fastctx") as HTMLInputElement).checked = fastctxState.integrated;
   const status = document.getElementById("fastctx-status")!;
   const hint = document.getElementById("fastctx-install-hint")!;
+  // 右侧更新胶囊：仅在有新版时显示最新版本号
+  const pill = document.getElementById("fastctx-update-pill")!;
+  pill.classList.toggle("hidden", !fastctxState.latestVersion);
+  if (fastctxState.latestVersion) {
+    pill.textContent = `v${fastctxState.latestVersion}`;
+  }
   if (fastctxBusy) {
     status.textContent = t("Working…");
   } else if (!fastctxState.installed) {

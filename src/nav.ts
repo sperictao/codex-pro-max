@@ -14,8 +14,10 @@ export function toggleSettings(): void {
     mainView.classList.add("hidden");
     document.getElementById("skill-view")!.classList.add("hidden");
     document.getElementById("guard-view")!.classList.add("hidden");
+    document.getElementById("integration-view")!.classList.add("hidden");
     document.getElementById("btn-skill")!.classList.remove("active");
     document.getElementById("btn-guard")!.classList.remove("active");
+    document.getElementById("btn-integration")!.classList.remove("active");
     settingsView.classList.remove("hidden");
     btn.classList.add("active");
     homeBtn.classList.remove("active");
@@ -29,9 +31,11 @@ export function showHome(): void {
   document.getElementById("settings-view")!.classList.add("hidden");
   document.getElementById("skill-view")!.classList.add("hidden");
   document.getElementById("guard-view")!.classList.add("hidden");
+  document.getElementById("integration-view")!.classList.add("hidden");
   document.getElementById("btn-settings")!.classList.remove("active");
   document.getElementById("btn-skill")!.classList.remove("active");
   document.getElementById("btn-guard")!.classList.remove("active");
+  document.getElementById("btn-integration")!.classList.remove("active");
   document.getElementById("btn-home")!.classList.add("active");
 }
 
@@ -39,10 +43,12 @@ export function showSkill(): void {
   document.getElementById("main-view")!.classList.add("hidden");
   document.getElementById("settings-view")!.classList.add("hidden");
   document.getElementById("guard-view")!.classList.add("hidden");
+  document.getElementById("integration-view")!.classList.add("hidden");
   document.getElementById("skill-view")!.classList.remove("hidden");
   document.getElementById("btn-settings")!.classList.remove("active");
   document.getElementById("btn-home")!.classList.remove("active");
   document.getElementById("btn-guard")!.classList.remove("active");
+  document.getElementById("btn-integration")!.classList.remove("active");
   document.getElementById("btn-skill")!.classList.add("active");
 }
 
@@ -50,11 +56,35 @@ export function showGuard(): void {
   document.getElementById("main-view")!.classList.add("hidden");
   document.getElementById("settings-view")!.classList.add("hidden");
   document.getElementById("skill-view")!.classList.add("hidden");
+  document.getElementById("integration-view")!.classList.add("hidden");
   document.getElementById("guard-view")!.classList.remove("hidden");
   document.getElementById("btn-settings")!.classList.remove("active");
   document.getElementById("btn-home")!.classList.remove("active");
   document.getElementById("btn-skill")!.classList.remove("active");
+  document.getElementById("btn-integration")!.classList.remove("active");
   document.getElementById("btn-guard")!.classList.add("active");
+}
+
+// 顶部导航直达集成页：已在集成页则回主页，否则切过去
+export function showIntegration(): void {
+  const integrationView = document.getElementById("integration-view")!;
+  const alreadyThere = !integrationView.classList.contains("hidden");
+
+  if (alreadyThere) {
+    showHome();
+    return;
+  }
+
+  document.getElementById("main-view")!.classList.add("hidden");
+  document.getElementById("settings-view")!.classList.add("hidden");
+  document.getElementById("skill-view")!.classList.add("hidden");
+  document.getElementById("guard-view")!.classList.add("hidden");
+  integrationView.classList.remove("hidden");
+  document.getElementById("btn-settings")!.classList.remove("active");
+  document.getElementById("btn-home")!.classList.remove("active");
+  document.getElementById("btn-skill")!.classList.remove("active");
+  document.getElementById("btn-guard")!.classList.remove("active");
+  document.getElementById("btn-integration")!.classList.add("active");
 }
 
 export function switchSection(section: string): void {
@@ -69,7 +99,7 @@ export function switchSection(section: string): void {
   document.getElementById(`nav-${section}`)!.classList.add("active");
 
   const footer = document.getElementById("settings-footer")!;
-  if (section === "about" || section === "appearance" || section === "guard" || section === "integration") {
+  if (section === "about" || section === "appearance" || section === "guard") {
     footer.classList.add("hidden");
   } else {
     footer.classList.remove("hidden");
