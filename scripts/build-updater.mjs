@@ -59,11 +59,11 @@ function main(argv = process.argv.slice(2)) {
   rmSync("vendor/dashi-taskboard/node_modules", { recursive: true, force: true });
 
   // Step 4: 使用 overlay 配置执行 tauri build，透传额外参数
-  // pnpm run tauri 已经是 tauri CLI 入口，不需要再传 tauri 子命令
+  // pnpm 与 npm 不同：不消费 `--` 分隔符（会把 `--` 原样传给 tauri CLI 导致
+  // `tauri -- build` 报 unexpected argument），所以直接追加参数、不再拼 `--`
   const tauriArgs = [
     "run-script",
     "tauri",
-    "--",
     "build",
     "--config",
     updaterConfigPath,
