@@ -28,6 +28,16 @@ pub struct LauncherConfig {
     #[serde(default = "default_cdp_port")]
     pub cdp_port: u16,
 
+    /// Taskboard instance token（taskboard v0.2.3 token 模式的路由前缀 + 鉴权标识）。
+    /// 本地生成、跨重启保持稳定，server 与 injector 共用；前端不展示、不参与 merge_settings。
+    #[serde(default)]
+    pub instance_token: String,
+
+    /// Taskboard instance secret：/health challenge 的 HMAC-SHA256 proof 校验密钥。
+    /// 与 instance_token 同生命周期，只在本机配置落盘。
+    #[serde(default)]
+    pub instance_secret: String,
+
     /// 是否在启动时自动打开浏览器
     #[serde(default = "default_true")]
     pub auto_open: bool,
@@ -85,6 +95,36 @@ fn default_language() -> String {
     "system".to_string()
 }
 
+/// 生成新的 instance token/secret 对（taskboard v0.2.3 token 模式）。
+/// token 为 uuid v4（满足 /^[a-z0-9-]{16,128}$/i）；secret 为两个 uuid 拼接去连字符
+/// 的 64 位 hex（满足 /^[a-f0-9-]{32,128}$/i）。本机凭据，非高安全场景，uuid 熵足够
+fn generate_credentials() -> (String, String) {
+    let token = uuid::Uuid::new_v4().to_string();
+    let secret = format!(
+        "{}{}",
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    );
+    (token, secret)
+}
+
+/// 取有效 instance token/secret（首启生成并落盘，之后稳定复用）。
+/// 校验失败（外部篡改/损坏）则重新生成，保证双进程 env 永远一致
+pub fn ensure_instance_credentials(config: &mut LauncherConfig) -> Result<(String, String), String> {
+    let valid_token = config.instance_token.len() >= 16
+        && config.instance_token.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+    let valid_secret = config.instance_secret.len() >= 32
+        && config.instance_secret.chars().all(|c| c.is_ascii_hexdigit() || c == '-');
+    if valid_token && valid_secret {
+        return Ok((config.instance_token.clone(), config.instance_secret.clone()));
+    }
+    let (token, secret) = generate_credentials();
+    config.instance_token = token.clone();
+    config.instance_secret = secret.clone();
+    save_config(config)?;
+    Ok((token, secret))
+}
+
 impl Default for LauncherConfig {
     fn default() -> Self {
         Self {
@@ -94,6 +134,8 @@ impl Default for LauncherConfig {
             taskboard_port: default_taskboard_port(),
             taskboard_host: default_taskboard_host(),
             cdp_port: default_cdp_port(),
+            instance_token: String::new(),
+            instance_secret: String::new(),
             auto_open: true,
             separate_window_mode: false,
             minimize_to_tray_on_close: false,

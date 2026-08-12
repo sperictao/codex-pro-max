@@ -1,6 +1,6 @@
 [package]
 name = "dashi-taskboard-launcher"
-version = "0.12.3"
+version = "0.13.0"
 description = "One-click launcher for dashi-taskboard integrated with Codex"
 authors = ["dashi-taskboard-launcher"]
 edition = "2021"
@@ -26,6 +26,10 @@ toml_edit = "0.22"
 tokio = { version = "1", features = ["full"] }
 log = "0.4"
 sys-locale = "0.3"
+# taskboard v0.2.3 instance token 模式：token 生成（uuid v4）与 /health challenge 的 HMAC-SHA256 proof 校验
+uuid = { version = "1", features = ["v4"] }
+hmac = "0.12"
+sha2 = "0.10"
 
 # 商店版应用 COM 激活（版本与 tauri 依赖树中的 windows 0.61.3 对齐）
 [target.'cfg(windows)'.dependencies]

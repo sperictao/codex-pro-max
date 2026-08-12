@@ -378,6 +378,10 @@ async fn run_start_all(
         return Err(i18n::trf("Path does not exist: {path}", &[("path", config.taskboard_path.clone())]));
     }
 
+    // token 与 secret 全流程一致：server 与注入器共用同一对凭据
+    let (instance_token, instance_secret) =
+        config::ensure_instance_credentials(&mut config::load_config()?)?;
+
     // 启动 taskboard 服务（重启 Codex 的重试路径下可能已在运行，幂等跳过，
     // 否则「已在运行」报错会中断后续注入器启动）
     if !pm.taskboard_is_running().await {
@@ -392,6 +396,8 @@ async fn run_start_all(
             &config.node_path,
             &config.taskboard_host,
             config.taskboard_port,
+            &instance_token,
+            &instance_secret,
         ).await?;
     }
 
@@ -421,6 +427,8 @@ async fn run_start_all(
         &config.codex_app_path,
         config.separate_window_mode,
         config.taskboard_port,
+        &instance_token,
+        &instance_secret,
     ).await?;
 
     app.emit("status-update", &serde_json::json!({
@@ -490,11 +498,14 @@ async fn start_taskboard(
     state: State<'_, AppState>,
     config: LauncherConfig,
 ) -> Result<(), String> {
+    let (token, secret) = config::ensure_instance_credentials(&mut config::load_config()?)?;
     state.pm.start_taskboard(
         &config.taskboard_path,
         &config.node_path,
         &config.taskboard_host,
         config.taskboard_port,
+        &token,
+        &secret,
     ).await
 }
 
@@ -510,6 +521,7 @@ async fn start_injector(
     state: State<'_, AppState>,
     config: LauncherConfig,
 ) -> Result<(), String> {
+    let (token, secret) = config::ensure_instance_credentials(&mut config::load_config()?)?;
     state.pm.start_injector(
         &config.taskboard_path,
         &config.node_path,
@@ -517,6 +529,8 @@ async fn start_injector(
         &config.codex_app_path,
         config.separate_window_mode,
         config.taskboard_port,
+        &token,
+        &secret,
     ).await
 }
 
@@ -546,9 +560,12 @@ fn home_dir() -> Result<String, String> {
 }
 
 /// 在浏览器中打开 Taskboard
+/// token 模式下 UI 挂在 /<token>/ 子路径（注入器同样打开该前缀），
+/// 裸根路径会 404，故拼上 instance_token
 #[tauri::command]
 async fn open_taskboard(config: LauncherConfig) -> Result<(), String> {
-    let url = format!("http://{}:{}", config.taskboard_host, config.taskboard_port);
+    let (token, _) = config::ensure_instance_credentials(&mut config::load_config()?)?;
+    let url = format!("http://{}:{}/{}/", config.taskboard_host, config.taskboard_port, token);
     #[cfg(unix)]
     {
         std::process::Command::new("open")
@@ -695,6 +712,13 @@ async fn run_taskctl(
         cmd.arg(arg);
     }
     cmd.current_dir(&taskboard_path);
+    // token 模式下 API 路由在 /<token>/ 前缀下，taskctl 默认裸根 URL 会 404；
+    // 注入 CODEX_TASKBOARD_URL（taskctl 优先读该 env），指向带前缀的完整地址
+    let (token, _) = config::ensure_instance_credentials(&mut config::load_config()?)?;
+    cmd.env(
+        "CODEX_TASKBOARD_URL",
+        format!("http://127.0.0.1:47823/{}", token),
+    );
     // Windows 上不弹出终端窗口
     #[cfg(windows)]
     {

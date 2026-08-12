@@ -5,6 +5,10 @@ use tokio::sync::Mutex;
 use std::process::Stdio;
 
 use crate::i18n::{tr, trf};
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
+
+type HmacSha256 = Hmac<Sha256>;
 
 /// 错误前缀标记：Codex 已在运行但未开 CDP（Windows 与 macOS 完整模式发出）。
 /// 前端据此弹窗询问是否重启 Codex，其余错误照常 toast
@@ -363,21 +367,45 @@ fn cdp_reachable(port: u16) -> bool {
     .is_ok()
 }
 
-/// 端口上已有健康的 Taskboard 服务时直接复用；重复 spawn 只会 EADDRINUSE
-///（上次启动残留的服务进程不会被启动器回收，但服务本身是无状态可共享的）
-async fn taskboard_health_reachable(host: &str, port: u16) -> bool {
+/// token 模式 health 探测的 HMAC-SHA256 proof（与 server/injector 算法一致）
+fn hmac_proof(secret: &str, challenge: &str) -> String {
+    let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC accepts any key length");
+    mac.update(challenge.as_bytes());
+    format!("{:x}", mac.finalize().into_bytes())
+}
+
+/// 端口上已有健康的 Taskboard 服务时直接复用；重复 spawn 只会 EADDRINUSE。
+/// taskboard v0.2.3 token 模式下 /health 必须带 challenge 头，返回的 proof 须等于
+/// HMAC(secret, challenge) 才算健康——裸 200 是旧版判定，token 模式会误判为「不可达」
+/// 导致注入器再起一个 server 抢端口
+async fn taskboard_health_reachable(host: &str, port: u16, secret: &str) -> bool {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let timeout = std::time::Duration::from_millis(800);
     let Ok(Ok(mut stream)) = tokio::time::timeout(
         timeout,
         tokio::net::TcpStream::connect((host, port)),
     ).await else { return false };
-    let req = format!("GET /health HTTP/1.1\r\nHost: {host}:{port}\r\nConnection: close\r\n\r\n");
+    // server 要求 challenge 为 32~128 位 hex，uuid.simple() 恰好 32 位
+    let challenge = uuid::Uuid::new_v4().simple().to_string();
+    let req = format!(
+        "GET /health HTTP/1.1\r\nHost: {host}:{port}\r\nx-codex-taskboard-challenge: {challenge}\r\nConnection: close\r\n\r\n"
+    );
     if stream.write_all(req.as_bytes()).await.is_err() { return false; }
-    let mut buf = [0u8; 1024];
+    let mut buf = [0u8; 4096];
     let Ok(Ok(n)) = tokio::time::timeout(timeout, stream.read(&mut buf)).await else { return false };
     let head = String::from_utf8_lossy(&buf[..n]);
-    head.starts_with("HTTP/1.1 200") || head.starts_with("HTTP/1.0 200")
+    if !(head.starts_with("HTTP/1.1 200") || head.starts_with("HTTP/1.0 200")) {
+        return false;
+    }
+    // 非 token 模式（旧版/未传 secret 的残留服务）返回 {status:"ok"} 无 proof，
+    // 与已配置 token 不一致，判为不可达
+    let body = head.split("\r\n\r\n").nth(1).unwrap_or_default();
+    let proof_ok = serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|v| v.get("proof").and_then(|p| p.as_str()).map(String::from))
+        .map(|proof| proof == hmac_proof(secret, &challenge))
+        .unwrap_or(false);
+    proof_ok
 }
 
 /// 确保有一个带 CDP 调试端口的 Codex 实例，没有就拉起并等端口就绪
@@ -495,13 +523,15 @@ impl ProcessManager {
         self.taskboard.lock().await.status == ProcessStatus::Running
     }
 
-    /// 启动 taskboard 服务
+    /// 启动 taskboard 服务（token 模式：与注入器共用 instance_token/instance_secret env）
     pub async fn start_taskboard(
         &self,
         taskboard_path: &str,
         node_path: &str,
         host: &str,
         port: u16,
+        instance_token: &str,
+        instance_secret: &str,
     ) -> Result<(), String> {
         let mut tb = self.taskboard.lock().await;
         if tb.status == ProcessStatus::Running || tb.status == ProcessStatus::Starting {
@@ -510,7 +540,7 @@ impl ProcessManager {
 
         // 残留/外部实例健康时直接复用，避免 EADDRINUSE 秒退；
         // child 置空，停止时不会去杀不属于自己的进程
-        if taskboard_health_reachable(host, port).await {
+        if taskboard_health_reachable(host, port, instance_secret).await {
             tb.child = None;
             tb.status = ProcessStatus::Running;
             tb.message = trf("Reusing Taskboard server already running at http://{host}:{port}", &[
@@ -530,6 +560,8 @@ impl ProcessManager {
         cmd.arg(&server_script);
         cmd.env("CODEX_TASKBOARD_HOST", host);
         cmd.env("CODEX_TASKBOARD_PORT", port.to_string());
+        cmd.env("CODEX_TASKBOARD_INSTANCE_TOKEN", instance_token);
+        cmd.env("CODEX_TASKBOARD_INSTANCE_SECRET", instance_secret);
         cmd.stdin(Stdio::null());
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
@@ -610,7 +642,9 @@ impl ProcessManager {
     /// 启动 codex 注入器
     /// 两种模式统一走跨平台的 --watch：由启动器负责拉起带 CDP 端口的
     /// Codex 实例（ensure_codex_cdp），不再用注入器的 --launch
-    /// （其内部 open/pgrep/ps 仅支持 macOS，Windows 上必然失败）
+    /// （其内部 open/pgrep/ps 仅支持 macOS，Windows 上必然失败）。
+    /// token 模式：注入器从 env 读 instance token/secret，与 server 一致，
+    /// 否则注入器会自生成一套导致与 launcher 起的 server 互相不可达
     pub async fn start_injector(
         &self,
         taskboard_path: &str,
@@ -619,6 +653,8 @@ impl ProcessManager {
         codex_app_path: &str,
         separate_window: bool,
         taskboard_port: u16,
+        instance_token: &str,
+        instance_secret: &str,
     ) -> Result<(), String> {
         let mut inj = self.injector.lock().await;
         if inj.status == ProcessStatus::Running || inj.status == ProcessStatus::Starting {
@@ -649,9 +685,12 @@ impl ProcessManager {
 
         // 注入器按 CODEX_TASKBOARD_PORT 推导 taskboard 地址（resolvePort），
         // 不传则退回默认 47823，与启动器实际端口不一致时 iframe 永远加载失败。
-        // 注意：注入器不读 CODEX_TASKBOARD_APP_PATH，app 路径只用于上面的拉起
+        // 注意：注入器不读 CODEX_TASKBOARD_APP_PATH，app 路径只用于上面的拉起。
+        // instance token/secret 与 server 保持一致，注入器才认 server 为「自己的实例」
         cmd.env("CODEX_TASKBOARD_HOST", "127.0.0.1");
         cmd.env("CODEX_TASKBOARD_PORT", taskboard_port.to_string());
+        cmd.env("CODEX_TASKBOARD_INSTANCE_TOKEN", instance_token);
+        cmd.env("CODEX_TASKBOARD_INSTANCE_SECRET", instance_secret);
         cmd.stdin(Stdio::null());
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
@@ -747,7 +786,7 @@ impl ProcessManager {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_node;
+    use super::{hmac_proof, resolve_node};
 
     #[test]
     fn resolves_existing_node() {
@@ -758,5 +797,19 @@ mod tests {
         if node != "node" {
             assert!(std::path::Path::new(&node).exists(), "探测结果不存在: {}", node);
         }
+    }
+
+    #[test]
+    fn health_proof_matches_node_hmac() {
+        // 实测向量：taskboard v0.2.3 server 在相同输入下返回同样的 proof
+        //（challenge 为 32 位 hex，secret 为 64 位 hex）
+        let proof = hmac_proof(
+            "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+            "0123456789abcdef0123456789abcdef",
+        );
+        assert_eq!(
+            proof,
+            "da1acb03bb1d5fe42165f2ec004a20c466fc7d84e73a397c73431d1b9b2762ed"
+        );
     }
 }
