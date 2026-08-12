@@ -49,11 +49,11 @@ Requirements: Node ≥ 22.5, Rust stable, and the system Tauri dependencies (see
 # submodules required: vendor/dashi-taskboard is a git submodule
 git clone --recurse-submodules https://github.com/sperictao/dashi-taskboard-launcher
 cd dashi-taskboard-launcher
-npm ci
-npm run tauri dev
+pnpm install
+pnpm run tauri dev
 ```
 
-No manual taskboard build is needed before `tauri dev`: `beforeDevCommand` ensures the resource directory exists. Before the first full run, it's recommended to run `npm run build:taskboard` once (builds the taskboard web UI into `dist/web`), otherwise the injected panel has no static assets.
+No manual taskboard build is needed before `tauri dev`: `beforeDevCommand` ensures the resource directory exists. Before the first full run, it's recommended to run `pnpm run build:taskboard` once (builds the taskboard web UI into `dist/web`), otherwise the injected panel has no static assets.
 
 ---
 
@@ -90,7 +90,7 @@ Make taskboard-side changes in the fork repo and push them first, then bump the 
 
 ## 🚢 Build & Release
 
-- Local bundle: `npm run tauri build` (runs `build:taskboard` first to build the taskboard web UI, then the frontend and Rust)
+- Local bundle: `pnpm run tauri build` (runs `build:taskboard` first to build the taskboard web UI, then the frontend and Rust)
 - Release: bump the version in `package.json` / `src-tauri/Cargo.toml` / `src-tauri/tauri.conf.json` (plus lock files), add `release-notes/vX.Y.Z.md`, commit, then tag and push:
 
 ```bash
@@ -120,12 +120,12 @@ Pushing the tag triggers five CI builds (macOS aarch64 / x86_64 / universal, Win
 ## 📜 Common Scripts
 
 ```bash
-npm run tauri dev          # dev mode (frontend + Rust backend)
-npm run tauri build        # production bundle
-npm run build              # frontend only (tsc + vite build)
-npm test                   # theme parser tests
-npm run build:taskboard    # build the bundled taskboard web UI into dist/web
-npm run build:updater      # generate updater artifacts
+pnpm run tauri dev          # dev mode (frontend + Rust backend)
+pnpm run tauri build        # production bundle
+pnpm run build              # frontend only (tsc + vite build)
+pnpm test                   # theme parser tests
+pnpm run build:taskboard    # build the bundled taskboard web UI into dist/web
+pnpm run build:updater      # generate updater artifacts
 ```
 
 ---

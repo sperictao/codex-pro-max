@@ -10,12 +10,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
       - uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: "npm"
-      - run: npm ci
-      - run: npx tsc --noEmit
+          cache: "pnpm"
+      - run: pnpm install
+      - run: pnpm exec tsc --noEmit
 
   rust:
     runs-on: ubuntu-latest
@@ -23,11 +26,14 @@ jobs:
       - uses: actions/checkout@v5
         with:
           submodules: recursive
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
       - uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: "npm"
-      - run: npm ci
+          cache: "pnpm"
+      - run: pnpm install
       - name: Install Linux dependencies
         run: |
           sudo apt-get update

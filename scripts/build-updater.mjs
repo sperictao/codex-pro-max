@@ -50,6 +50,7 @@ function main(argv = process.argv.slice(2)) {
   run(process.execPath, ["scripts/validate-updater-config.mjs", updaterConfigPath]);
 
   // Step 3: 构建 vendored taskboard 的 web UI，产物落进打包资源
+  // vendor/dashi-taskboard 是独立 npm 子模块（上游维护自己的 lockfile），保持 npm 边界
   run("npm", ["--prefix", "vendor/dashi-taskboard", "ci"], { shell: true });
   run("npm", ["--prefix", "vendor/dashi-taskboard", "run", "build:web"], { shell: true });
   // ponytail: node_modules 只是构建 dist 的中间产物，必须删掉——vendor 目录会被
@@ -58,7 +59,7 @@ function main(argv = process.argv.slice(2)) {
   rmSync("vendor/dashi-taskboard/node_modules", { recursive: true, force: true });
 
   // Step 4: 使用 overlay 配置执行 tauri build，透传额外参数
-  // npm run tauri 已经是 tauri CLI 入口，不需要再传 tauri 子命令
+  // pnpm run tauri 已经是 tauri CLI 入口，不需要再传 tauri 子命令
   const tauriArgs = [
     "run-script",
     "tauri",
@@ -69,8 +70,8 @@ function main(argv = process.argv.slice(2)) {
     ...normalizeForwardedArgs(argv),
   ];
 
-  // Windows 上 spawnSync 找不到 npm，需要 shell 模式
-  run("npm", tauriArgs, { shell: true });
+  // Windows 上 spawnSync 找不到 pnpm，需要 shell 模式
+  run("pnpm", tauriArgs, { shell: true });
 }
 
 const isDirectExecution =

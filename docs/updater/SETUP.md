@@ -22,7 +22,7 @@ Dashi Taskboard Launcher 已接入 Tauri v2 Updater 插件。
 1. 生成 updater 签名密钥对（仅首次需要）：
 
 ```bash
-npx @tauri-apps/cli signer generate -w ~/.tauri/dashi-taskboard-launcher.key
+pnpm dlx @tauri-apps/cli signer generate -w ~/.tauri/dashi-taskboard-launcher.key
 ```
 
 执行后会输出公钥（pubkey），并生成私钥文件。记下公钥和私钥密码。
@@ -42,7 +42,7 @@ export TAURI_UPDATER_ENDPOINT='https://github.com/sperictao/dashi-taskboard-laun
 4. 构建时会自动生成生产 overlay，并先校验 updater 配置：
 
 ```bash
-npm run build:updater
+pnpm run build:updater
 ```
 
 生成的 `src-tauri/tauri.conf.updater.prod.json` 为本地产物，

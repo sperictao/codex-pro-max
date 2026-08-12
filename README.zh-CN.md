@@ -49,11 +49,11 @@
 # submodule 必需：vendor/dashi-taskboard 是 git submodule
 git clone --recurse-submodules https://github.com/sperictao/dashi-taskboard-launcher
 cd dashi-taskboard-launcher
-npm ci
-npm run tauri dev
+pnpm install
+pnpm run tauri dev
 ```
 
-`tauri dev` 前无需手动构建 taskboard：`beforeDevCommand` 会确保资源目录存在。首次完整运行前建议先跑一次 `npm run build:taskboard`（构建 taskboard 的 web UI 到 `dist/web`），否则注入的面板没有静态资源。
+`tauri dev` 前无需手动构建 taskboard：`beforeDevCommand` 会确保资源目录存在。首次完整运行前建议先跑一次 `pnpm run build:taskboard`（构建 taskboard 的 web UI 到 `dist/web`），否则注入的面板没有静态资源。
 
 ---
 
@@ -90,7 +90,7 @@ taskboard 侧的代码改动一律在 fork 仓库里进行并推送，然后按�
 
 ## 🚢 构建与发布
 
-- 本地打包：`npm run tauri build`（自动先跑 `build:taskboard` 构建 taskboard web UI，再构建前端与 Rust）
+- 本地打包：`pnpm run tauri build`（自动先跑 `build:taskboard` 构建 taskboard web UI，再构建前端与 Rust）
 - 发布：bump `package.json` / `src-tauri/Cargo.toml` / `src-tauri/tauri.conf.json`（及对应 lock 文件）版本号，新增 `release-notes/vX.Y.Z.md`，提交后打 tag 推送：
 
 ```bash
@@ -120,12 +120,12 @@ tag 推送触发 CI 五路构建（macOS aarch64 / x86_64 / universal、Windows�
 ## 📜 常用脚本
 
 ```bash
-npm run tauri dev          # 开发模式（前端 + Rust 后端）
-npm run tauri build        # 生产打包
-npm run build              # 仅构建前端（tsc + vite build）
-npm test                   # 主题解析测试
-npm run build:taskboard    # 构建内置 taskboard 的 web UI 到 dist/web
-npm run build:updater      # 生成 updater 产物
+pnpm run tauri dev          # 开发模式（前端 + Rust 后端）
+pnpm run tauri build        # 生产打包
+pnpm run build              # 仅构建前端（tsc + vite build）
+pnpm test                   # 主题解析测试
+pnpm run build:taskboard    # 构建内置 taskboard 的 web UI 到 dist/web
+pnpm run build:updater      # 生成 updater 产物
 ```
 
 ---

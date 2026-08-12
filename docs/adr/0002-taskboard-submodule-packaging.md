@@ -4,7 +4,7 @@ dashi-taskboard（见 CONTEXT.md "Taskboard 集成"域）从 vendor 纯文件拷
 
 原拷贝方式在 v0.2.5 暴露了结构性脱节：注入器修复直接埋在 vendor 快照里，上游（主仓库 `chuspeeism/dashi-taskboard`）一无所知，launcher 与 taskboard 也无法各自更新。submodule 是"各自更新 + launcher pin 版本"的标准语义；指向 fork 而非主仓库，是因为 launcher 侧的修复要等 PR 被合并才出现在主仓库，挂 fork 不阻塞自己的发版节奏。
 
-`dist/web`（vite 前端构建产物，上游 gitignore）是运行时必需但 submodule checkout 里没有的东西，由 launcher 构建管线补齐：`beforeBuildCommand` 先跑 `npm run build:taskboard`（submodule 内 install + build:web），CI checkout 用 `submodules: recursive`。
+`dist/web`（vite 前端构建产物，上游 gitignore）是运行时必需但 submodule checkout 里没有的东西，由 launcher 构建管线补齐：`beforeBuildCommand` 先跑 `pnpm run build:taskboard`（submodule 内 install + build:web），CI checkout 用 `submodules: recursive`。
 
 白名单的直接诱因是整目录映射曾把 `.data/`（运行时 sqlite）和 `dist/` 打进安装包；submodule 化后 `web/` 源码、`test/`、proof 图片进来问题更大。代价是上游若新增运行时目录，launcher 会静默漏打——接受这个代价，白名单比黑名单更不容易把新垃圾带进安装包。
 
