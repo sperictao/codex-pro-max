@@ -6,6 +6,165 @@ use std::process::Stdio;
 
 use crate::i18n::{tr, trf};
 
+/// 错误前缀标记：Codex 已在运行但未开 CDP（Windows 与 macOS 完整模式发出）。
+/// 前端据此弹窗询问是否重启 Codex，其余错误照常 toast
+#[allow(dead_code)] // Linux 构建无此流程
+pub const CODEX_RUNNING_NO_CDP_MARK: &str = "CODEX_RUNNING_NO_CDP|";
+
+/// 枚举桌面版 Codex/ChatGPT 进程 PID（仅 Windows）
+/// codex.exe 必须按路径复核（CLI 同名，在 npm 全局目录，误杀会毁掉用户 CLI 会话）；
+/// chatgpt.exe 无同名 CLI，按名匹配即可
+#[cfg(target_os = "windows")]
+fn codex_processes() -> Vec<u32> {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
+    };
+    let mut pids = Vec::new();
+    unsafe {
+        let Ok(snap) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else { return pids };
+        let mut entry = PROCESSENTRY32W {
+            dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+            ..Default::default()
+        };
+        if Process32FirstW(snap, &mut entry).is_ok() {
+            loop {
+                let len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
+                let name = String::from_utf16_lossy(&entry.szExeFile[..len]);
+                if is_desktop_codex(&name, entry.th32ProcessID) {
+                    pids.push(entry.th32ProcessID);
+                }
+                if Process32NextW(snap, &mut entry).is_err() { break; }
+            }
+        }
+        let _ = CloseHandle(snap);
+    }
+    pids
+}
+
+#[cfg(target_os = "windows")]
+fn is_desktop_codex(exe_name: &str, pid: u32) -> bool {
+    let name = exe_name.to_lowercase();
+    if name == "chatgpt.exe" {
+        return true;
+    }
+    if name == "codex.exe" {
+        return process_path(pid)
+            .map(|p| {
+                let p = p.to_lowercase();
+                p.contains("\\openai\\codex\\") || p.contains("\\windowsapps\\openai.")
+            })
+            .unwrap_or(false);
+    }
+    false
+}
+
+/// 查进程完整路径；无权访问（系统进程等）时返回 None，调用方按非目标处理
+#[cfg(target_os = "windows")]
+fn process_path(pid: u32) -> Option<String> {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    unsafe {
+        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let mut buf = [0u16; 1024];
+        let mut len = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(
+            h,
+            PROCESS_NAME_WIN32,
+            windows::core::PWSTR(buf.as_mut_ptr()),
+            &mut len,
+        )
+        .is_ok();
+        let _ = CloseHandle(h);
+        ok.then(|| String::from_utf16_lossy(&buf[..len as usize]))
+    }
+}
+
+/// 关闭正在运行的桌面版 Codex：先 WM_CLOSE 优雅退出，10 秒未尽则强杀
+/// （非 Windows 平台不会被调用——标记只在 Windows 发出——空实现保底）
+#[cfg(target_os = "windows")]
+pub async fn quit_codex() -> Result<(), String> {
+    for pid in codex_processes() {
+        // 不带 /F：GUI 主进程收到 WM_CLOSE 优雅退出；无窗口子进程会被拒，随主进程消亡
+        let mut cmd = Command::new("taskkill");
+        cmd.args(["/PID", &pid.to_string(), "/T"]);
+        setup_no_window(&mut cmd);
+        let _ = cmd.output().await;
+    }
+    for _ in 0..20 {
+        if codex_processes().is_empty() {
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    for pid in codex_processes() {
+        let mut cmd = Command::new("taskkill");
+        cmd.args(["/F", "/PID", &pid.to_string(), "/T"]);
+        setup_no_window(&mut cmd);
+        let _ = cmd.output().await;
+    }
+    for _ in 0..6 {
+        if codex_processes().is_empty() {
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    Err(tr("Codex did not exit in time; please quit it manually and retry"))
+}
+
+/// macOS 桌面版是否运行：pgrep 大小写敏感，"Codex" 不会误匹配 CLI 的 codex
+#[cfg(target_os = "macos")]
+fn codex_running() -> bool {
+    ["ChatGPT", "Codex"].iter().any(|name| {
+        std::process::Command::new("pgrep")
+            .args(["-x", *name])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    })
+}
+
+/// macOS：osascript quit 优雅退出（首次会弹「允许控制」授权，拒绝则走 pkill 兜底）
+#[cfg(target_os = "macos")]
+pub async fn quit_codex() -> Result<(), String> {
+    if !codex_running() {
+        return Ok(());
+    }
+    for app in ["ChatGPT", "Codex"] {
+        let _ = std::process::Command::new("osascript")
+            .args(["-e", &format!("quit app \"{}\"", app)])
+            .output();
+    }
+    for _ in 0..20 {
+        if !codex_running() {
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    for name in ["ChatGPT", "Codex"] {
+        let _ = std::process::Command::new("pkill").args(["-x", name]).output();
+    }
+    for _ in 0..6 {
+        if !codex_running() {
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    Err(tr("Codex did not exit in time; please quit it manually and retry"))
+}
+
+/// 其他平台不发出标记、不会被调用，空实现保底
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub async fn quit_codex() -> Result<(), String> {
+    Ok(())
+}
+
 /// 为 Command 添加跨平台无窗口设置
 /// Windows: CREATE_NO_WINDOW 防止弹出终端窗口
 /// Unix: 进程组分离
@@ -229,6 +388,23 @@ async fn ensure_codex_cdp(app_path: &str, port: u16, new_instance: bool) -> Resu
     if cdp_reachable(port) {
         return Ok(());
     }
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    {
+        // Windows 无法强制新实例；macOS 仅完整模式（open 不带 -n）有此问题——
+        // 已在运行的实例会吞掉调试参数，拉起也白等。立即返回带标记的错误，
+        // 由前端弹窗询问是否关闭并重启 Codex
+        #[cfg(target_os = "windows")]
+        let running = !codex_processes().is_empty();
+        #[cfg(target_os = "macos")]
+        let running = !new_instance && codex_running();
+        if running {
+            return Err(format!(
+                "{}{}",
+                CODEX_RUNNING_NO_CDP_MARK,
+                tr("Codex is already running without the CDP debug port")
+            ));
+        }
+    }
     if app_path.is_empty() {
         return Err(trf(
             "CDP port {port} is not responding and no Codex app path is configured. Select the Codex app in Settings, or start Codex manually with --remote-debugging-port={port}",
@@ -287,11 +463,13 @@ async fn ensure_codex_cdp(app_path: &str, port: u16, new_instance: bool) -> Resu
         }
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
-    Err(if new_instance {
+    // Windows 上 new_instance 被忽略（无法强制新实例），超时多半意味着 Codex 已在
+    // 运行且没带调试参数——单实例激活会丢弃参数，故两种模式给出一致提示
+    Err(if new_instance && cfg!(target_os = "macos") {
         trf("Timed out waiting for Codex CDP port {port} to be ready", &[("port", port.to_string())])
     } else {
         trf(
-            "Timed out waiting for Codex CDP port {port} to be ready. If Codex is already running, quit it completely before using full launch mode",
+            "Timed out waiting for Codex CDP port {port} to be ready. If Codex is already running, quit it completely and retry",
             &[("port", port.to_string())],
         )
     })
@@ -309,6 +487,12 @@ impl ProcessManager {
             taskboard: Arc::new(Mutex::new(ManagedProcess::new("taskboard-server"))),
             injector: Arc::new(Mutex::new(ManagedProcess::new("codex-injector"))),
         }
+    }
+
+    /// taskboard 是否已被本管理器置为运行态
+    /// （一键启动重试路径靠它幂等跳过，避免「已在运行」中断注入器启动）
+    pub async fn taskboard_is_running(&self) -> bool {
+        self.taskboard.lock().await.status == ProcessStatus::Running
     }
 
     /// 启动 taskboard 服务
@@ -446,7 +630,8 @@ impl ProcessManager {
 
         if let Err(e) = ensure_codex_cdp(codex_app_path, cdp_port, separate_window).await {
             inj.status = ProcessStatus::Failed;
-            inj.message = e.clone();
+            // 标记只给前端识别用，状态栏与通知里剥掉
+            inj.message = e.strip_prefix(CODEX_RUNNING_NO_CDP_MARK).unwrap_or(&e).to_string();
             crate::notify_process_failure(&inj.name, &inj.message);
             return Err(e);
         }

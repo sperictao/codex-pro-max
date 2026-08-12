@@ -68,6 +68,54 @@ export async function browseCodex(): Promise<void> {
 }
 
 // ============ 启动/停止 ============
+// 后端错误前缀：Codex 已运行但未开 CDP（仅 Windows 发出），其余错误照常抛出
+const CODEX_NO_CDP_MARK = "CODEX_RUNNING_NO_CDP|";
+
+// 命中标记时弹窗询问：确认则关闭当前 Codex 并重试启动，取消则返回 false 由调用方终止流程
+async function startWithCodexRestart(fn: () => Promise<unknown>): Promise<boolean> {
+  try {
+    await fn();
+    return true;
+  } catch (e) {
+    if (!String(e).includes(CODEX_NO_CDP_MARK)) throw e;
+    if (!(await confirmRestartCodex())) return false;
+    setRestartLoading(true);
+    try {
+      await invoke("quit_codex");
+      await fn();
+    } finally {
+      setRestartLoading(false);
+    }
+    return true;
+  }
+}
+
+// 重启 Codex 过渡层显隐（关闭当前实例到重新拉起可能数秒，避免无反馈误以为是卡死）
+function setRestartLoading(on: boolean): void {
+  document.getElementById("restart-loading-overlay")?.classList.toggle("hidden", !on);
+}
+
+// 自定义确认弹窗（替代原生 ask，外观随应用主题）。确认/取消各绑定一次、用完即解绑
+function confirmRestartCodex(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const modal = document.getElementById("codex-restart-modal")!;
+    const confirmBtn = document.getElementById("codex-restart-confirm")!;
+    const cancelBtn = document.getElementById("codex-restart-cancel")!;
+    const cleanup = (yes: boolean) => {
+      modal.classList.add("hidden");
+      confirmBtn.removeEventListener("click", onConfirm);
+      cancelBtn.removeEventListener("click", onCancel);
+      resolve(yes);
+    };
+    const onConfirm = () => cleanup(true);
+    const onCancel = () => cleanup(false);
+    confirmBtn.addEventListener("click", onConfirm);
+    cancelBtn.addEventListener("click", onCancel);
+    modal.classList.remove("hidden");
+    confirmBtn.focus();
+  });
+}
+
 export async function startAll(): Promise<void> {
   const cfg = readConfigFromUI();
   if (!cfg.taskboard_path) {
@@ -86,7 +134,10 @@ export async function startAll(): Promise<void> {
 
   try {
     await invoke("update_settings", { config: cfg });
-    await invoke("start_all", { config: cfg });
+    if (!(await startWithCodexRestart(() => invoke("start_all", { config: cfg })))) {
+      toast(t("Launch cancelled"), "info");
+      return;
+    }
     toast(t("All services started"), "success");
     await refreshStatus();
   } catch (e) {
@@ -138,7 +189,10 @@ export async function stopTaskboard(): Promise<void> {
 export async function startInjector(): Promise<void> {
   const cfg = readConfigFromUI();
   try {
-    await invoke("start_injector", { config: cfg });
+    if (!(await startWithCodexRestart(() => invoke("start_injector", { config: cfg })))) {
+      toast(t("Launch cancelled"), "info");
+      return;
+    }
     toast(t("Codex injector started"), "success");
     await refreshStatus();
   } catch (e) {

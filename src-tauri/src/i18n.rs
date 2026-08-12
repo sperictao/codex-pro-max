@@ -86,7 +86,9 @@ fn zh_cn(key: &str) -> Option<&'static str> {
         "Failed to launch Codex: {error}" => "启动 Codex 失败: {error}",
         "Cannot launch Codex ({path}): {error}" => "无法启动 Codex ({path}): {error}",
         "Timed out waiting for Codex CDP port {port} to be ready" => "等待 Codex CDP 端口 {port} 就绪超时",
-        "Timed out waiting for Codex CDP port {port} to be ready. If Codex is already running, quit it completely before using full launch mode" => "等待 Codex CDP 端口 {port} 就绪超时。若 Codex 已在运行，请先完全退出再使用完整启动模式",
+        "Timed out waiting for Codex CDP port {port} to be ready. If Codex is already running, quit it completely and retry" => "等待 Codex CDP 端口 {port} 就绪超时。若 Codex 已在运行，请先完全退出（含托盘）后重试",
+        "Codex is already running without the CDP debug port" => "Codex 已在运行，但未开启 CDP 调试端口",
+        "Codex did not exit in time; please quit it manually and retry" => "Codex 未能及时退出，请手动结束后重试",
 
         // —— 环境与工具检测（main.rs）——
         "Cannot execute {path}: {error}" => "无法执行 {path}: {error}",

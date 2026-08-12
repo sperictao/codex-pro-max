@@ -378,19 +378,22 @@ async fn run_start_all(
         return Err(i18n::trf("Path does not exist: {path}", &[("path", config.taskboard_path.clone())]));
     }
 
-    // 启动 taskboard 服务
-    app.emit("status-update", &serde_json::json!({
-        "name": "taskboard-server",
-        "status": "starting",
-        "message": i18n::tr("Starting Taskboard server...")
-    })).ok();
+    // 启动 taskboard 服务（重启 Codex 的重试路径下可能已在运行，幂等跳过，
+    // 否则「已在运行」报错会中断后续注入器启动）
+    if !pm.taskboard_is_running().await {
+        app.emit("status-update", &serde_json::json!({
+            "name": "taskboard-server",
+            "status": "starting",
+            "message": i18n::tr("Starting Taskboard server...")
+        })).ok();
 
-    pm.start_taskboard(
-        &config.taskboard_path,
-        &config.node_path,
-        &config.taskboard_host,
-        config.taskboard_port,
-    ).await?;
+        pm.start_taskboard(
+            &config.taskboard_path,
+            &config.node_path,
+            &config.taskboard_host,
+            config.taskboard_port,
+        ).await?;
+    }
 
     app.emit("status-update", &serde_json::json!({
         "name": "taskboard-server",
@@ -521,6 +524,13 @@ async fn start_injector(
 #[tauri::command]
 async fn stop_injector(state: State<'_, AppState>) -> Result<(), String> {
     state.pm.stop_injector().await
+}
+
+/// 关闭正在运行的桌面版 Codex（先优雅后强制），
+/// 供「Codex 已运行但未开 CDP → 用户确认重启」流程调用
+#[tauri::command]
+async fn quit_codex() -> Result<(), String> {
+    process_manager::quit_codex().await
 }
 
 /// 跨平台获取用户主目录
@@ -943,6 +953,7 @@ pub fn run() {
             stop_taskboard,
             start_injector,
             stop_injector,
+            quit_codex,
             open_taskboard,
             install_skill,
             check_skill_status,

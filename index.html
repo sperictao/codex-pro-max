@@ -516,6 +516,33 @@
       </div>
     </div>
 
+    <!-- 重启 Codex 确认弹窗（复用 .modal-overlay/.modal-card 与主题按钮类，随主题切换） -->
+    <div class="modal-overlay hidden" id="codex-restart-modal">
+      <div class="modal-card codex-modal-lg" role="dialog" aria-modal="true" aria-labelledby="codex-restart-modal-title">
+        <div class="flex items-start gap-4">
+          <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-muted text-primary" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <h3 class="text-base font-semibold" id="codex-restart-modal-title" data-i18n="Restart Codex">Restart Codex</h3>
+            <p class="text-sm leading-relaxed text-muted-foreground" id="codex-restart-modal-desc" data-i18n="Codex is running without the debug port, so the injector cannot connect. All current Codex windows will be closed. Continue?">Codex is running without the debug port, so the injector cannot connect. All current Codex windows will be closed. Continue?</p>
+          </div>
+        </div>
+        <div class="mt-3 flex justify-end gap-2">
+          <button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-4 text-sm" id="codex-restart-cancel" data-i18n="Cancel">Cancel</button>
+          <button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-4 text-sm" id="codex-restart-confirm" data-i18n="Restart Codex">Restart Codex</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 重启 Codex 的加载过渡层（复用 .modal-overlay，仅降低遮罩透明度） -->
+    <div class="modal-overlay loading-overlay hidden" id="restart-loading-overlay">
+      <div class="loading-card">
+        <div class="loading-spinner" aria-hidden="true"></div>
+        <div class="loading-text" id="restart-loading-text" data-i18n="Restarting Codex...">Restarting Codex...</div>
+      </div>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
