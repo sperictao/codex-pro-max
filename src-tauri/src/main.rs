@@ -697,27 +697,28 @@ async fn install_skill(taskboard_path: String) -> Result<String, String> {
 }
 
 /// 运行 taskctl 命令
+/// 参数走 config（与 start/stop/open 系列 command 一致），taskctl 的
+/// CODEX_TASKBOARD_URL 用 config 里的 host/port 拼 token 前缀，避免硬编码 47823
 #[tauri::command]
 async fn run_taskctl(
-    taskboard_path: String,
-    node_path: String,
+    config: LauncherConfig,
     args: Vec<String>,
 ) -> Result<String, String> {
-    let node = resolve_node(&node_path);
-    let taskctl_script = format!("{}/cli/taskctl.mjs", taskboard_path);
+    let node = resolve_node(&config.node_path);
+    let taskctl_script = format!("{}/cli/taskctl.mjs", config.taskboard_path);
 
     let mut cmd = std::process::Command::new(&node);
     cmd.arg(&taskctl_script);
     for arg in &args {
         cmd.arg(arg);
     }
-    cmd.current_dir(&taskboard_path);
+    cmd.current_dir(&config.taskboard_path);
     // token 模式下 API 路由在 /<token>/ 前缀下，taskctl 默认裸根 URL 会 404；
-    // 注入 CODEX_TASKBOARD_URL（taskctl 优先读该 env），指向带前缀的完整地址
+    // 注入 CODEX_TASKBOARD_URL（taskctl 优先读该 env），host/port 跟随配置
     let (token, _) = config::ensure_instance_credentials(&mut config::load_config()?)?;
     cmd.env(
         "CODEX_TASKBOARD_URL",
-        format!("http://127.0.0.1:47823/{}", token),
+        format!("http://{}:{}/{}", config.taskboard_host, config.taskboard_port, token),
     );
     // Windows 上不弹出终端窗口
     #[cfg(windows)]
