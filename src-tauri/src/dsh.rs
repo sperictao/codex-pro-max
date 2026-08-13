@@ -1018,8 +1018,12 @@ fn autostart_enabled() -> bool {
     }
     #[cfg(target_os = "linux")]
     {
+        // systemd unit 与 XDG autostart .desktop 任一存在即视为已开启
         config::home_dir()
-            .map(|h| h.join(".config/systemd/user").join("dsh-remote-web.service").exists())
+            .map(|h| {
+                h.join(".config/systemd/user").join("dsh-remote-web.service").exists()
+                    || h.join(".config/autostart").join("dsh-remote-web.desktop").exists()
+            })
             .unwrap_or(false)
     }
 }
@@ -1188,6 +1192,10 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
     let proxy_script = dsh.join("start-proxy.sh");
     let web_unit = units_dir.join("dsh-remote-web.service");
     let proxy_unit = units_dir.join("dsh-remote-proxy.service");
+    // XDG autostart 兜底（非 systemd 发行版：Alpine/OpenRC、Void/runit、Devuan 等）
+    let autostart_dir = home.join(".config/autostart");
+    let web_desktop = autostart_dir.join("dsh-remote-web.desktop");
+    let proxy_desktop = autostart_dir.join("dsh-remote-proxy.desktop");
 
     if enabled {
         let node = resolve_node_bin()?;
@@ -1200,29 +1208,45 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
         fs::write(&proxy_script, render_start_proxy(&node, &dsh.join(PROXY_SCRIPT).display().to_string()))
             .map_err(|e| trf("Failed to write {path}: {error}", &[("path", proxy_script.display().to_string()), ("error", e.to_string())]))?;
 
-        // 脚本自带端口守卫，unit 不需要 ExecStartPre/Environment——
-        // 嵌套引号在 systemd 的解析规则下会被破坏（systemd 对单引号内不做转义）
-        let unit = |desc: &str, script: &Path| -> String {
-            format!(
-                "[Unit]\nDescription={desc}\nAfter=network.target\n\n[Service]\nType=simple\nExecStart=/bin/sh {script}\nRestart=on-failure\n\n[Install]\nWantedBy=default.target\n",
-                desc = desc,
-                script = sh_quote(&script.display().to_string()),
-            )
-        };
-        fs::write(&web_unit, unit("DeepSeek Harness web (remote access)", &web_script))
-            .map_err(|e| trf("Failed to write {path}: {error}", &[("path", web_unit.display().to_string()), ("error", e.to_string())]))?;
-        fs::write(&proxy_unit, unit("DeepSeek Harness loopback proxy (remote access)", &proxy_script))
-            .map_err(|e| trf("Failed to write {path}: {error}", &[("path", proxy_unit.display().to_string()), ("error", e.to_string())]))?;
+        if systemd_user_available() {
+            // systemd --user：脚本自带端口守卫，unit 不需要 ExecStartPre/Environment
+            // （嵌套引号在 systemd 解析规则下会被破坏）
+            let unit = |desc: &str, script: &Path| -> String {
+                format!(
+                    "[Unit]\nDescription={desc}\nAfter=network.target\n\n[Service]\nType=simple\nExecStart=/bin/sh {script}\nRestart=on-failure\n\n[Install]\nWantedBy=default.target\n",
+                    desc = desc,
+                    script = sh_quote(&script.display().to_string()),
+                )
+            };
+            fs::write(&web_unit, unit("DeepSeek Harness web (remote access)", &web_script))
+                .map_err(|e| trf("Failed to write {path}: {error}", &[("path", web_unit.display().to_string()), ("error", e.to_string())]))?;
+            fs::write(&proxy_unit, unit("DeepSeek Harness loopback proxy (remote access)", &proxy_script))
+                .map_err(|e| trf("Failed to write {path}: {error}", &[("path", proxy_unit.display().to_string()), ("error", e.to_string())]))?;
 
-        let sysctl = |args: &[&str]| {
-            Command::new("systemctl").args(["--user"]).args(args).output()
-        };
-        let _ = sysctl(&["daemon-reload"]);
-        if let Err(e) = sysctl(&["enable", "dsh-remote-web.service"]) {
-            return Err(trf("Cannot enable systemd unit: {error}", &[("error", e.to_string())]));
-        }
-        if let Err(e) = sysctl(&["enable", "dsh-remote-proxy.service"]) {
-            return Err(trf("Cannot enable systemd unit: {error}", &[("error", e.to_string())]));
+            let sysctl = |args: &[&str]| {
+                Command::new("systemctl").args(["--user"]).args(args).output()
+            };
+            let _ = sysctl(&["daemon-reload"]);
+            if let Err(e) = sysctl(&["enable", "dsh-remote-web.service"]) {
+                return Err(trf("Cannot enable systemd unit: {error}", &[("error", e.to_string())]));
+            }
+            if let Err(e) = sysctl(&["enable", "dsh-remote-proxy.service"]) {
+                return Err(trf("Cannot enable systemd unit: {error}", &[("error", e.to_string())]));
+            }
+            // 清理可能残留的 XDG 兜底文件，避免双机制同时生效
+            let _ = fs::remove_file(&web_desktop);
+            let _ = fs::remove_file(&proxy_desktop);
+        } else {
+            // XDG autostart：桌面环境登录时按 spec 执行（GLib 解析 Exec 的引号）
+            fs::create_dir_all(&autostart_dir)
+                .map_err(|e| trf("Failed to create directory: {error}", &[("error", e.to_string())]))?;
+            fs::write(&web_desktop, render_desktop_entry("DeepSeek Harness web (remote access)", &web_script))
+                .map_err(|e| trf("Failed to write {path}: {error}", &[("path", web_desktop.display().to_string()), ("error", e.to_string())]))?;
+            fs::write(&proxy_desktop, render_desktop_entry("DeepSeek Harness loopback proxy (remote access)", &proxy_script))
+                .map_err(|e| trf("Failed to write {path}: {error}", &[("path", proxy_desktop.display().to_string()), ("error", e.to_string())]))?;
+            // 清理残留的 systemd unit 文件
+            let _ = fs::remove_file(&web_unit);
+            let _ = fs::remove_file(&proxy_unit);
         }
     } else {
         let _ = Command::new("systemctl")
@@ -1231,15 +1255,49 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
         let _ = Command::new("systemctl").args(["--user", "daemon-reload"]).output();
         let _ = fs::remove_file(&web_unit);
         let _ = fs::remove_file(&proxy_unit);
+        let _ = fs::remove_file(&web_desktop);
+        let _ = fs::remove_file(&proxy_desktop);
         let _ = fs::remove_file(&web_script);
         let _ = fs::remove_file(&proxy_script);
     }
     Ok(())
 }
 
+/// systemd --user 会话是否可用（非 systemd 发行版返回 false）
+#[cfg(target_os = "linux")]
+fn systemd_user_available() -> bool {
+    match Command::new("systemctl")
+        .args(["--user", "is-system-running"])
+        .output()
+    {
+        Ok(o) => {
+            let out = String::from_utf8_lossy(&o.stdout).to_lowercase();
+            o.status.success()
+                || out.contains("running")
+                || out.contains("degraded")
+                || out.contains("starting")
+        }
+        Err(_) => false,
+    }
+}
+
+/// XDG autostart .desktop 文件（Linux 兜底自启机制）
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn render_desktop_entry(name: &str, script: &Path) -> String {
+    format!(
+        "[Desktop Entry]\nType=Application\nName={name}\nComment=DeepSeek Harness remote access via Tailscale\nExec=/bin/sh {script}\nTerminal=false\nX-GNOME-Autostart-enabled=true\nNoDisplay=true\n",
+        name = name,
+        script = sh_quote(&script.display().to_string()),
+    )
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{port_guard_js, render_start_proxy, render_start_web, sh_quote, win_cmd_line, win_quote};
+    use super::{
+        port_guard_js, render_desktop_entry, render_start_proxy, render_start_web, sh_quote,
+        win_cmd_line, win_quote,
+    };
+    use std::path::Path;
 
     #[test]
     fn sh_quote_handles_spaces_and_quotes() {
@@ -1263,6 +1321,17 @@ mod tests {
     #[test]
     fn guard_js_targets_loopback() {
         assert!(port_guard_js(3899).contains("net.connect(3899,'127.0.0.1')"));
+    }
+
+    #[test]
+    fn desktop_entry_quotes_script_path() {
+        // XDG autostart 的 Exec 由桌面环境按 GLib 规则解析：单引号引路径
+        assert_eq!(
+            render_desktop_entry("DeepSeek Harness web (remote access)", Path::new("/home/u/.dsh/start-web.sh")),
+            "[Desktop Entry]\nType=Application\nName=DeepSeek Harness web (remote access)\nComment=DeepSeek Harness remote access via Tailscale\nExec=/bin/sh '/home/u/.dsh/start-web.sh'\nTerminal=false\nX-GNOME-Autostart-enabled=true\nNoDisplay=true\n"
+        );
+        // 带空格路径也能被单引号包住
+        assert!(render_desktop_entry("x", Path::new("/home/u a/.dsh/start-proxy.sh")).contains("Exec=/bin/sh '/home/u a/.dsh/start-proxy.sh'"));
     }
 
     #[test]
