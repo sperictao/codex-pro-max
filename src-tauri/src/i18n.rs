@@ -195,7 +195,7 @@ fn zh_cn(key: &str) -> Option<&'static str> {
         "tailscale serve is not configured (tailscale serve status)" => "tailscale serve 未配置（tailscale serve status）",
         "Verification failed; some components are not ready" => "验证失败，部分组件未就绪",
         "Cannot register launchd agent: {error}" => "无法注册 launchd 自启项: {error}",
-        "Cannot create scheduled task: {error}" => "无法创建计划任务: {error}",
+        "Cannot locate the Windows Startup folder (APPDATA is missing)" => "无法定位 Windows 启动文件夹（缺少 APPDATA 环境变量）",
         "Cannot enable systemd unit: {error}" => "无法启用 systemd 服务: {error}",
 
         // —— Codex 配置看守（codex_guard.rs）——

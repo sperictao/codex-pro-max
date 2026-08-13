@@ -20,7 +20,7 @@
 //! - 反代必须支持 WebSocket upgrade（/api/events.host），否则对话 Load failed
 //!
 //! 跨平台：安装/检测走 CLI（npm / tailscale / node），
-//! 开机自启走 launchd(macOS) / schtasks(Windows) / systemd --user(Linux)。
+//! 开机自启走 launchd(macOS) / 启动文件夹 .vbs(Windows) / systemd --user(Linux)。
 
 use serde::Serialize;
 use std::fs;
@@ -40,7 +40,7 @@ const PROXY_PORT: u16 = 3898;
 const PROXY_SCRIPT: &str = "loopback-proxy.js";
 /// 强制 browse 目录选择器的环境变量（教程第五步）
 const SSH_CONNECTION_ENV: &str = "127.0.0.1 60000 127.0.0.1 22";
-/// 自启标签前缀（本应用自有的 launchd/schtasks/systemd 命名）
+/// 自启标签前缀（本应用自有的 launchd/启动文件夹/systemd 命名）
 const AUTOSTART_PREFIX: &str = "com.codexpromax.dsh";
 
 // ============ 数据结构 ============
@@ -82,6 +82,35 @@ pub struct StepEvent {
 
 // ============ 跨平台 CLI 辅助 ============
 
+/// Windows 命令行列转义（CommandLineToArgvW 规则的最小实现）。
+/// 入参都是绝对路径/简单参数：无空格无引号原样返回；有空格则加引号，
+/// 内嵌引号以反斜杠转义。反斜杠本身是字面量，绝不多写（否则 `C:\Program
+/// Files\...` 会被翻倍成 `C:\\Program Files\\...` 而无法执行）。
+/// 仅在 Windows 构建被 cli_command 使用；macOS/Linux 上保留给单元测试
+#[cfg_attr(not(windows), allow(dead_code))]
+fn win_quote(s: &str) -> String {
+    if !s.contains([' ', '\t', '"']) {
+        return s.to_string();
+    }
+    let escaped = s.replace('"', "\\\"");
+    format!("\"{}\"", escaped)
+}
+
+/// 拼一条 cmd /c 命令行。cmd 对 /c 后字符串的解析规则与 CreateProcess 不同：
+/// 若字符串以引号开头，cmd 会剥掉首引号与行尾最后一个引号。因此必须把
+/// 「已逐引号的程序+参数」整体再包一层引号（微软文档的标准做法）：
+///   cmd /c ""C:\Program Files\Tailscale\tailscale.exe" status"
+/// 若只让 std 自动引号程序路径，cmd 剥引号后会把带空格的路径拆碎。
+#[cfg_attr(not(windows), allow(dead_code))]
+fn win_cmd_line(program: &str, args: &[&str]) -> String {
+    let mut line = win_quote(program);
+    for a in args {
+        line.push(' ');
+        line.push_str(&win_quote(a));
+    }
+    format!("\"{}\"", line)
+}
+
 /// Windows 上 npm/全局包是 .cmd 批处理，CreateProcess 不能直接执行，
 /// 必须经 cmd /c 由 cmd 做 PATHEXT 解析，且不弹控制台窗口（同 fastctx.rs）
 fn cli_command(program: &str, args: &[&str]) -> Command {
@@ -90,7 +119,9 @@ fn cli_command(program: &str, args: &[&str]) -> Command {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         let mut cmd = Command::new("cmd");
-        cmd.arg("/c").arg(program).args(args);
+        // raw_arg 跳过 std 的自动引号（std 的 CommandLineToArgvW 引号会与
+        // cmd 的 /c 解析规则打架），整个命令行按 win_cmd_line 手工构造
+        cmd.raw_arg("/c").raw_arg(&win_cmd_line(program, args));
         cmd.creation_flags(CREATE_NO_WINDOW);
         cmd
     }
@@ -116,6 +147,10 @@ fn probe_path() -> String {
     }
     #[cfg(windows)]
     {
+        // npm 全局前缀默认在 %APPDATA%\npm（Roaming），不是 LOCALAPPDATA
+        if let Ok(roaming) = std::env::var("APPDATA") {
+            parts.push(format!("{}\\npm", roaming));
+        }
         if let Ok(local) = std::env::var("LOCALAPPDATA") {
             parts.push(format!("{}\\npm", local));
         }
@@ -910,12 +945,16 @@ pub async fn dsh_setup(app: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn dsh_stop() -> Result<(), String> {
-    kill_by_pattern("dsh --profile web");
+    // 注意：Windows 上 dsh web 的进程命令行是
+    // `node ...\dsh\dist\index.js --profile web --port 3899`（npm 包布局），
+    // 不以 "dsh --profile" 开头；"profile web --port 3899" 在 macOS 直启、
+    // launchd 与 Windows shim 三条路径都能命中，且不以 `-` 开头（pkill 不会误当选项）
+    kill_by_pattern("profile web --port 3899");
     kill_by_pattern(PROXY_SCRIPT);
     Ok(())
 }
 
-// ============ 开机自启（launchd / schtasks / systemd --user） ============
+// ============ 开机自启（launchd / 启动文件夹 / systemd --user） ============
 
 /// sh 单引号转义（生成的启动脚本内嵌绝对路径）
 fn sh_quote(s: &str) -> String {
@@ -972,13 +1011,10 @@ fn autostart_enabled() -> bool {
     }
     #[cfg(windows)]
     {
-        // schtasks 查询成功（退出码 0）即任务存在
-        matches!(
-            Command::new("schtasks")
-                .args(["/Query", "/TN", &format!("{}Web", AUTOSTART_PREFIX)])
-                .output(),
-            Ok(o) if o.status.success()
-        )
+        // 启动文件夹里的 .vbs 是否存在
+        windows_startup_dir()
+            .map(|d| d.join("dsh-remote-autostart.vbs").exists())
+            .unwrap_or(false)
     }
     #[cfg(target_os = "linux")]
     {
@@ -1082,14 +1118,31 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
 }
 
 #[cfg(target_os = "windows")]
+fn windows_startup_dir() -> Option<PathBuf> {
+    let appdata = std::env::var("APPDATA").ok()?;
+    Some(
+        PathBuf::from(appdata)
+            .join("Microsoft")
+            .join("Windows")
+            .join("Start Menu")
+            .join("Programs")
+            .join("Startup"),
+    )
+}
+
+#[cfg(target_os = "windows")]
 fn autostart_impl(enabled: bool) -> Result<(), String> {
     let dsh = dsh_dir()?;
     fs::create_dir_all(&dsh)
         .map_err(|e| trf("Failed to create directory: {error}", &[("error", e.to_string())]))?;
     let web_cmd = dsh.join("start-web.cmd");
     let proxy_cmd = dsh.join("start-proxy.cmd");
-    let task_web = format!("{}Web", AUTOSTART_PREFIX);
-    let task_proxy = format!("{}Proxy", AUTOSTART_PREFIX);
+    // 启动文件夹：登录时静默运行 .vbs（WScript 以 0 窗口模式拉起两个 .cmd）。
+    // 不用 schtasks——其 /TR 引号规则极易踩坑且需要交互权限；启动文件夹
+    // 是纯文件操作、无管理员要求，配合 .cmd 内的端口守卫天然幂等
+    let startup = windows_startup_dir()
+        .ok_or_else(|| tr("Cannot locate the Windows Startup folder (APPDATA is missing)"))?;
+    let vbs = startup.join("dsh-remote-autostart.vbs");
 
     if enabled {
         let node = resolve_node_bin()?;
@@ -1108,22 +1161,17 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
         fs::write(&web_cmd, web).map_err(|e| trf("Failed to write {path}: {error}", &[("path", web_cmd.display().to_string()), ("error", e.to_string())]))?;
         fs::write(&proxy_cmd, proxy).map_err(|e| trf("Failed to write {path}: {error}", &[("path", proxy_cmd.display().to_string()), ("error", e.to_string())]))?;
 
-        let create = |task: &str, cmd: &Path| {
-            Command::new("schtasks")
-                .args(["/Create", "/F", "/TN", task, "/SC", "ONLOGON", "/RL", "LIMITED", "/TR"])
-                .arg(format!("\"{}\"", cmd.display()))
-                .output()
-        };
-        if let Err(e) = create(&task_web, &web_cmd) {
-            return Err(trf("Cannot create scheduled task: {error}", &[("error", e.to_string())]));
-        }
-        if let Err(e) = create(&task_proxy, &proxy_cmd) {
-            return Err(trf("Cannot create scheduled task: {error}", &[("error", e.to_string())]));
-        }
+        // .vbs：WScript.Shell.Run 的第二个参数 0 = 隐藏窗口，第三个 False = 不等待
+        let vbs_body = format!(
+            "' generated by Codex Pro Max; do not edit\r\nSet sh = CreateObject(\"WScript.Shell\")\r\nsh.Run \"\"\"{web}\"\"\", 0, False\r\nsh.Run \"\"\"{proxy}\"\"\", 0, False\r\n",
+            web = web_cmd.display().to_string(),
+            proxy = proxy_cmd.display().to_string(),
+        );
+        fs::create_dir_all(&startup)
+            .map_err(|e| trf("Failed to create directory: {error}", &[("error", e.to_string())]))?;
+        fs::write(&vbs, vbs_body).map_err(|e| trf("Failed to write {path}: {error}", &[("path", vbs.display().to_string()), ("error", e.to_string())]))?;
     } else {
-        for task in [&task_web, &task_proxy] {
-            let _ = Command::new("schtasks").args(["/Delete", "/F", "/TN", task]).output();
-        }
+        let _ = fs::remove_file(&vbs);
         let _ = fs::remove_file(&web_cmd);
         let _ = fs::remove_file(&proxy_cmd);
     }
@@ -1135,6 +1183,9 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
     let home = config::home_dir()?;
     let units_dir = home.join(".config/systemd/user");
     let dsh = dsh_dir()?;
+    // 与 macOS 共用同一份自守卫启动脚本（端口占用即 exit 0，不双开）
+    let web_script = dsh.join("start-web.sh");
+    let proxy_script = dsh.join("start-proxy.sh");
     let web_unit = units_dir.join("dsh-remote-web.service");
     let proxy_unit = units_dir.join("dsh-remote-proxy.service");
 
@@ -1144,29 +1195,24 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
         let fqdn = resolve_fqdn().unwrap_or_default();
         fs::create_dir_all(&units_dir)
             .map_err(|e| trf("Failed to create directory: {error}", &[("error", e.to_string())]))?;
-        let guard_pre = |port: u16| -> String {
+        fs::write(&web_script, render_start_web(&node, &dsh_bin.display().to_string(), &fqdn))
+            .map_err(|e| trf("Failed to write {path}: {error}", &[("path", web_script.display().to_string()), ("error", e.to_string())]))?;
+        fs::write(&proxy_script, render_start_proxy(&node, &dsh.join(PROXY_SCRIPT).display().to_string()))
+            .map_err(|e| trf("Failed to write {path}: {error}", &[("path", proxy_script.display().to_string()), ("error", e.to_string())]))?;
+
+        // 脚本自带端口守卫，unit 不需要 ExecStartPre/Environment——
+        // 嵌套引号在 systemd 的解析规则下会被破坏（systemd 对单引号内不做转义）
+        let unit = |desc: &str, script: &Path| -> String {
             format!(
-                "{node} -e {guard} && exit 1 || exit 0",
-                node = sh_quote(&node),
-                guard = sh_quote(&port_guard_js(port)),
+                "[Unit]\nDescription={desc}\nAfter=network.target\n\n[Service]\nType=simple\nExecStart=/bin/sh {script}\nRestart=on-failure\n\n[Install]\nWantedBy=default.target\n",
+                desc = desc,
+                script = sh_quote(&script.display().to_string()),
             )
         };
-        let web = format!(
-            "[Unit]\nDescription=DeepSeek Harness web (remote access)\nAfter=network.target\n\n[Service]\nType=simple\nExecStartPre=/bin/sh -c {pre}\nEnvironment=SSH_CONNECTION={ssh}\nExecStart={dsh} --profile web --port {port}{trusted}\nRestart=on-failure\n\n[Install]\nWantedBy=default.target\n",
-            pre = sh_quote(&guard_pre(WEB_PORT)),
-            ssh = sh_quote(SSH_CONNECTION_ENV),
-            dsh = sh_quote(&dsh_bin.display().to_string()),
-            port = WEB_PORT,
-            trusted = if fqdn.is_empty() { String::new() } else { format!(" --trusted-host {}", sh_quote(&fqdn)) },
-        );
-        let proxy = format!(
-            "[Unit]\nDescription=DeepSeek Harness loopback proxy (remote access)\nAfter=network.target\n\n[Service]\nType=simple\nExecStartPre=/bin/sh -c {pre}\nExecStart={node} {proxy}\nRestart=on-failure\n\n[Install]\nWantedBy=default.target\n",
-            pre = sh_quote(&guard_pre(PROXY_PORT)),
-            node = sh_quote(&node),
-            proxy = sh_quote(&dsh.join(PROXY_SCRIPT).display().to_string()),
-        );
-        fs::write(&web_unit, web).map_err(|e| trf("Failed to write {path}: {error}", &[("path", web_unit.display().to_string()), ("error", e.to_string())]))?;
-        fs::write(&proxy_unit, proxy).map_err(|e| trf("Failed to write {path}: {error}", &[("path", proxy_unit.display().to_string()), ("error", e.to_string())]))?;
+        fs::write(&web_unit, unit("DeepSeek Harness web (remote access)", &web_script))
+            .map_err(|e| trf("Failed to write {path}: {error}", &[("path", web_unit.display().to_string()), ("error", e.to_string())]))?;
+        fs::write(&proxy_unit, unit("DeepSeek Harness loopback proxy (remote access)", &proxy_script))
+            .map_err(|e| trf("Failed to write {path}: {error}", &[("path", proxy_unit.display().to_string()), ("error", e.to_string())]))?;
 
         let sysctl = |args: &[&str]| {
             Command::new("systemctl").args(["--user"]).args(args).output()
@@ -1185,13 +1231,15 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
         let _ = Command::new("systemctl").args(["--user", "daemon-reload"]).output();
         let _ = fs::remove_file(&web_unit);
         let _ = fs::remove_file(&proxy_unit);
+        let _ = fs::remove_file(&web_script);
+        let _ = fs::remove_file(&proxy_script);
     }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{port_guard_js, render_start_proxy, render_start_web, sh_quote};
+    use super::{port_guard_js, render_start_proxy, render_start_web, sh_quote, win_cmd_line, win_quote};
 
     #[test]
     fn sh_quote_handles_spaces_and_quotes() {
@@ -1215,5 +1263,31 @@ mod tests {
     #[test]
     fn guard_js_targets_loopback() {
         assert!(port_guard_js(3899).contains("net.connect(3899,'127.0.0.1')"));
+    }
+
+    #[test]
+    fn win_quote_keeps_backslashes_literal() {
+        // 反斜杠是字面量：不能翻倍
+        assert_eq!(win_quote(r"C:\Program Files\nodejs\node.exe"), "\"C:\\Program Files\\nodejs\\node.exe\"");
+        assert_eq!(win_quote(r"C:\Windows\System32\cmd.exe"), r"C:\Windows\System32\cmd.exe");
+        assert_eq!(win_quote("status"), "status");
+        assert_eq!(win_quote("a\"b"), "\"a\\\"b\"");
+    }
+
+    #[test]
+    fn win_cmd_line_outer_wraps_for_cmd_slash_c() {
+        // cmd /c 会剥掉首尾引号，所以整体必须再包一层
+        assert_eq!(
+            win_cmd_line(r"C:\Program Files\Tailscale\tailscale.exe", &["status"]),
+            "\"\"C:\\Program Files\\Tailscale\\tailscale.exe\" status\""
+        );
+        assert_eq!(
+            win_cmd_line("npm", &["install", "-g", "@deepseek-ai/dsh"]),
+            "\"npm install -g @deepseek-ai/dsh\""
+        );
+        assert_eq!(
+            win_cmd_line(r"C:\Users\a b\.dsh\loopback-proxy.js", &[]),
+            "\"\"C:\\Users\\a b\\.dsh\\loopback-proxy.js\"\""
+        );
     }
 }
