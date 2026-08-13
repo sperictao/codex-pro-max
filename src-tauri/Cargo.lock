@@ -503,6 +503,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-pro-max"
+version = "1.0.0"
+dependencies = [
+ "hmac",
+ "log",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sys-locale",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-dialog",
+ "tauri-plugin-log",
+ "tauri-plugin-notification",
+ "tauri-plugin-process",
+ "tauri-plugin-shell",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-updater",
+ "tauri-plugin-window-state",
+ "tokio",
+ "toml_edit 0.22.27",
+ "uuid",
+ "windows",
+]
+
+[[package]]
 name = "combine"
 version = "4.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -685,33 +712,6 @@ dependencies = [
  "darling_core",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "codex-pro-max"
-version = "0.14.0"
-dependencies = [
- "hmac",
- "log",
- "serde",
- "serde_json",
- "sha2",
- "sys-locale",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-dialog",
- "tauri-plugin-log",
- "tauri-plugin-notification",
- "tauri-plugin-process",
- "tauri-plugin-shell",
- "tauri-plugin-single-instance",
- "tauri-plugin-updater",
- "tauri-plugin-window-state",
- "tokio",
- "toml_edit 0.22.27",
- "uuid",
- "windows",
 ]
 
 [[package]]
