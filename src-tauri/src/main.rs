@@ -429,6 +429,7 @@ async fn run_start_all(
         config.taskboard_port,
         &instance_token,
         &instance_secret,
+        &config::taskboard_runtime_file_path()?,
     ).await?;
 
     app.emit("status-update", &serde_json::json!({
@@ -531,6 +532,7 @@ async fn start_injector(
         config.taskboard_port,
         &token,
         &secret,
+        &config::taskboard_runtime_file_path()?,
     ).await
 }
 
@@ -718,7 +720,7 @@ async fn run_taskctl(
     let (token, _) = config::ensure_instance_credentials(&mut config::load_config()?)?;
     cmd.env(
         "CODEX_TASKBOARD_URL",
-        format!("http://{}:{}/{}", config.taskboard_host, config.taskboard_port, token),
+        config::taskboard_url(&config.taskboard_host, config.taskboard_port, &token),
     );
     // Windows 上不弹出终端窗口
     #[cfg(windows)]

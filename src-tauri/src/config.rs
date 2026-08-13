@@ -125,6 +125,12 @@ pub fn ensure_instance_credentials(config: &mut LauncherConfig) -> Result<(Strin
     Ok((token, secret))
 }
 
+/// Taskboard base URL（含 token 路由前缀），run_taskctl / Codex env 注入共用。
+/// taskctl 的 normalizeBaseUrl 会剥尾斜杠，故此处不带尾斜杠
+pub fn taskboard_url(host: &str, port: u16, token: &str) -> String {
+    format!("http://{host}:{port}/{token}")
+}
+
 impl Default for LauncherConfig {
     fn default() -> Self {
         Self {
@@ -166,6 +172,15 @@ pub fn home_dir() -> Result<PathBuf, String> {
 pub fn config_file_path() -> Result<PathBuf, String> {
     let home = home_dir()?;
     Ok(home.join(".dashi-taskboard-launcher").join("config.json"))
+}
+
+/// 跨进程发布 Taskboard endpoint 的运行时描述文件。
+/// Store/MSIX 激活无法继承启动器 env，taskctl 会从该用户级固定路径发现带 token 的 URL。
+pub fn taskboard_runtime_file_path() -> Result<PathBuf, String> {
+    let home = home_dir()?;
+    Ok(home
+        .join(".dashi-taskboard-launcher")
+        .join("launcher-runtime.json"))
 }
 
 /// 剥掉 Windows `\\?\` 扩展路径前缀。
@@ -325,5 +340,12 @@ mod tests {
         let cfg = LauncherConfig::default();
         assert_eq!(cfg.codex_guard.enabled, false);
         assert!(cfg.codex_guard.params.is_empty());
+    }
+
+    #[test]
+    fn taskboard_url_builds_token_prefix() {
+        // token 模式下 API 路由在 /<token>/ 前缀下，URL 构造不能带尾斜杠（taskctl normalizeBaseUrl 会剥）
+        assert_eq!(taskboard_url("127.0.0.1", 47823, "tok"), "http://127.0.0.1:47823/tok");
+        assert_eq!(taskboard_url("0.0.0.0", 8080, "abc"), "http://0.0.0.0:8080/abc");
     }
 }

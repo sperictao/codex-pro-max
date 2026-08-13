@@ -412,7 +412,14 @@ async fn taskboard_health_reachable(host: &str, port: u16, secret: &str) -> bool
 /// new_instance=true（独立窗口模式）：macOS 用 open -n 强制新实例，不动现有窗口
 /// new_instance=false（完整模式）：拉起主实例；若已在运行且无 CDP，
 /// 调试参数不会生效，等待超时后提示用户先退出 Codex
-async fn ensure_codex_cdp(app_path: &str, port: u16, new_instance: bool) -> Result<(), String> {
+#[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
+async fn ensure_codex_cdp(
+    app_path: &str,
+    port: u16,
+    new_instance: bool,
+    taskboard_port: u16,
+    instance_token: &str,
+) -> Result<(), String> {
     if cdp_reachable(port) {
         return Ok(());
     }
@@ -466,23 +473,32 @@ async fn ensure_codex_cdp(app_path: &str, port: u16, new_instance: bool) -> Resu
         if let Some(amid) = app_path.strip_prefix("msix:") {
             crate::launch_store_app(amid, &debug_args.join(" "))?;
         } else {
+            // 拉起 Codex 时注入带 token 前缀的 URL：Codex 会话内 shell 直跑的
+            // taskctl 靠该 env 定位服务（否则落到无 token 的默认根 URL，撞上
+            // token 模式服务端的 404 Route not found）。新旧 taskctl 都读此 env
+            let url = crate::config::taskboard_url("127.0.0.1", taskboard_port, instance_token);
             std::process::Command::new(app_path)
                 .args(&debug_args)
+                .env("CODEX_TASKBOARD_URL", url)
                 .spawn()
                 .map_err(|e| trf("Cannot launch Codex ({path}): {error}", &[
                     ("path", app_path.to_string()),
                     ("error", e.to_string()),
                 ]))?;
         }
-        // Linux 直接带参数拉起 exe
+        // Linux 直接带参数拉起 exe，同样注入 token URL（同 Windows，taskctl 404 的同一根因）
         #[cfg(not(target_os = "windows"))]
-        std::process::Command::new(app_path)
-            .args(&debug_args)
-            .spawn()
-            .map_err(|e| trf("Cannot launch Codex ({path}): {error}", &[
-                ("path", app_path.to_string()),
-                ("error", e.to_string()),
-            ]))?;
+        {
+            let url = crate::config::taskboard_url("127.0.0.1", taskboard_port, instance_token);
+            std::process::Command::new(app_path)
+                .args(&debug_args)
+                .env("CODEX_TASKBOARD_URL", url)
+                .spawn()
+                .map_err(|e| trf("Cannot launch Codex ({path}): {error}", &[
+                    ("path", app_path.to_string()),
+                    ("error", e.to_string()),
+                ]))?;
+        }
     }
     // 等窗口和 CDP 就绪，最多 15 秒
     for _ in 0..30 {
@@ -655,6 +671,7 @@ impl ProcessManager {
         taskboard_port: u16,
         instance_token: &str,
         instance_secret: &str,
+        runtime_file: &std::path::Path,
     ) -> Result<(), String> {
         let mut inj = self.injector.lock().await;
         if inj.status == ProcessStatus::Running || inj.status == ProcessStatus::Starting {
@@ -664,7 +681,7 @@ impl ProcessManager {
         inj.status = ProcessStatus::Starting;
         inj.message = tr("Waiting for Codex debug port...");
 
-        if let Err(e) = ensure_codex_cdp(codex_app_path, cdp_port, separate_window).await {
+        if let Err(e) = ensure_codex_cdp(codex_app_path, cdp_port, separate_window, taskboard_port, instance_token).await {
             inj.status = ProcessStatus::Failed;
             // 标记只给前端识别用，状态栏与通知里剥掉
             inj.message = e.strip_prefix(CODEX_RUNNING_NO_CDP_MARK).unwrap_or(&e).to_string();
@@ -691,6 +708,9 @@ impl ProcessManager {
         cmd.env("CODEX_TASKBOARD_PORT", taskboard_port.to_string());
         cmd.env("CODEX_TASKBOARD_INSTANCE_TOKEN", instance_token);
         cmd.env("CODEX_TASKBOARD_INSTANCE_SECRET", instance_secret);
+        // Store/MSIX 激活无法继承 CODEX_TASKBOARD_URL。让注入器原子发布用户级
+        // runtime descriptor，Codex 会话中的 taskctl 可从固定路径发现带 token 的 URL。
+        cmd.env("CODEX_TASKBOARD_RUNTIME_FILE", runtime_file);
         cmd.stdin(Stdio::null());
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
