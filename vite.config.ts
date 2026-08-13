@@ -6,7 +6,7 @@ export default defineConfig({
   root: ".",
   clearScreen: false,
   server: {
-    port: 1420,
+    port: 5173,
     strictPort: true,
     watch: {
       // src-tauri/target 与 vendor 不是前端资源；Windows 上 chokidar
