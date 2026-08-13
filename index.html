@@ -417,6 +417,45 @@
           <span class="text-xs opacity-60" data-i18n="Output tier, background jobs and updates are managed in the fastctx console">Output tier, background jobs and updates are managed in the fastctx console</span>
         </div>
       </div>
+
+      <!-- ============ DeepSeek Harness 远程访问 ============ -->
+      <div class="mt-4 flex items-start gap-4 border-b border-border py-4">
+        <label class="w-36 shrink-0 pt-1 text-sm font-medium" data-i18n="DeepSeek Harness">DeepSeek Harness</label>
+        <div class="flex min-w-0 flex-1 flex-col gap-2">
+          <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0">
+              <div class="truncate text-sm" id="dsh-status" data-i18n="Detecting…">Detecting…</div>
+              <div class="mt-1 text-xs opacity-60" data-i18n="Remote access to the dsh Web UI over Tailscale HTTPS: https://<hostname>.ts.net → loopback proxy :3898 → dsh web :3899. Timeline nodes show the problem and its solution if a step fails.">Remote access to the dsh Web UI over Tailscale HTTPS: https://&lt;hostname&gt;.ts.net → loopback proxy :3898 → dsh web :3899. Timeline nodes show the problem and its solution if a step fails.</div>
+            </div>
+            <span class="hidden shrink-0 rounded-full bg-primary/15 px-2.5 py-0.5 font-mono text-xs text-primary" id="dsh-url-pill"></span>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-8 px-3 text-xs" id="btn-dsh-start" data-i18n="One-click remote access">One-click remote access</button>
+            <button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-8 px-3 text-xs" id="btn-dsh-stop" data-i18n="Stop">Stop</button>
+            <button class="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-8 px-3 text-xs" id="btn-dsh-open" data-i18n="Open">Open</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- dsh 安装进度时间轴 -->
+      <div class="flex items-start gap-4 border-b border-border py-4">
+        <label class="w-36 shrink-0 pt-1 text-sm font-medium" data-i18n="Setup Progress">Setup Progress</label>
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-col" id="dsh-timeline-nodes"></div>
+        </div>
+      </div>
+
+      <!-- dsh 开机后台自启动 -->
+      <div class="flex items-start gap-4 py-4">
+        <label class="w-36 shrink-0 pt-1 text-sm font-medium" data-i18n="Boot Auto-start">Boot Auto-start</label>
+        <label class="flex flex-1 cursor-pointer items-center justify-between gap-4 rounded-lg border border-border p-3" id="dsh-autostart-row">
+          <span class="flex flex-col gap-0.5">
+            <span class="text-sm" data-i18n="Auto-start dsh web and the loopback proxy in the background at login">Auto-start dsh web and the loopback proxy in the background at login</span>
+            <span class="text-xs opacity-60" data-i18n="Keeps remote access available without opening this app. Tailscale serve is managed by the Tailscale app itself.">Keeps remote access available without opening this app. Tailscale serve is managed by the Tailscale app itself.</span>
+          </span>
+          <input type="checkbox" class="relative h-5 w-9 shrink-0 cursor-pointer appearance-none rounded-full bg-input transition-colors outline-none checked:bg-primary focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 before:absolute before:left-0.5 before:top-0.5 before:h-4 before:w-4 before:rounded-full before:bg-background before:shadow-sm before:transition-transform checked:before:translate-x-4" id="toggle-dsh-autostart" />
+        </label>
+      </div>
     </main>
 
     <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2" id="toast-container"></div>

@@ -540,3 +540,89 @@
   background-color: var(--primary);
   transition: width 200ms;
 }
+
+/* ================= dsh 远程访问时间轴 ================= */
+.timeline-node {
+  position: relative;
+  display: flex;
+  gap: 0.75rem;
+  padding-bottom: 1rem;
+}
+/* 连接线：最后一个节点不画 */
+.timeline-node::before {
+  content: "";
+  position: absolute;
+  left: 0.6875rem;
+  top: 1.5rem;
+  bottom: 0;
+  width: 2px;
+  background-color: var(--border);
+}
+.timeline-node:last-child::before { display: none; }
+
+.timeline-marker {
+  position: relative;
+  z-index: 1;
+  width: 1.375rem;
+  height: 1.375rem;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6875rem;
+  line-height: 1;
+  background-color: var(--muted);
+  color: var(--muted-foreground);
+  border: 1px solid var(--border);
+}
+.timeline-node[data-state="done"] .timeline-marker {
+  background-color: var(--status-ok);
+  border-color: transparent;
+  color: #fff;
+}
+.timeline-node[data-state="running"] .timeline-marker {
+  background-color: var(--status-warn);
+  border-color: transparent;
+  animation: timeline-pulse 1s ease-in-out infinite;
+}
+.timeline-node[data-state="failed"] .timeline-marker {
+  background-color: var(--destructive);
+  border-color: transparent;
+  color: #fff;
+}
+.timeline-node[data-state="skipped"] { opacity: 0.45; }
+.timeline-node[data-state="pending"] .timeline-marker { opacity: 0.6; }
+
+.timeline-content { min-width: 0; flex: 1; padding-top: 0.125rem; }
+.timeline-title { font-size: 0.8125rem; font-weight: 500; }
+.timeline-detail { margin-top: 0.125rem; font-size: 0.75rem; opacity: 0.7; word-break: break-all; }
+
+/* 失败节点：问题 + 解决方案 */
+.timeline-issue {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--destructive);
+  background-color: color-mix(in srgb, var(--destructive) 8%, transparent);
+  font-size: 0.75rem;
+}
+.timeline-problem { color: var(--destructive); font-weight: 500; word-break: break-all; }
+.timeline-solution { margin-top: 0.25rem; opacity: 0.9; word-break: break-all; }
+
+/* 运行中节点的小 spinner */
+.timeline-spinner {
+  width: 0.6875rem;
+  height: 0.6875rem;
+  border-radius: 9999px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  animation: timeline-spin 0.8s linear infinite;
+}
+@keyframes timeline-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+@keyframes timeline-spin {
+  to { transform: rotate(360deg); }
+}

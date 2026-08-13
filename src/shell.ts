@@ -72,6 +72,15 @@ import {
 } from "./guard";
 import { renderFastctx, refreshFastctxStatus, toggleFastctx, openFastctxConsole } from "./fastctx";
 import {
+  renderDsh,
+  refreshDshStatus,
+  startDshRemote,
+  stopDshRemote,
+  openDshRemote,
+  toggleDshAutostart,
+  bindDshEvents,
+} from "./dsh";
+import {
   checkUpdaterHealth,
   openUpdaterHelp,
   renderUpdateInfo,
@@ -107,6 +116,7 @@ function rerenderDynamicText(): void {
   updateModeLabel();
   updateAutoOpenLabel();
   renderFastctx();
+  renderDsh();
   renderGuardFiles();
   renderUpdateInfo(pendingUpdateInfo ?? {
     currentVersion: "", availableVersion: null, hasUpdate: false, releaseNotes: null, message: null,
@@ -158,6 +168,7 @@ async function setupEventListener(): Promise<void> {
   await listen<DownloadProgress>("updater-download-progress", (event) => {
     renderDownloadProgress(event.payload);
   });
+  await bindDshEvents();
 }
 
 // ============ 初始化 ============
@@ -242,6 +253,7 @@ export async function init(): Promise<void> {
 
     // 刷新状态
     await refreshStatus();
+    void refreshDshStatus();
 
     // 启动状态轮询（每 3 秒）
     if (statusPolling !== null) {
@@ -289,6 +301,7 @@ function wireEvents(): void {
   on("btn-integration", "click", () => {
     showIntegration();
     void refreshFastctxStatus();
+    void refreshDshStatus();
   });
 
   // 主页
@@ -339,6 +352,12 @@ function wireEvents(): void {
   on("guard-file-form-toggle", "click", toggleGuardFileForm);
   on("toggle-fastctx", "change", () => void toggleFastctx());
   on("btn-fastctx-console", "click", () => void openFastctxConsole());
+
+  // dsh 远程访问
+  on("btn-dsh-start", "click", () => void startDshRemote());
+  on("btn-dsh-stop", "click", () => void stopDshRemote());
+  on("btn-dsh-open", "click", () => void openDshRemote());
+  on("toggle-dsh-autostart", "change", () => void toggleDshAutostart());
 
   // 关于
   on("link-updater-docs", "click", () => void openUpdaterHelp("docs"));
