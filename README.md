@@ -13,6 +13,9 @@
 
 </div>
 
+> **Note:** This project was formerly named **Dashi Taskboard Launcher** at `sperictao/dashi-taskboard-launcher`, and has been renamed to **Codex Pro Max**. Existing clones can update their remote with:
+> `git remote set-url origin https://github.com/sperictao/codex-pro-max.git`
+
 ---
 
 ## ✨ Highlights
