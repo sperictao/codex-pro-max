@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// 启动器配置，持久化到 ~/.dashi-taskboard-launcher/config.json
+/// 启动器配置，持久化到 ~/.codex-pro-max/config.json
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LauncherConfig {
     /// dashi-taskboard 仓库的本地路径
@@ -171,7 +171,7 @@ pub fn home_dir() -> Result<PathBuf, String> {
 /// 获取配置文件路径
 pub fn config_file_path() -> Result<PathBuf, String> {
     let home = home_dir()?;
-    Ok(home.join(".dashi-taskboard-launcher").join("config.json"))
+    Ok(home.join(".codex-pro-max").join("config.json"))
 }
 
 /// 跨进程发布 Taskboard endpoint 的运行时描述文件。
@@ -179,7 +179,7 @@ pub fn config_file_path() -> Result<PathBuf, String> {
 pub fn taskboard_runtime_file_path() -> Result<PathBuf, String> {
     let home = home_dir()?;
     Ok(home
-        .join(".dashi-taskboard-launcher")
+        .join(".codex-pro-max")
         .join("launcher-runtime.json"))
 }
 

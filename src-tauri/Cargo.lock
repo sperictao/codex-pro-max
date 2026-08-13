@@ -688,7 +688,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "dashi-taskboard-launcher"
+name = "codex-pro-max"
 version = "0.14.0"
 dependencies = [
  "hmac",

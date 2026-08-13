@@ -6,7 +6,7 @@
     "updater": {
       "pubkey": "REPLACE_WITH_MINISIGN_PUBKEY",
       "endpoints": [
-        "https://github.com/sperictao/dashi-taskboard-launcher/releases/latest/download/latest.json"
+        "https://github.com/sperictao/codex-pro-max/releases/latest/download/latest.json"
       ]
     }
   }

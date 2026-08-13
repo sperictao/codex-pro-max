@@ -29,7 +29,7 @@ pub(crate) fn default_for_lang<'a>(p: &'a GuardParam, lang: &str) -> &'a serde_j
 
 pub(crate) fn schema_file_path() -> Result<PathBuf, String> {
     Ok(config::home_dir()?
-        .join(".dashi-taskboard-launcher")
+        .join(".codex-pro-max")
         .join("codex-guard-schema.json"))
 }
 

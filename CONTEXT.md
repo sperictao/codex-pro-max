@@ -41,7 +41,7 @@
 
 - **主仓库（Upstream）** — `chuspeeism/dashi-taskboard`，taskboard 代码的权威来源，变更以 PR 汇入。
 - **Fork** — `sperictao/dashi-taskboard`，主仓库的 fork，向主仓库提 PR 的中转地。
-- **Launcher 仓库** — `sperictao/dashi-taskboard-launcher`（本仓库），Tauri 壳。
+- **Launcher 仓库** — `sperictao/codex-pro-max`（本仓库），Tauri 壳。
 - **Vendor 快照（Vendor Snapshot）** — taskboard 在 launcher 内 `vendor/dashi-taskboard/` 的 git submodule，指向 Fork、pin 具体 commit；升级由 launcher 显式 bump 指针。取代 v0.2.5 前的纯文件拷贝。
 - **Bundle** — Tauri 构建时经 `tauri.conf.json` resources 映射打进安装包的 taskboard 文件集。
 

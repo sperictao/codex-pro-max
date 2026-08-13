@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="./assets/readme/hero.svg" width="100%" alt="Dashi Taskboard Launcher — Tauri v2 desktop launcher: taskboard service management, Codex CDP injection, ~/.codex config guard, and self-updates">
+<img src="./assets/readme/hero.svg" width="100%" alt="Codex Pro Max — Tauri v2 desktop launcher: taskboard service management, Codex CDP injection, ~/.codex config guard, and self-updates">
 
 **A GUI that replaces hand-typed commands — manage the whole dashi-taskboard experience in one place.**
 
-[![GitHub Release](https://img.shields.io/github/v/release/sperictao/dashi-taskboard-launcher)](https://github.com/sperictao/dashi-taskboard-launcher/releases)
+[![GitHub Release](https://img.shields.io/github/v/release/sperictao/codex-pro-max)](https://github.com/sperictao/codex-pro-max/releases)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2.x-FFC131?logo=tauri&logoColor=white)](https://tauri.app)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Rust](https://img.shields.io/badge/Rust-stable-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org)
@@ -28,7 +28,7 @@
 
 ## 📦 Download & Install
 
-Grab the installer for your platform from [Releases](https://github.com/sperictao/dashi-taskboard-launcher/releases) (macOS dmg / Windows setup.exe / Linux AppImage, deb). Open it after install — taskboard is bundled inside, no separate clone needed.
+Grab the installer for your platform from [Releases](https://github.com/sperictao/codex-pro-max/releases) (macOS dmg / Windows setup.exe / Linux AppImage, deb). Open it after install — taskboard is bundled inside, no separate clone needed.
 
 ---
 
@@ -47,8 +47,8 @@ Requirements: Node ≥ 22.5, Rust stable, and the system Tauri dependencies (see
 
 ```bash
 # submodules required: vendor/dashi-taskboard is a git submodule
-git clone --recurse-submodules https://github.com/sperictao/dashi-taskboard-launcher
-cd dashi-taskboard-launcher
+git clone --recurse-submodules https://github.com/sperictao/codex-pro-max
+cd codex-pro-max
 pnpm install
 pnpm run tauri dev
 ```
@@ -60,7 +60,7 @@ No manual taskboard build is needed before `tauri dev`: `beforeDevCommand` ensur
 ## 🏗️ Repository Layout
 
 ```
-dashi-taskboard-launcher/
+codex-pro-max/
 ├── src/                    frontend (TS + Vite, single-page UI)
 ├── src-tauri/              Rust backend (commands, config, process hosting, guard, updater)
 ├── vendor/dashi-taskboard  git submodule → sperictao/dashi-taskboard (fork)

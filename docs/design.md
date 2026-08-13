@@ -1,4 +1,4 @@
-# Dashi Taskboard Launcher 设计文档
+# Codex Pro Max 设计文档
 
 ## 1. 概述
 
@@ -63,7 +63,7 @@ stopped → starting → running ⇄ stopping → stopped
 
 Codex 配置看守（词汇与边界见 [../CONTEXT.md](../CONTEXT.md) 与 [adr/0001](adr/0001-codex-config-guard-boundaries.md)）：
 
-- **schema**：内置 `guard_schema.json`（11 条 v1 参数），启动时与 `~/.dashi-taskboard-launcher/codex-guard-schema.json` 合并（同 id 内置覆盖磁盘，磁盘独有保留），UI 完全由合并结果驱动；用户可在 UI 增删自定义参数（id 前缀 `custom.`，可删除），写入该磁盘文件
+- **schema**：内置 `guard_schema.json`（11 条 v1 参数），启动时与 `~/.codex-pro-max/codex-guard-schema.json` 合并（同 id 内置覆盖磁盘，磁盘独有保留），UI 完全由合并结果驱动；用户可在 UI 增删自定义参数（id 前缀 `custom.`，可删除），写入该磁盘文件
 - **文件列表**：看守目标文件（内置 config.toml / AGENTS.md / agents/default.toml + 自定义）存于 `LauncherConfig.codex_guard.files`；视图分组与轮询只覆盖列表内文件，路径不可重复
 - **apply_mode**：`toml_key` / `toml_absent` / `file_overwrite` / `markdown_block`（`<!-- dashi:begin/end id -->` 标记区块）；TOML 读写走 `toml_edit`，保留注释与格式
 - **状态**：`LauncherConfig.codex_guard`（enabled + 每参数 value/applied/locked/last_checked/last_restored）

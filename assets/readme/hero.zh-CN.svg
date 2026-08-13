@@ -2,7 +2,7 @@
      width="1200" height="360" viewBox="0 0 1200 360"
      role="img" aria-labelledby="title desc"
      font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif">
-  <title id="title">Dashi Taskboard Launcher</title>
+  <title id="title">Codex Pro Max</title>
   <desc id="desc">Tauri v2 桌面启动器，托管 dashi-taskboard 服务、向 Codex 桌面端注入面板、看守 ~/.codex 配置并支持自更新。</desc>
 
   <rect x="1" y="1" width="1198" height="358" rx="23" fill="#0D1117" stroke="#21262D" stroke-width="1.5"/>
@@ -11,8 +11,8 @@
   <g transform="translate(64 0)">
     <text x="0" y="88" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
           font-size="19" letter-spacing="4" fill="#58A6FF">TAURI V2 · MACOS / WINDOWS / LINUX</text>
-    <text x="0" y="152" font-size="56" font-weight="700" fill="#E6EDF3">Dashi Taskboard</text>
-    <text x="0" y="216" font-size="56" font-weight="700" fill="#58A6FF">Launcher</text>
+    <text x="0" y="152" font-size="56" font-weight="700" fill="#E6EDF3">Codex Pro</text>
+    <text x="0" y="216" font-size="56" font-weight="700" fill="#58A6FF">Max</text>
     <text x="0" y="258" font-size="21" fill="#C9D1D9">图形界面替代手写命令，</text>
     <text x="0" y="288" font-size="21" fill="#C9D1D9">一站式管理 dashi-taskboard。</text>
     <text x="0" y="328" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"

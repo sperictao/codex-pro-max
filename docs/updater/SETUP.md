@@ -1,6 +1,6 @@
 # Updater 配置指南
 
-Dashi Taskboard Launcher 已接入 Tauri v2 Updater 插件。
+Codex Pro Max 已接入 Tauri v2 Updater 插件。
 
 ## 开发环境（默认）
 
@@ -22,7 +22,7 @@ Dashi Taskboard Launcher 已接入 Tauri v2 Updater 插件。
 1. 生成 updater 签名密钥对（仅首次需要）：
 
 ```bash
-pnpm dlx @tauri-apps/cli signer generate -w ~/.tauri/dashi-taskboard-launcher.key
+pnpm dlx @tauri-apps/cli signer generate -w ~/.tauri/codex-pro-max.key
 ```
 
 执行后会输出公钥（pubkey），并生成私钥文件。记下公钥和私钥密码。
@@ -36,7 +36,7 @@ export TAURI_UPDATER_PUBKEY='YOUR_MINISIGN_PUBKEY'
 3. 如需覆盖默认 GitHub Release 更新地址，可额外设置：
 
 ```bash
-export TAURI_UPDATER_ENDPOINT='https://github.com/sperictao/dashi-taskboard-launcher/releases/latest/download/latest.json'
+export TAURI_UPDATER_ENDPOINT='https://github.com/sperictao/codex-pro-max/releases/latest/download/latest.json'
 ```
 
 4. 构建时会自动生成生产 overlay，并先校验 updater 配置：
@@ -72,7 +72,7 @@ pnpm run build:updater
 - 默认更新源为 GitHub Release 的 `latest.json`：
 
 ```text
-https://github.com/sperictao/dashi-taskboard-launcher/releases/latest/download/latest.json
+https://github.com/sperictao/codex-pro-max/releases/latest/download/latest.json
 ```
 
 - 若使用非 HTTPS 地址，release 构建会被 updater 插件拦截。

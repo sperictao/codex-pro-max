@@ -1,8 +1,8 @@
 [package]
-name = "dashi-taskboard-launcher"
+name = "codex-pro-max"
 version = "0.14.0"
 description = "One-click launcher for dashi-taskboard integrated with Codex"
-authors = ["dashi-taskboard-launcher"]
+authors = ["codex-pro-max"]
 edition = "2021"
 rust-version = "1.77.2"
 
