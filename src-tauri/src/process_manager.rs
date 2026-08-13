@@ -661,6 +661,8 @@ impl ProcessManager {
     /// （其内部 open/pgrep/ps 仅支持 macOS，Windows 上必然失败）。
     /// token 模式：注入器从 env 读 instance token/secret，与 server 一致，
     /// 否则注入器会自生成一套导致与 launcher 起的 server 互相不可达
+    /// 9 个参数为 Tauri command 拉齐的整包配置字段，结构上按位置传递
+    #[allow(clippy::too_many_arguments)]
     pub async fn start_injector(
         &self,
         taskboard_path: &str,
