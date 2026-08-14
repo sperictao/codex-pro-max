@@ -13,7 +13,8 @@
     "build:updater": "node scripts/build-updater.mjs",
     "build:taskboard": "npm --prefix vendor/dashi-taskboard install && npm --prefix vendor/dashi-taskboard run build:web",
     "ensure:taskboard": "node -e \"require('fs').mkdirSync('vendor/dashi-taskboard/dist/web',{recursive:true})\"",
-    "check:release": "node scripts/check-release.mjs"
+    "check:release": "node scripts/check-release.mjs",
+    "smoke": "node scripts/smoke/drive.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -41,6 +42,7 @@
     "@vitejs/plugin-react": "^6.0.5",
     "esbuild": "^0.28.2",
     "jsdom": "^30.0.1",
+    "playwright-core": "^1.62.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.6.0",
     "vite": "^8.2.1",
