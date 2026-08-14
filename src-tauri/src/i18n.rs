@@ -198,6 +198,8 @@ fn zh_cn(key: &str) -> Option<&'static str> {
         "Cannot register launchd agent: {error}" => "无法注册 launchd 自启项: {error}",
         "Cannot locate the Windows Startup folder (APPDATA is missing)" => "无法定位 Windows 启动文件夹（缺少 APPDATA 环境变量）",
         "Cannot enable systemd unit: {error}" => "无法启用 systemd 服务: {error}",
+        "Update failed: {error}" => "更新失败: {error}",
+        "dsh web did not start within 20s; check ~/.dsh/dsh-web.log — port 3899 may be occupied or a newer Node.js may be required" => "dsh Web 20 秒内未能启动，请查看 ~/.dsh/dsh-web.log —— 端口 3899 可能被占用，或需要更新的 Node.js",
 
         // —— Codex 配置看守（codex_guard.rs）——
         "File path cannot be empty" => "文件路径不能为空",

@@ -31,6 +31,7 @@ use tauri::Emitter;
 
 use crate::config;
 use crate::i18n::{tr, trf};
+use crate::version::is_newer;
 
 /// dsh web 端口（与教程一致）
 const WEB_PORT: u16 = 3899;
@@ -52,6 +53,8 @@ pub struct DshStatus {
     pub node_available: bool,
     pub dsh_installed: bool,
     pub dsh_version: Option<String>,
+    /// npm 最新版本号；仅当比已装版本新时返回（UI 更新按钮），否则 None
+    pub latest_version: Option<String>,
     pub dsh_running: bool,
     pub tailscale_installed: bool,
     pub tailscale_online: bool,
@@ -578,10 +581,17 @@ pub async fn dsh_detect() -> Result<DshStatus, String> {
         Some(p) => magic_dns_info(p),
         None => (false, None),
     };
+    let version = dsh_version();
+    // 有可执行版时向 npm 查最新版，仅比已装版新才带上（网络/查询失败静默降级为 None）
+    let latest_version = match &version {
+        Some(cur) => dsh_latest_version(cur),
+        None => None,
+    };
     Ok(DshStatus {
         node_available: which("node").is_some(),
-        dsh_installed: dsh_version().is_some(),
-        dsh_version: dsh_version(),
+        dsh_installed: version.is_some(),
+        dsh_version: version,
+        latest_version,
         dsh_running: port_listening(WEB_PORT),
         tailscale_installed: ts.is_some(),
         tailscale_online: ts.as_deref().map(tailscale_online).unwrap_or(false),
@@ -596,6 +606,19 @@ pub async fn dsh_detect() -> Result<DshStatus, String> {
         autostart_enabled: autostart_enabled(),
         error: None,
     })
+}
+
+/// 查 npm 最新 dsh 版本；仅当比已装版本新时返回 Some。网络/查询失败静默降级为 None
+fn dsh_latest_version(current: &str) -> Option<String> {
+    let (out, _, ok) = run_capture(&npm_bin(), &["view", "@deepseek-ai/dsh", "version"]).ok()?;
+    if !ok {
+        return None;
+    }
+    let latest = out.trim().to_string();
+    if latest.is_empty() {
+        return None;
+    }
+    is_newer(&latest, current).then_some(latest)
 }
 
 // ============ 一键启动（时间轴事件流） ============
@@ -643,6 +666,46 @@ impl StepCtx<'_> {
         }
         Err(problem.to_string())
     }
+}
+
+/// 后台启动 dsh web 进程（--profile web --port 3899，带 --trusted-host 与
+/// SSH_CONNECTION）。不等待端口就绪；失败返回 (problem, solution) 供时间轴
+/// 与更新流程分别展示针对性排障提示。dsh_setup 与 dsh_update 共用
+fn spawn_dsh_web() -> Result<(), (String, String)> {
+    let dsh_bin = match resolve_dsh_bin() {
+        Ok(b) => b,
+        Err(e) => {
+            return Err((
+                e,
+                tr("Install dsh first, then retry"),
+            ))
+        }
+    };
+    let mut args: Vec<String> = vec![
+        "--profile".into(),
+        "web".into(),
+        "--port".into(),
+        WEB_PORT.to_string(),
+    ];
+    // --trusted-host 放行非敏感 API（目录浏览等）；未知主机名时省略（反代链路不依赖它）
+    if let Some(fqdn) = resolve_fqdn() {
+        args.push("--trusted-host".into());
+        args.push(fqdn);
+    }
+    let log = dsh_dir().map(|d| d.join("dsh-web.log")).unwrap_or_else(|_| PathBuf::from("dsh-web.log"));
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    if let Err(e) = spawn_detached(
+        &dsh_bin.display().to_string(),
+        &arg_refs,
+        &[("SSH_CONNECTION", SSH_CONNECTION_ENV)],
+        &log,
+    ) {
+        return Err((
+            e,
+            tr("Port 3899 may be occupied; stop the process using it and retry"),
+        ));
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -729,42 +792,14 @@ pub async fn dsh_setup(app: tauri::AppHandle) -> Result<(), String> {
         if port_listening(WEB_PORT) {
             ctx.done(&tr("Already running on 127.0.0.1:3899"));
         } else {
-            let dsh_bin = match resolve_dsh_bin() {
-                Ok(b) => b,
-                Err(e) => {
-                    return ctx.fail(&e, &tr("Install dsh first, then retry"), &remaining_after(2))
-                }
-            };
-            let mut args: Vec<String> = vec![
-                "--profile".into(),
-                "web".into(),
-                "--port".into(),
-                WEB_PORT.to_string(),
-            ];
-            // --trusted-host 放行非敏感 API（目录浏览等）；未知主机名时省略（反代链路不依赖它）
-            if let Some(fqdn) = resolve_fqdn() {
-                args.push("--trusted-host".into());
-                args.push(fqdn);
-            }
-            let log = dsh_dir().map(|d| d.join("dsh-web.log")).unwrap_or_else(|_| PathBuf::from("dsh-web.log"));
             ctx.running(&tr("Starting dsh web (127.0.0.1:3899)…"));
-            let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-            if let Err(e) = spawn_detached(
-                &dsh_bin.display().to_string(),
-                &arg_refs,
-                &[("SSH_CONNECTION", SSH_CONNECTION_ENV)],
-                &log,
-            ) {
-                return ctx.fail(
-                    &e,
-                    &tr("Port 3899 may be occupied; stop the process using it and retry"),
-                    &remaining_after(2),
-                );
+            if let Err((problem, solution)) = spawn_dsh_web() {
+                return ctx.fail(&problem, &solution, &remaining_after(2));
             }
             if !wait_port(WEB_PORT, Duration::from_secs(20)) {
                 return ctx.fail(
                     &tr("dsh web did not start within 20s"),
-                    &trf("Check the log at ~/.dsh/dsh-web.log; port 3899 may be occupied or the dsh CLI may need a newer Node.js", &[]),
+                    &tr("Check the log at ~/.dsh/dsh-web.log; port 3899 may be occupied or the dsh CLI may need a newer Node.js"),
                     &remaining_after(2),
                 );
             }
@@ -946,6 +981,50 @@ pub async fn dsh_setup(app: tauri::AppHandle) -> Result<(), String> {
         }
     }
 
+    Ok(())
+}
+
+// ============ 更新 ============
+
+/// 更新 dsh 到 npm 最新版；若 dsh web 正在运行则重启使其生效。返回更新后的版本号
+#[tauri::command]
+pub async fn dsh_update() -> Result<String, String> {
+    let was_running = port_listening(WEB_PORT);
+    match run_capture(&npm_bin(), &["install", "-g", "@deepseek-ai/dsh"]) {
+        Ok((_, _, true)) => {}
+        Ok((_, err, _)) => {
+            let e = if err.is_empty() { "npm install -g @deepseek-ai/dsh failed".to_string() } else { err };
+            return Err(trf("Update failed: {error}", &[("error", e)]));
+        }
+        Err(e) => {
+            return Err(trf("Update failed: {error}", &[("error", e)]));
+        }
+    }
+    let new_version = dsh_version()
+        .ok_or_else(|| tr("dsh installed but cannot be located in PATH"))?;
+    if was_running {
+        restart_dsh_web()?;
+    }
+    Ok(new_version)
+}
+
+/// 重启 dsh web 使新版本生效：杀掉旧进程 → 等端口释放 →
+/// 自启机制（launchd KeepAlive / systemd Restart / 启动文件夹）若已自动拉起
+/// 新版本则不再重复启动；否则手动启动
+fn restart_dsh_web() -> Result<(), String> {
+    kill_by_pattern("profile web --port 3899");
+    // 等旧进程退出、端口释放（最多 5s）
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while port_listening(WEB_PORT) && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(300));
+    }
+    // 自启可能已自动拉起；先等 10s，未恢复再手动启动
+    if !wait_port(WEB_PORT, Duration::from_secs(10)) {
+        spawn_dsh_web().map_err(|(problem, _)| problem)?;
+        if !wait_port(WEB_PORT, Duration::from_secs(20)) {
+            return Err(tr("dsh web did not start within 20s; check ~/.dsh/dsh-web.log — port 3899 may be occupied or a newer Node.js may be required"));
+        }
+    }
     Ok(())
 }
 

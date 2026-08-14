@@ -77,6 +77,7 @@ import {
   startDshRemote,
   stopDshRemote,
   openDshRemote,
+  updateDsh,
   toggleDshAutostart,
   bindDshEvents,
 } from "./dsh";
@@ -357,6 +358,7 @@ function wireEvents(): void {
   on("btn-dsh-start", "click", () => void startDshRemote());
   on("btn-dsh-stop", "click", () => void stopDshRemote());
   on("btn-dsh-open", "click", () => void openDshRemote());
+  on("btn-dsh-update", "click", () => void updateDsh());
   on("toggle-dsh-autostart", "change", () => void toggleDshAutostart());
 
   // 关于

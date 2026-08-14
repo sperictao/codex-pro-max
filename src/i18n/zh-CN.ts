@@ -296,6 +296,9 @@ export const zhCN: Record<I18nKey, string> = {
   "Auto-start enabled": "已开启开机自启",
   "Auto-start disabled": "已关闭开机自启",
   "Failed to change auto-start: {{error}}": "修改开机自启失败: {{error}}",
+  "Update to {{version}}": "更新到 {{version}}",
+  "dsh updated to {{version}}": "dsh 已更新到 {{version}}",
+  "dsh update failed: {{error}}": "dsh 更新失败: {{error}}",
 
   // —— 更新 ——
   "Check failed: {{error}}": "检查失败: {{error}}",

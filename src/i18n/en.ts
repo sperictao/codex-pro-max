@@ -294,6 +294,9 @@ export const en = {
   "Auto-start enabled": "Auto-start enabled",
   "Auto-start disabled": "Auto-start disabled",
   "Failed to change auto-start: {{error}}": "Failed to change auto-start: {{error}}",
+  "Update to {{version}}": "Update to {{version}}",
+  "dsh updated to {{version}}": "dsh updated to {{version}}",
+  "dsh update failed: {{error}}": "dsh update failed: {{error}}",
 
   // —— 更新 ——
   "Check failed: {{error}}": "Check failed: {{error}}",

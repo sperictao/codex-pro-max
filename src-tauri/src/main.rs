@@ -13,6 +13,7 @@ mod fastctx;
 mod i18n;
 mod process_manager;
 mod updater;
+mod version;
 
 use config::LauncherConfig;
 use process_manager::{ProcessManager, ProcessInfo, resolve_node};
@@ -1010,6 +1011,7 @@ pub fn run() {
             dsh::dsh_setup,
             dsh::dsh_stop,
             dsh::dsh_set_autostart,
+            dsh::dsh_update,
             updater::get_updater_config_health,
             updater::get_updater_help_paths,
             updater::check_update,

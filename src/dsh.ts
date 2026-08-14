@@ -15,6 +15,7 @@ export interface DshStatus {
   nodeAvailable: boolean;
   dshInstalled: boolean;
   dshVersion: string | null;
+  latestVersion: string | null;
   dshRunning: boolean;
   tailscaleInstalled: boolean;
   tailscaleOnline: boolean;
@@ -129,10 +130,12 @@ function timelineFromStatus(s: DshStatus): DshStepEvent[] {
 
 export function renderDsh(): void {
   const statusEl = document.getElementById("dsh-status");
+  const versionEl = document.getElementById("dsh-version");
   const pill = document.getElementById("dsh-url-pill");
   const startBtn = document.getElementById("btn-dsh-start") as HTMLButtonElement | null;
   const stopBtn = document.getElementById("btn-dsh-stop") as HTMLButtonElement | null;
   const openBtn = document.getElementById("btn-dsh-open") as HTMLButtonElement | null;
+  const updateBtn = document.getElementById("btn-dsh-update") as HTMLButtonElement | null;
   const autostartToggle = document.getElementById("toggle-dsh-autostart") as HTMLInputElement | null;
   if (!statusEl) return;
 
@@ -142,6 +145,16 @@ export function renderDsh(): void {
     statusEl.textContent = statusText(dshStatus);
   } else {
     statusEl.textContent = t("Detecting…");
+  }
+
+  // 已安装时显示当前版本胶囊
+  if (versionEl) {
+    if (dshStatus?.dshVersion) {
+      versionEl.classList.remove("hidden");
+      versionEl.textContent = dshStatus.dshVersion;
+    } else {
+      versionEl.classList.add("hidden");
+    }
   }
 
   if (pill) {
@@ -162,6 +175,16 @@ export function renderDsh(): void {
   }
   if (openBtn) {
     openBtn.disabled = dshBusy || !dshStatus?.url;
+  }
+  // 更新按钮：仅在有新版可更时显示
+  if (updateBtn) {
+    const latest = dshStatus?.latestVersion;
+    const hasUpdate = !!latest;
+    updateBtn.classList.toggle("hidden", !hasUpdate);
+    if (hasUpdate) {
+      updateBtn.textContent = t("Update to {{version}}", { version: latest });
+    }
+    updateBtn.disabled = dshBusy;
   }
   if (autostartToggle && dshStatus) {
     autostartToggle.checked = dshStatus.autostartEnabled;
@@ -230,6 +253,23 @@ export async function openDshRemote(): Promise<void> {
     await openUrl(dshStatus.url);
   } catch (e) {
     toast(t("Failed to open: {{error}}", { error: String(e) }), "error");
+  }
+}
+
+// ============ 更新 ============
+
+export async function updateDsh(): Promise<void> {
+  if (dshBusy) return;
+  dshBusy = true;
+  renderDsh();
+  try {
+    const version = await invoke<string>("dsh_update");
+    toast(t("dsh updated to {{version}}", { version }), "success");
+  } catch (e) {
+    toast(t("dsh update failed: {{error}}", { error: String(e) }), "error");
+  } finally {
+    dshBusy = false;
+    await refreshDshStatus();
   }
 }
 

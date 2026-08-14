@@ -7,6 +7,7 @@ use std::process::Command;
 
 use crate::config;
 use crate::i18n::trf;
+use crate::version::is_newer;
 
 /// 安装检测 + 接入状态
 #[derive(Debug, Serialize)]
@@ -126,24 +127,6 @@ fn latest_version(current: &str) -> Result<Option<String>, String> {
     Ok(is_newer(&latest, current).then_some(latest))
 }
 
-/// 语义版本号比较：cur < latest 才算有更新；解析失败按无更新处理
-fn is_newer(latest: &str, current: &str) -> bool {
-    match (parse_version(latest), parse_version(current)) {
-        (Some(a), Some(b)) => a > b,
-        _ => false,
-    }
-}
-
-/// 解析 "1.2.3" → (1,2,3)；容忍 npm view 可能带 `v` 前缀。解析失败返回 None
-fn parse_version(v: &str) -> Option<(u64, u64, u64)> {
-    let parts: Vec<&str> = v.trim().trim_start_matches('v').split('.').collect();
-    if parts.len() != 3 {
-        return None;
-    }
-    let (a, b, c) = (parts[0].parse().ok()?, parts[1].parse().ok()?, parts[2].parse().ok()?);
-    Some((a, b, c))
-}
-
 /// 安装：npm install --global fastctx（设置页开关在未检测到安装时自动触发）
 #[tauri::command]
 pub fn fastctx_install() -> Result<(), String> {
@@ -225,7 +208,8 @@ pub fn fastctx_open_console() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{integrated_in, is_newer, parse_version};
+    use super::integrated_in;
+    use crate::version::is_newer;
 
     #[test]
     fn integrated_detection() {
@@ -251,15 +235,5 @@ mod tests {
         // 任意一侧解析失败 → 无更新
         assert!(!is_newer("v1.2.3", "abc"));
         assert!(!is_newer("", "1.2.3"));
-    }
-
-    #[test]
-    fn version_parse() {
-        assert_eq!(parse_version("1.2.3"), Some((1, 2, 3)));
-        assert_eq!(parse_version("v1.2.3"), Some((1, 2, 3)));
-        assert_eq!(parse_version(" 1.2.3 "), Some((1, 2, 3)));
-        assert_eq!(parse_version("1.2"), None);
-        assert_eq!(parse_version("a.b.c"), None);
-        assert_eq!(parse_version("1.2.x"), None);
     }
 }
