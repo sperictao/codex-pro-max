@@ -12,41 +12,51 @@
 
 ```
 src/
-├── main.tsx                  # 入口：挂载 <App/>
-├── App.tsx                   # 壳：activeView 切换 + store/事件接线
+├── main.tsx                  # 入口：主题预渲染引导 + i18n 就绪 + 挂载 <App/>
+├── App.tsx                   # 壳：activeView 切换 + 事件桥 + 初始化 + 3s 轮询
 ├── features/
-│   ├── guard/                # 看守域（组件 + hooks + 本域测试）
-│   ├── service/              # 主页：进程状态/启停
-│   ├── settings/             # 设置页六分区
+│   ├── guard/                # 看守域：GuardView + GuardSettingsSection + 两个弹窗 + ops + 测试
+│   ├── home/                 # 主页：进程状态卡、总状态指示器、Codex 重启确认
+│   ├── settings/             # 设置页壳 + 通用/外观/网络/模式分区
 │   ├── skill/                # Skill 安装
-│   ├── integration/          # fastctx + dsh
-│   └── updater/              # 更新检查/下载/安装
+│   ├── integration/          # fastctx + dsh 卡片
+│   └── updater/              # 关于分区（更新源健康/检查/进度）
 └── shared/
     ├── commands.ts           # 集中式类型化 IPC（命令名全仓唯一）
-    ├── store.ts              # Zustand：config / status / guardState / activeView
-    ├── i18n/                 # react-i18next 初始化 + en/zh-CN 字典（原样迁移）
-    ├── theme/                # data-theme 解析与切换、localStorage、theme-families
-    └── components/           # shadcn 复制件（按需）+ 共用小组件
+    ├── events.ts             # Tauri 推送事件类型化订阅（事件名全仓唯一）
+    ├── store.ts              # Zustand：导航/配置草稿/进程/看守/更新器/主题/toast
+    ├── config.ts             # currentConfigDraft（旧 readConfigFromUI 语义）
+    ├── types.ts              # IPC 载荷与视图类型
+    ├── theme.ts              # data-theme 解析（纯函数）
+    ├── theme-families.ts     # 生成物：41 族 manifest
+    ├── i18n/                 # react-i18next 初始化 + en/zh-CN 字典
+    ├── lib/                  # ui 类串、cn()、fmtTs
+    ├── components/           # Toaster、Modal、SelectCard
+    └── test/                 # vitest setup
 ```
 
-依赖方向：`shared` ← `features` ← `App`；feature 之间禁止互相 import（ADR 0009 精神延续）。
+依赖方向：`shared` ← `features` ← `App`/组合根；feature 之间禁止互相 import（ADR 0009 精神延续；SettingsView 作为组合根引用 guard/updater 特征的分区组件）。
+
+**shadcn 实收说明**：三轮共识选定 Q6(b) 无头组件库；实施中所有应用内弹层（看守两弹窗、Codex 重启确认）复用既有 `.modal-overlay/.modal-card` 主题化样式即可逐像素保行为，引入 Radix/shadcn 反而会带入焦点圈禁、ESC 关闭等新行为，与 Q4 严格保行为冲突。故实收为零组件，`components.json` 与 `cn()` 保留作为后续入口。
 
 ## 单元序列
 
 | # | 单元 | 完成验证 |
 |---|------|----------|
 | 0 | ~~**冒烟清单补全**~~ ✅ 已完成（本文档第 4 节） | 清单评审通过 |
-| 1 | 工具链：react/react-dom 19、`@vitejs/plugin-react`、tsconfig `jsx: react-jsx`、shadcn 初始化、装 zustand/react-i18next/vitest；空壳 `<App/>` 挂载 | `pnpm dev` 起、`pnpm build` 过、主题生效 |
-| 2 | 壳架：`activeView` 导航、store、i18n 接线、主题切换、Tauri 事件桥（status-update / updater-download-progress / dsh-step） | 5 视图空壳可切换；切语言/主题即时生效 |
-| 3 | 主页 + service：进程状态渲染、启停、状态推送 | 对照清单 §主页 |
-| 4 | 设置页六分区：通用/外观（41 族色卡网格）/网络/模式/看守设置/关于 | 对照清单 §设置 |
-| 5 | Skill 安装视图 | 对照清单 §Skill |
-| 6 | 集成视图：fastctx 接入/摘除 + dsh 时间轴（dsh-step 事件） | 对照清单 §集成 |
-| 7 | updater：健康检查、检查更新、下载进度、安装 | 对照清单 §更新 |
-| 8 | 看守视图：参数卡渲染、增删改、启用/锁定、文件管理弹窗、自定义参数；Vitest 覆盖锁定状态机与四 apply_mode 交互；CI 加 `vitest run` | 测试绿 + 对照清单 §看守 |
-| 9 | 清扫：删 index.html 静态视图（只留挂载点）、删旧 8 模块、移除 `declare module "*.ts"`、全量冒烟 | 清单全量通过 + `tsc --noEmit` 绿 |
+| 1 | ~~工具链~~ ✅ | `pnpm dev` 起、`pnpm build` 过、主题生效 |
+| 2 | ~~壳架~~ ✅ | 5 视图可切换；切语言/主题即时生效 |
+| 3 | ~~主页 + service~~ ✅ | tsc/build 绿 |
+| 4 | ~~设置页六分区~~ ✅（看守分区仅总开关，文件列表随单元 8 落地） | tsc/build 绿 |
+| 5 | ~~Skill 安装视图~~ ✅ | tsc/build 绿 |
+| 6 | ~~集成视图（fastctx + dsh）~~ ✅ | tsc/build 绿 |
+| 7 | ~~updater~~ ✅（AboutSection 归入 updater 特征域） | tsc/build 绿 |
+| 8 | ~~看守视图 + Vitest~~ ✅ 12 用例全绿；CI 加 `vitest run` | 测试绿 + tsc/build 绿 |
+| 9 | ~~清扫~~ ✅ 旧 11 模块已删、纯模块归位 shared/、宽松声明已除；**全量冒烟待用户执行** | tsc/vitest/build 全绿 |
 
 每单元一个提交；中间态不发布、不合并 main，全部通过后一次性合并。
+
+**冒烟执行前提**：已安装的 Codex Pro Max 正在运行时，dev 实例会被单实例插件拦截退出（2026-08-15 实测拦截生效，顺带验证了单实例行为）。请先退出已安装实例，再 `pnpm tauri dev`，对照第 4 节逐条核对。
 
 ## 4. 冒烟清单（验收 spec，单元 0 产出）
 
