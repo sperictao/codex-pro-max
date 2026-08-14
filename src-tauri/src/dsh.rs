@@ -871,37 +871,32 @@ pub async fn dsh_setup(app: tauri::AppHandle) -> Result<(), String> {
             );
         };
         ctx.running(&tr("Configuring tailscale serve…"));
-        if serve_configured(&ts) {
-            let (_, url) = resolve_host_and_url();
-            match url {
-                Some(u) => ctx.done(&trf("HTTPS serve ready: {url}", &[("url", u)])),
-                None => ctx.done(&tr("HTTPS serve ready")),
+        // 总是重跑 serve 命令（幂等）：配置存在 ≠ 监听器在跑——tailscaled
+        // 重启/升级后可能只剩配置没有监听，跳过会假成功（Windows 实机踩坑）。
+        // 重复执行只是重新断言同一配置，无副作用
+        let r = run_capture(&ts, &["serve", "--https=443", "--bg", &PROXY_PORT.to_string()]);
+        match r {
+            Ok((_, _, true)) => {
+                let (_, url) = resolve_host_and_url();
+                match url {
+                    Some(u) => ctx.done(&trf("HTTPS serve ready: {url}", &[("url", u)])),
+                    None => ctx.done(&tr("HTTPS serve ready")),
+                }
             }
-        } else {
-            let r = run_capture(&ts, &["serve", "--https=443", "--bg", &PROXY_PORT.to_string()]);
-            match r {
-                Ok((_, _, true)) => {
-                    let (_, url) = resolve_host_and_url();
-                    match url {
-                        Some(u) => ctx.done(&trf("HTTPS serve ready: {url}", &[("url", u)])),
-                        None => ctx.done(&tr("HTTPS serve ready")),
-                    }
-                }
-                Ok((_, err, _)) => {
-                    let e = if err.is_empty() { "tailscale serve failed".to_string() } else { err };
-                    return ctx.fail(
-                        &trf("Serve is not enabled or failed: {error}", &[("error", e)]),
-                        &tr("Open the authorization link in the error output to enable Serve for this tailnet (https://login.tailscale.com/f/serve), then retry"),
-                        &remaining_after(6),
-                    )
-                }
-                Err(e) => {
-                    return ctx.fail(
-                        &e,
-                        &tr("Run `tailscale up` first to sign in, then retry"),
-                        &remaining_after(6),
-                    )
-                }
+            Ok((_, err, _)) => {
+                let e = if err.is_empty() { "tailscale serve failed".to_string() } else { err };
+                return ctx.fail(
+                    &trf("Serve is not enabled or failed: {error}", &[("error", e)]),
+                    &tr("Open the authorization link in the error output to enable Serve for this tailnet (https://login.tailscale.com/f/serve), then retry"),
+                    &remaining_after(6),
+                )
+            }
+            Err(e) => {
+                return ctx.fail(
+                    &e,
+                    &tr("Run `tailscale up` first to sign in, then retry"),
+                    &remaining_after(6),
+                )
             }
         }
     }
