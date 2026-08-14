@@ -217,8 +217,13 @@ fn which(program: &str) -> Option<String> {
     }
     #[cfg(windows)]
     {
+        // CREATE_NO_WINDOW：GUI 应用拉起 cmd 不能闪控制台窗口
+        // （v0.2.1 修过同一问题，dsh 模块新增时漏带，回归）
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
         let out = Command::new("cmd")
             .args(["/c", "where", program])
+            .creation_flags(CREATE_NO_WINDOW)
             .env("PATH", probe_path())
             .output()
             .ok()?;
@@ -284,12 +289,16 @@ fn kill_by_pattern(pattern: &str) {
     }
     #[cfg(windows)]
     {
+        // CREATE_NO_WINDOW：停止/重启 dsh 时不能闪 powershell 控制台窗口
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
         let script = format!(
             "Get-CimInstance Win32_Process | Where-Object {{ $_.CommandLine -like '*{p}*' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}",
             p = pattern.replace('\'', "''")
         );
         let _ = Command::new("powershell")
             .args(["-NoProfile", "-Command", &script])
+            .creation_flags(CREATE_NO_WINDOW)
             .output();
     }
 }
