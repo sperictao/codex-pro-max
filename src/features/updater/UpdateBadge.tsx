@@ -1,11 +1,13 @@
 // 更新徽标：检测到更新时出现在 header 软件名右侧的圆形箭头按钮（幽灵样式，
 // 绿色随亮暗模式——参照 cc-switch 的 green-600/green-400，见 style.css .update-badge）。
-// 点击立即安装；下载期间外圈圆环按 percent 顺时针填充（installing/restarting 视为满环）。
+// 点击立即安装；按钮的圆形边框即进度轨道：常驻淡色描边，下载时进度弧从 12 点方向
+// 顺时针填充（installing/restarting 视为满环）。
 
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "@/shared/store";
 
-const R = 8;
+// 圆环贴合按钮边缘：viewBox 20、r=9、stroke-width 2 → 描边外沿即按钮边界
+const R = 9;
 const CIRCUMFERENCE = 2 * Math.PI * R;
 
 export function UpdateBadge() {
@@ -32,30 +34,28 @@ export function UpdateBadge() {
       disabled={busyKind !== null}
       onClick={() => void installPendingUpdate()}
     >
+      {/* 边框/进度环：轨道常驻（即按钮边框），进度弧顺时针填充 */}
       <svg className="absolute inset-0 h-full w-full -rotate-90" viewBox="0 0 20 20" aria-hidden="true">
+        <circle cx="10" cy="10" r={R} fill="none" stroke="currentColor" strokeOpacity="0.3" strokeWidth="2" />
         {clamped !== null && (
-          <>
-            <circle cx="10" cy="10" r={R} fill="none" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2" />
-            <circle
-              cx="10"
-              cy="10"
-              r={R}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeDasharray={CIRCUMFERENCE}
-              strokeDashoffset={CIRCUMFERENCE * (1 - clamped / 100)}
-              data-progress-ring
-            />
-          </>
+          <circle
+            cx="10"
+            cy="10"
+            r={R}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeDasharray={CIRCUMFERENCE}
+            strokeDashoffset={CIRCUMFERENCE * (1 - clamped / 100)}
+            data-progress-ring
+          />
         )}
       </svg>
-      {/* lucide ArrowUpCircle（与 cc-switch 更新入口同款） */}
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10" />
-        <path d="m16 12-4-4-4 4" />
-        <path d="M12 16V8" />
+      {/* lucide ArrowUp（无圆圈本体，圆环由上方边框承担） */}
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 19V5" />
+        <path d="m5 12 7-7 7 7" />
       </svg>
     </button>
   );

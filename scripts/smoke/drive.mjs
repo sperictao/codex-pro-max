@@ -325,7 +325,7 @@ await page.evaluate(() => window.__smoke.emit("updater-download-progress", { sta
 await page.waitForTimeout(200);
 check("事件桥：下载进度行出现 42%", (await txt("#section-about"))?.includes("42%"));
 const ringOffset = await page.locator("[data-progress-ring]").getAttribute("stroke-dashoffset");
-const ringExpected = 2 * Math.PI * 8 * (1 - 0.424);
+const ringExpected = 2 * Math.PI * 9 * (1 - 0.424);
 check("头部：进度环随百分比填充（stroke-dashoffset）", ringOffset !== null && Math.abs(parseFloat(ringOffset) - ringExpected) < 0.6, `${ringOffset} vs ${ringExpected.toFixed(2)}`);
 await shot("15-update-progress");
 
