@@ -161,7 +161,9 @@ fn zh_cn(key: &str) -> Option<&'static str> {
         "Install dsh first, then retry" => "请先安装 dsh 再重试",
         "Starting dsh web (127.0.0.1:3899)…" => "正在启动 dsh Web (127.0.0.1:3899)…",
         "Port 3899 may be occupied; stop the process using it and retry" => "端口 3899 可能被占用，请先停止占用该端口的进程后重试",
-        "dsh web did not start within 20s" => "dsh Web 20 秒内未能启动",
+        "dsh web failed to start; log says:\n{log}" => "dsh Web 启动失败，日志显示：\n{log}",
+        "dsh web failed to start (no log output; port 3899 may be occupied)" => "dsh Web 启动失败（无日志输出；端口 3899 可能被占用）",
+        "dsh could not create symlinks; on Windows enable Developer Mode (Settings → Privacy & security → For developers), then retry" => "dsh 无法创建符号链接；Windows 请开启开发者模式（设置 → 隐私和安全性 → 开发者选项）后重试",
         "Check the log at ~/.dsh/dsh-web.log; port 3899 may be occupied or the dsh CLI may need a newer Node.js" => "请查看 ~/.dsh/dsh-web.log；端口 3899 可能被占用，或 dsh CLI 需要更新的 Node.js",
         "dsh web is running on 127.0.0.1:3899" => "dsh Web 已运行在 127.0.0.1:3899",
         "Checking Tailscale…" => "正在检测 Tailscale…",
@@ -199,7 +201,6 @@ fn zh_cn(key: &str) -> Option<&'static str> {
         "Cannot locate the Windows Startup folder (APPDATA is missing)" => "无法定位 Windows 启动文件夹（缺少 APPDATA 环境变量）",
         "Cannot enable systemd unit: {error}" => "无法启用 systemd 服务: {error}",
         "Update failed: {error}" => "更新失败: {error}",
-        "dsh web did not start within 20s; check ~/.dsh/dsh-web.log — port 3899 may be occupied or a newer Node.js may be required" => "dsh Web 20 秒内未能启动，请查看 ~/.dsh/dsh-web.log —— 端口 3899 可能被占用，或需要更新的 Node.js",
 
         // —— Codex 配置看守（codex_guard.rs）——
         "File path cannot be empty" => "文件路径不能为空",

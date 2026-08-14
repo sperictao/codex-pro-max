@@ -258,9 +258,10 @@ fn wait_port(port: u16, timeout: Duration) -> bool {
 }
 
 /// 后台启动进程并立即返回（孤儿进程继续运行；日志重定向到文件）。
+/// 返回子进程 PID，供启动等待期间探活（进程已死则提前失败，不干等超时）。
 /// 说明：dsh web / 反代是常驻服务，不能随启动器退出而被杀，
 /// 这里不持有 Child 句柄，与 ProcessManager 的随窗停服务语义刻意不同
-fn spawn_detached(program: &str, args: &[&str], envs: &[(&str, &str)], log: &Path) -> Result<(), String> {
+fn spawn_detached(program: &str, args: &[&str], envs: &[(&str, &str)], log: &Path) -> Result<u32, String> {
     let dir = log.parent().unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(dir)
         .map_err(|e| trf("Failed to create directory: {error}", &[("error", e.to_string())]))?;
@@ -276,9 +277,51 @@ fn spawn_detached(program: &str, args: &[&str], envs: &[(&str, &str)], log: &Pat
     for (k, v) in envs {
         cmd.env(k, v);
     }
-    cmd.spawn()
+    let child = cmd
+        .spawn()
         .map_err(|e| trf("Cannot start process: {error}", &[("error", e.to_string())]))?;
-    Ok(())
+    Ok(child.id())
+}
+
+/// 进程是否仍存活（unix: kill(pid,0)；windows: OpenProcess + 退出码 STILL_ACTIVE）
+fn process_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        unsafe { libc::kill(pid as i32, 0) == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM) }
+    }
+    #[cfg(windows)]
+    {
+        use windows::Win32::Foundation::CloseHandle;
+        use windows::Win32::System::Threading::{
+            GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+        unsafe {
+            let Ok(h) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else { return false };
+            let mut code = 0u32;
+            // STILL_ACTIVE = 259
+            let alive = GetExitCodeProcess(h, &mut code).is_ok() && code == 259;
+            let _ = CloseHandle(h);
+            alive
+        }
+    }
+}
+
+/// 等待 dsh web 就绪：轮询端口绑定；子进程已退出则提前返回失败（配合日志诊断快速报错）。
+/// 首启可能较慢（首次初始化 / 杀软扫描新装的 dsh 包），进程活着就继续等到超时
+fn wait_web_start(pid: Option<u32>, timeout: Duration) -> bool {
+    let start = std::time::Instant::now();
+    while start.elapsed() < timeout {
+        if port_listening(WEB_PORT) {
+            return true;
+        }
+        if let Some(pid) = pid {
+            if !process_alive(pid) {
+                return false;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(400));
+    }
+    port_listening(WEB_PORT)
 }
 
 /// 按命令行特征杀进程（unix: pkill；windows: powershell）
@@ -678,9 +721,10 @@ impl StepCtx<'_> {
 }
 
 /// 后台启动 dsh web 进程（--profile web --port 3899，带 --trusted-host 与
-/// SSH_CONNECTION）。不等待端口就绪；失败返回 (problem, solution) 供时间轴
-/// 与更新流程分别展示针对性排障提示。dsh_setup 与 dsh_update 共用
-fn spawn_dsh_web() -> Result<(), (String, String)> {
+/// SSH_CONNECTION）。不等待端口就绪，返回子进程 PID 供启动等待探活；
+/// 失败返回 (problem, solution) 供时间轴与更新流程分别展示针对性排障提示。
+/// dsh_setup 与 dsh_update 共用
+fn spawn_dsh_web() -> Result<u32, (String, String)> {
     let dsh_bin = match resolve_dsh_bin() {
         Ok(b) => b,
         Err(e) => {
@@ -703,18 +747,44 @@ fn spawn_dsh_web() -> Result<(), (String, String)> {
     }
     let log = dsh_dir().map(|d| d.join("dsh-web.log")).unwrap_or_else(|_| PathBuf::from("dsh-web.log"));
     let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    if let Err(e) = spawn_detached(
+    spawn_detached(
         &dsh_bin.display().to_string(),
         &arg_refs,
         &[("SSH_CONNECTION", SSH_CONNECTION_ENV)],
         &log,
-    ) {
-        return Err((
-            e,
-            tr("Port 3899 may be occupied; stop the process using it and retry"),
-        ));
-    }
-    Ok(())
+    )
+    .map_err(|e| (e, tr("Port 3899 may be occupied; stop the process using it and retry")))
+}
+
+/// 读取日志末尾若干非空行（失败诊断用）；文件缺失/为空返回 None
+fn read_log_tail(path: &Path, max_lines: usize) -> Option<String> {
+    let content = fs::read_to_string(path).ok()?;
+    let lines: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
+    let start = lines.len().saturating_sub(max_lines);
+    let tail = lines[start..].join("\n");
+    if tail.trim().is_empty() { None } else { Some(tail) }
+}
+
+/// 启动失败诊断：把 dsh-web.log 尾部的真实错误带进时间轴（进程崩溃时这里就是
+/// 堆栈），并按常见崩溃原因给出针对性方案。只读日志，不修改任何状态
+fn start_failure_diagnosis(log: &Path) -> (String, String) {
+    let tail = read_log_tail(log, 40);
+    let problem = match &tail {
+        Some(t) => {
+            // 问题区只取前 8 行，避免长堆栈淹没时间轴
+            let short: Vec<&str> = t.lines().take(8).collect();
+            trf("dsh web failed to start; log says:\n{log}", &[("log", short.join("\n"))])
+        }
+        None => tr("dsh web failed to start (no log output; port 3899 may be occupied)"),
+    };
+    let solution = match &tail {
+        // Windows 首启最典型崩溃：healProfilesModuleFallback 建符号链接被拒
+        Some(t) if t.contains("EPERM") || t.contains("symlink") => {
+            tr("dsh could not create symlinks; on Windows enable Developer Mode (Settings → Privacy & security → For developers), then retry")
+        }
+        _ => tr("Check the log at ~/.dsh/dsh-web.log; port 3899 may be occupied or the dsh CLI may need a newer Node.js"),
+    };
+    (problem, solution)
 }
 
 #[tauri::command]
@@ -802,15 +872,17 @@ pub async fn dsh_setup(app: tauri::AppHandle) -> Result<(), String> {
             ctx.done(&tr("Already running on 127.0.0.1:3899"));
         } else {
             ctx.running(&tr("Starting dsh web (127.0.0.1:3899)…"));
-            if let Err((problem, solution)) = spawn_dsh_web() {
+            // 首启可能较慢（首次初始化 / 杀软扫描新装的 dsh 包），等 60s；
+            // 进程已死则 wait_web_start 提前返回，立即带日志报错
+            let pid = match spawn_dsh_web() {
+                Ok(pid) => pid,
+                Err((problem, solution)) => return ctx.fail(&problem, &solution, &remaining_after(2)),
+            };
+            if !wait_web_start(Some(pid), Duration::from_secs(60)) {
+                // 时间轴直接展示真实失败原因（读 dsh-web.log 尾部；进程崩溃时就是堆栈）
+                let log = dsh_dir().map(|d| d.join("dsh-web.log")).unwrap_or_else(|_| PathBuf::from("dsh-web.log"));
+                let (problem, solution) = start_failure_diagnosis(&log);
                 return ctx.fail(&problem, &solution, &remaining_after(2));
-            }
-            if !wait_port(WEB_PORT, Duration::from_secs(20)) {
-                return ctx.fail(
-                    &tr("dsh web did not start within 20s"),
-                    &tr("Check the log at ~/.dsh/dsh-web.log; port 3899 may be occupied or the dsh CLI may need a newer Node.js"),
-                    &remaining_after(2),
-                );
             }
             ctx.done(&tr("dsh web is running on 127.0.0.1:3899"));
         }
@@ -1029,9 +1101,10 @@ fn restart_dsh_web() -> Result<(), String> {
     }
     // 自启可能已自动拉起；先等 10s，未恢复再手动启动
     if !wait_port(WEB_PORT, Duration::from_secs(10)) {
-        spawn_dsh_web().map_err(|(problem, _)| problem)?;
-        if !wait_port(WEB_PORT, Duration::from_secs(20)) {
-            return Err(tr("dsh web did not start within 20s; check ~/.dsh/dsh-web.log — port 3899 may be occupied or a newer Node.js may be required"));
+        let pid = spawn_dsh_web().map_err(|(problem, _)| problem)?;
+        if !wait_web_start(Some(pid), Duration::from_secs(60)) {
+            let log = dsh_dir().map(|d| d.join("dsh-web.log")).unwrap_or_else(|_| PathBuf::from("dsh-web.log"));
+            return Err(start_failure_diagnosis(&log).0);
         }
     }
     Ok(())

@@ -30,6 +30,8 @@ sys-locale = "0.3"
 uuid = { version = "1", features = ["v4"] }
 hmac = "0.12"
 sha2 = "0.10"
+# dsh web 启动等待：unix 侧 kill(pid,0) 探活（进程已死则提前带日志报错，不干等超时）
+libc = "0.2"
 
 # 商店版应用 COM 激活（版本与 tauri 依赖树中的 windows 0.61.3 对齐）
 [target.'cfg(windows)'.dependencies]

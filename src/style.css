@@ -607,7 +607,7 @@
   background-color: color-mix(in srgb, var(--destructive) 8%, transparent);
   font-size: 0.75rem;
 }
-.timeline-problem { color: var(--destructive); font-weight: 500; word-break: break-all; }
+.timeline-problem { color: var(--destructive); font-weight: 500; word-break: break-all; white-space: pre-line; }
 .timeline-solution { margin-top: 0.25rem; opacity: 0.9; word-break: break-all; }
 
 /* 运行中节点的小 spinner */
