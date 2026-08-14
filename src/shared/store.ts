@@ -39,8 +39,10 @@ interface AppStore {
   guardState: GuardState;
   autostart: boolean;
   languageSetting: string;
-  // 进程状态
+  // 进程状态（received 标记是否收到过首次状态：未收到时消息行显示 "Not started"，
+  // 收到后空消息显示 "-"——复刻旧静态 HTML 初始文案与 updateStatusUI 的差异）
   services: { taskboard: ProcessInfo; injector: ProcessInfo };
+  servicesReceived: { taskboard: boolean; injector: boolean };
   // 事件桥写入区
   dshTimeline: DshStepEvent[];
   downloadProgress: DownloadProgress | null;
@@ -74,6 +76,7 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   autostart: false,
   languageSetting: "system",
   services: initialServices(),
+  servicesReceived: { taskboard: false, injector: false },
   dshTimeline: [],
   downloadProgress: null,
   themeMode: getStoredTheme(localStorage.getItem("theme")),
@@ -124,7 +127,10 @@ export const useAppStore = create<AppStore>()((set, get) => ({
 
   updateService: (info) => {
     const key = info.name === "taskboard-server" ? "taskboard" : "injector";
-    set((s) => ({ services: { ...s.services, [key]: info } }));
+    set((s) => ({
+      services: { ...s.services, [key]: info },
+      servicesReceived: { ...s.servicesReceived, [key]: true },
+    }));
   },
   // 轮询错误忽略（与旧 refreshStatus 一致）
   refreshStatus: async () => {
