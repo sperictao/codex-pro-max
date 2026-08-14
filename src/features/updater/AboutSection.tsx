@@ -28,7 +28,7 @@ export function AboutSection() {
   };
   const openGithub = async () => {
     try {
-      await openUrl("https://github.com");
+      await openUrl("https://github.com/sperictao/codex-pro-max");
     } catch (e) {
       toast(t("Failed to open link: {{error}}", { error: String(e) }), "error");
     }
