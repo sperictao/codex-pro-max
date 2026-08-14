@@ -1,4 +1,4 @@
-// 更新徽标：检测到更新时出现在 header 软件名右侧的绿色圆形按钮。
+// 更新徽标：检测到更新时出现在 header 软件名右侧的圆形下载按钮（bg-primary 主题色）。
 // 点击立即安装；下载期间外圈圆环按 percent 顺时针填充（installing/restarting 视为满环）。
 
 import { useTranslation } from "react-i18next";
@@ -25,7 +25,7 @@ export function UpdateBadge() {
     <button
       type="button"
       data-testid="update-badge"
-      className="relative inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full bg-green-500 text-white transition-colors hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-60"
+      className="relative inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
       title={t("Update to {{version}}", { version: updateInfo.availableVersion })}
       aria-label={t("Update Now")}
       disabled={busyKind !== null}
