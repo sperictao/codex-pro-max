@@ -270,8 +270,10 @@ mod tests {
 
     #[test]
     fn merge_settings_preserves_codex_guard() {
-        let mut current = LauncherConfig::default();
-        current.codex_guard = sample_guard_state();
+        let mut current = LauncherConfig {
+            codex_guard: sample_guard_state(),
+            ..Default::default()
+        };
         current.taskboard_path = "/old/path".to_string();
         current.auto_open = true;
 
@@ -286,22 +288,24 @@ mod tests {
 
         // 设置类字段被更新
         assert_eq!(current.taskboard_path, "/new/path");
-        assert_eq!(current.auto_open, false);
+        assert!(!current.auto_open);
         assert_eq!(current.cdp_port, 9999);
 
         // codex_guard 完整保留，没有被默认值覆盖
-        assert_eq!(current.codex_guard.enabled, true);
+        assert!(current.codex_guard.enabled);
         let p = current.codex_guard.params.get("features.image_generation").unwrap();
-        assert_eq!(p.applied, true);
-        assert_eq!(p.locked, true);
+        assert!(p.applied);
+        assert!(p.locked);
         assert_eq!(p.last_checked, Some(12345));
         assert_eq!(p.value, Some(serde_json::json!(false)));
     }
 
     #[test]
     fn merge_settings_updates_all_setting_fields() {
-        let mut current = LauncherConfig::default();
-        current.codex_guard = sample_guard_state();
+        let mut current = LauncherConfig {
+            codex_guard: sample_guard_state(),
+            ..Default::default()
+        };
 
         let settings = LauncherConfig {
             taskboard_path: "tp".to_string(),
@@ -325,20 +329,20 @@ mod tests {
         assert_eq!(current.taskboard_port, 1111);
         assert_eq!(current.taskboard_host, "0.0.0.0");
         assert_eq!(current.cdp_port, 2222);
-        assert_eq!(current.auto_open, false);
-        assert_eq!(current.separate_window_mode, true);
-        assert_eq!(current.minimize_to_tray_on_close, true);
+        assert!(!current.auto_open);
+        assert!(current.separate_window_mode);
+        assert!(current.minimize_to_tray_on_close);
         assert_eq!(current.language, "zh-CN");
 
         // codex_guard 不变
-        assert_eq!(current.codex_guard.enabled, true);
+        assert!(current.codex_guard.enabled);
         assert_eq!(current.codex_guard.params.len(), 1);
     }
 
     #[test]
     fn default_guard_state_is_disabled_and_empty() {
         let cfg = LauncherConfig::default();
-        assert_eq!(cfg.codex_guard.enabled, false);
+        assert!(!cfg.codex_guard.enabled);
         assert!(cfg.codex_guard.params.is_empty());
     }
 
