@@ -176,11 +176,14 @@ export function renderDsh(): void {
   if (openBtn) {
     openBtn.disabled = dshBusy || !dshStatus?.url;
   }
-  // 更新按钮：仅在有新版可更时显示
+  // 更新按钮：仅在有新版可更时显示。
+  // 用 hidden 属性而非 hidden 类：该按钮同时有 inline-flex 类，Tailwind
+  // utilities 层里 .inline-flex 排在 .hidden 之后，类方式永远隐藏不掉
+  // （preflight 的 [hidden] 带 !important 才能压过）
   if (updateBtn) {
     const latest = dshStatus?.latestVersion;
     const hasUpdate = !!latest;
-    updateBtn.classList.toggle("hidden", !hasUpdate);
+    updateBtn.hidden = !hasUpdate;
     if (hasUpdate) {
       updateBtn.textContent = t("Update to {{version}}", { version: latest });
     }
