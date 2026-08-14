@@ -19,6 +19,7 @@ jobs:
           cache: "pnpm"
       - run: pnpm install
       - run: pnpm exec tsc --noEmit
+      - run: pnpm exec vitest run
 
   rust:
     runs-on: ubuntu-latest

@@ -6,7 +6,7 @@ import { GeneralSection } from "./GeneralSection";
 import { AppearanceSection } from "./AppearanceSection";
 import { NetworkSection } from "./NetworkSection";
 import { ModeSection } from "./ModeSection";
-import { GuardSection } from "./GuardSection";
+import { GuardSettingsSection } from "@/features/guard/GuardSettingsSection";
 import { AboutSection } from "@/features/updater/AboutSection";
 
 // 设置视图：侧栏 6 分区 + 内容区 + 保存 footer（外观/看守/关于隐藏，旧 switchSection 行为）
@@ -84,9 +84,8 @@ export function SettingsView() {
           {section === "appearance" && <AppearanceSection />}
           {section === "network" && <NetworkSection />}
           {section === "mode" && <ModeSection />}
-          {section === "guard" && <GuardSection />}
+          {section === "guard" && <GuardSettingsSection />}
           {section === "about" && <AboutSection />}
-
           {!footerHidden && (
             <div className="mt-4 flex justify-end border-t border-border pt-4" id="settings-footer">
               <button className={BTN_PRIMARY} id="btn-save-config" onClick={() => void saveConfig()}>

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 // 应用内弹窗壳：复用旧 .modal-overlay/.modal-card 样式（主题感知）。
 // onOverlayClick 仅在「点遮罩本身」时触发（旧 guard 弹窗的点遮罩关闭语义）；
@@ -8,12 +8,14 @@ export function Modal({
   onOverlayClick,
   labelledBy,
   cardClassName,
+  cardStyle,
   children,
 }: {
   open: boolean;
   onOverlayClick?: () => void;
   labelledBy?: string;
   cardClassName?: string;
+  cardStyle?: CSSProperties;
   children: ReactNode;
 }) {
   if (!open) return null;
@@ -24,7 +26,7 @@ export function Modal({
         if (onOverlayClick && e.target === e.currentTarget) onOverlayClick();
       }}
     >
-      <div className={`modal-card${cardClassName ? ` ${cardClassName}` : ""}`} role="dialog" aria-modal="true" aria-labelledby={labelledBy}>
+      <div className={`modal-card${cardClassName ? ` ${cardClassName}` : ""}`} style={cardStyle} role="dialog" aria-modal="true" aria-labelledby={labelledBy}>
         {children}
       </div>
     </div>

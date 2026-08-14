@@ -95,8 +95,11 @@ export function App() {
     })();
 
     void useAppStore.getState().refreshStatus();
-    // 状态轮询（每 3 秒）；看守视图轮询在单元 8 接入
-    const timer = setInterval(() => void useAppStore.getState().refreshStatus(), 3000);
+    // 状态 + 看守视图轮询（每 3 秒；看守视图不在前台时 refreshGuardView 自身跳过）
+    const timer = setInterval(() => {
+      void useAppStore.getState().refreshStatus();
+      void useAppStore.getState().refreshGuardView();
+    }, 3000);
 
     return () => {
       disposed = true;

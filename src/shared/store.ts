@@ -9,7 +9,9 @@ import { currentConfigDraft } from "./config";
 import type {
   DownloadProgress,
   DshStepEvent,
+  GuardFileView,
   GuardState,
+  GuardView,
   LauncherConfig,
   ProcessInfo,
   UpdateInfo,
@@ -39,6 +41,15 @@ function applyDataTheme(mode: ThemeMode, family: string): void {
   );
 }
 
+// 看守视图增量刷新基线（旧 lastGuardJson）：内容未变的轮询不触发重渲染
+let lastGuardJson = "";
+
+// 模块求值时机不保证 DOM 全局就绪（vitest 4 模块执行器在被依赖模块求值后才装 jsdom 全局），
+// 读 localStorage 一律走这里：非 DOM 上下文回落 null（= 默认主题）
+function readStored(key: string): string | null {
+  return typeof localStorage === "undefined" ? null : localStorage.getItem(key);
+}
+
 interface AppStore {
   // 导航
   activeView: View;
@@ -56,6 +67,9 @@ interface AppStore {
   // 事件桥写入区
   dshTimeline: DshStepEvent[];
   downloadProgress: DownloadProgress | null;
+  // 看守（视图数据 + 文件列表；操作逻辑在 features/guard/ops.ts）
+  guardView: GuardView | null;
+  guardFiles: GuardFileView[];
   // 更新器（updateInfo 即旧 pendingUpdateInfo：仅有可用更新时非空）
   updaterHealth: UpdaterConfigHealth | null;
   updaterHealthError: string | null;
@@ -89,6 +103,8 @@ interface AppStore {
   refreshUpdaterHealth: () => Promise<void>;
   checkForUpdates: (silent?: boolean) => Promise<void>;
   installPendingUpdate: () => Promise<void>;
+  refreshGuardView: (force?: boolean) => Promise<void>;
+  setGuardFiles: (files: GuardFileView[]) => void;
 }
 
 export const useAppStore = create<AppStore>()((set, get) => ({
@@ -107,8 +123,10 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   updaterHealthError: null,
   updateInfo: null,
   updateBusyKind: null,
-  themeMode: getStoredTheme(localStorage.getItem("theme")),
-  themeFamily: getStoredFamily(localStorage.getItem("theme-family")),
+  guardView: null,
+  guardFiles: [],
+  themeMode: getStoredTheme(readStored("theme")),
+  themeFamily: getStoredFamily(readStored("theme-family")),
   toasts: [],
 
   // 设置/集成是 toggle 语义：已在该视图时再点回主页（旧 nav.ts 行为）
@@ -291,4 +309,27 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       set({ updateBusyKind: null, downloadProgress: null });
     }
   },
+
+  // 看守视图刷新（旧 refreshGuardView 语义逐条保留）：
+  // 视图不在前台时跳过；非强制且内容未变跳过；非强制且焦点在看守视图输入框内跳过（不抢焦点）
+  refreshGuardView: async (force = false) => {
+    if (get().activeView !== "guard") return;
+    try {
+      const view = await cmd.guardGetView();
+      const json = JSON.stringify(view);
+      if (!force && json === lastGuardJson) return;
+      if (!force) {
+        const ae = document.activeElement;
+        if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA")) {
+          const root = document.getElementById("guard-view");
+          if (root?.contains(ae)) return;
+        }
+      }
+      lastGuardJson = json;
+      set({ guardView: view });
+    } catch {
+      /* 轮询错误忽略 */
+    }
+  },
+  setGuardFiles: (files) => set({ guardFiles: files }),
 }));
