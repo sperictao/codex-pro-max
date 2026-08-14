@@ -24,6 +24,7 @@
 - 💉 **Codex Injector** — launches the Codex desktop app on a dedicated CDP port and injects the Taskboard panel (works with macOS and Windows Store builds)
 - 🔒 **Codex Config Guard** — schema-driven parameter management, locking, and automatic drift recovery for config files under `~/.codex/` (terminology and boundaries in [CONTEXT.md](CONTEXT.md))
 - 🧰 **FastCtx Integration** — one-click install of the [FastCtx](https://github.com/yc-duan/fastctx) MCP runtime and integrate/unapply it into Codex, delegated to the `fastctx` CLI
+- 🌐 **DeepSeek Harness Remote Access** — one-click Tailscale HTTPS remote access to the dsh Web UI: installs the CLI, starts dsh web (loopback :3899), enables MagicDNS, runs a loopback proxy (:3898), configures tailscale serve, and verifies the real HTTPS endpoint — an 8-step progress timeline shows each stage with inline problem + fix on failure, plus version pill, one-click update, and boot auto-start
 - 🎨 **Themes** — 42 tweakcn theme families with native light / dark / system modes; 28 UI fonts self-hosted in-app, fully offline
 - 🔄 **Self-Update** — built-in Tauri Updater: check, download, restart, done
 
@@ -41,6 +42,7 @@ Grab the installer for your platform from [Releases](https://github.com/spericta
 2. **Inject the panel** — starts the Codex desktop app on a dedicated CDP port and injects the Taskboard panel into its UI
 3. **Guard the config** — manages `~/.codex/` parameters per schema; while locked, polling (60s) detects drift and restores the configured value (backing up before every write)
 4. **Update itself** — checks `latest.json` on GitHub Releases, downloads, verifies, and restarts
+5. **Expose dsh remotely** — one click installs/runs [DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh) and wires the Tailscale HTTPS chain (`https://<hostname>.ts.net` → loopback proxy :3898 → dsh web :3899); the setup timeline shows per-step progress and failure guidance
 
 ---
 
@@ -116,6 +118,7 @@ Pushing the tag triggers five CI builds (macOS aarch64 / x86_64 / universal, Win
 | taskboard integration | git submodule (consuming upstream via a fork) |
 | Config guard | schema-driven; TOML key / Markdown block / whole-file comparison modes |
 | FastCtx integration | delegated to the `fastctx` CLI (one-click npm global install in Settings) |
+| dsh remote access | delegated to the `@deepseek-ai/dsh` npm CLI + Tailscale serve HTTPS + loopback Node proxy |
 | Self-update | Tauri Updater + GitHub Releases |
 
 ---
@@ -153,6 +156,7 @@ pnpm run build:updater      # generate updater artifacts
 
 - [dashi-taskboard](https://github.com/chuspeeism/dashi-taskboard) — the bundled task board, integrated as a git submodule at `vendor/dashi-taskboard` and shipped inside the installer (see [ADR 0002](docs/adr/0002-taskboard-submodule-packaging.md)). Upstream declares no license; bundling follows the upstream → fork (`sperictao/dashi-taskboard`) → PR workflow described in [CONTEXT.md](CONTEXT.md). Launcher-side integration code is our own work; the taskboard itself remains the upstream author's work.
 - [FastCtx](https://github.com/yc-duan/fastctx) — optional integration, licensed under [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0). This launcher does **not** redistribute or embed FastCtx; it invokes a user-installed `fastctx` CLI at runtime. All integration code in this repository is our own work and our sole responsibility; it is not endorsed by the FastCtx authors, who bear no liability for it. FastCtx embeds Pdfium — see FastCtx's `THIRD_PARTY_LICENSES.md` (relevant only when redistributing FastCtx binaries).
+- [DeepSeek Harness (dsh)](https://www.npmjs.com/package/@deepseek-ai/dsh) — optional integration: this launcher does **not** redistribute or embed dsh; it invokes a user-installed `@deepseek-ai/dsh` npm package at runtime (and can install or update it via npm on demand). Integration code in this repository is our own work.
 - UI fonts — 28 Google Fonts families (latin / latin-ext subsets) self-hosted inside the app, fetched from the tweakcn registry by [scripts/build-themes.mjs](scripts/build-themes.mjs); each family's license (mostly OFL) is on its Google Fonts page.
 
 ---
