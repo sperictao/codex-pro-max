@@ -22,6 +22,12 @@ export default defineConfig({
     },
   },
   envPrefix: ["VITE_", "TAURI_"],
+  optimizeDeps: {
+    // 默认会递归扫全仓 .html（含 vendor/dashi-taskboard 的入口），导致预打包
+    // 把 vendor 自己的 react-dom/scheduler 捆进来 → 双 React 实例、dispatcher 为 null。
+    // 显式限定入口只扫壳前端（smoke.html 是冒烟 harness，不随发布）
+    entries: ["index.html", "smoke.html"],
+  },
   build: {
     target: "es2022",
     minify: "esbuild",

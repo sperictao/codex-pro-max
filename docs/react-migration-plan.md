@@ -62,6 +62,10 @@ src/
 
 格式：操作 → 预期。每条对应现状可感知行为（源码依据：shell/guard/service/core/fastctx/updater/dsh/nav + index.html）。
 
+**2026-08-15 自动化冒烟结果：90/90 通过**（headless Chromium + Tauri IPC Mock harness：`smoke.html` + `src/smoke/`，驱动 90 项断言 + 16 张截图逐张目检 + 控制台零错误）。冒烟抓获一个 dev 环境致命 bug 并已修复：vite 预打包默认递归扫全仓 html，把 vendor/dashi-taskboard 的 react-dom/scheduler 捆入依赖 → 双 React 实例白屏（`optimizeDeps.entries` 限定入口修复；生产 build 单入口不受影响）。
+
+**仍需真实应用复核的残留项**（Mock 无法覆盖，需退出已安装实例后 `pnpm tauri dev` 人工过一遍）：原生 ask/open 系统弹窗外观与按钮、托盘驻留与关窗最小化、窗口尺寸/位置记忆、真实文件写入与 dashi-backups 备份、真实更新下载与安装、系统通知弹出、OS 登录自启动、fastctx/dsh 真实 CLI 副作用。单实例拦截已在 dev 启动时实测生效 ✓。
+
 ### 启动序列
 - [ ] 冷启动 → 首屏主题无闪切（主题在首个 await 前应用）
 - [ ] 启动 → 界面语言 = Rust 解析结果；`get_resolved_language` 失败时回落英文；`<html lang>` 同步
