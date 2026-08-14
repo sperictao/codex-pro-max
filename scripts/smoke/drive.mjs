@@ -315,7 +315,8 @@ await shot("14-about-update");
 
 // 头部更新徽标 + 软件名链接
 check("头部：检测到更新显示绿色下载按钮", await visible("[data-testid='update-badge']"));
-check("头部：未下载时无进度环（仅下载时出现）", (await page.locator("[data-progress-ring]").count()) === 0);
+check("头部：常态显示实体环", (await page.locator("[data-idle-ring]").count()) === 1);
+check("头部：常态无进度弧", (await page.locator("[data-progress-ring]").count()) === 0);
 await page.click("header button:has-text('Codex Pro Max')");
 await page.waitForTimeout(200);
 const calls = await page.evaluate(() => window.__smoke.calls);
@@ -328,6 +329,7 @@ check("事件桥：下载进度行出现 42%", (await txt("#section-about"))?.in
 const ringOffset = await page.locator("[data-progress-ring]").getAttribute("stroke-dashoffset");
 const ringExpected = 2 * Math.PI * 9 * (1 - 0.424);
 check("头部：进度环随百分比填充（stroke-dashoffset）", ringOffset !== null && Math.abs(parseFloat(ringOffset) - ringExpected) < 0.6, `${ringOffset} vs ${ringExpected.toFixed(2)}`);
+check("头部：下载中实体环转为进度环", (await page.locator("[data-idle-ring]").count()) === 0);
 await shot("15-update-progress");
 
 // Update Now → install
