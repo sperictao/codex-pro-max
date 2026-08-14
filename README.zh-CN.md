@@ -157,6 +157,12 @@ pnpm run build:updater      # 生成 updater 产物
 
 ---
 
+## 🔗 友情链接
+
+- [Linux.do](https://linux.do) — 开发者社区论坛
+
+---
+
 <div align="center">
 
 Made with ❤️ by [Eric Tao](https://github.com/sperictao)

@@ -157,6 +157,12 @@ pnpm run build:updater      # generate updater artifacts
 
 ---
 
+## 🔗 Friendly Links
+
+- [Linux.do](https://linux.do) — developer community forum
+
+---
+
 <div align="center">
 
 Made with ❤️ by [Eric Tao](https://github.com/sperictao)
