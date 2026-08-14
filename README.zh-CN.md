@@ -8,6 +8,7 @@
 [![Tauri 2](https://img.shields.io/badge/Tauri-2.x-FFC131?logo=tauri&logoColor=white)](https://tauri.app)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Rust](https://img.shields.io/badge/Rust-stable-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
@@ -158,6 +159,12 @@ pnpm run build:updater      # 生成 updater 产物
 - [FastCtx](https://github.com/yc-duan/fastctx) — 可选集成，采用 [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) 许可。本启动器**不**再分发、不内嵌 FastCtx，仅在运行时调用用户自行安装的 `fastctx` CLI。本仓库中的全部集成代码均为我们自己的工作与独自的责任，不代表 FastCtx 作者的认可，FastCtx 作者亦不承担由此产生的任何责任。FastCtx 内嵌 Pdfium，其第三方许可见 FastCtx 的 `THIRD_PARTY_LICENSES.md`（仅在再分发 FastCtx 二进制时相关）。
 - [DeepSeek Harness (dsh)](https://www.npmjs.com/package/@deepseek-ai/dsh) — 可选集成：本启动器**不**再分发、不内嵌 dsh，仅在运行时调用用户自行安装的 `@deepseek-ai/dsh` npm 包（也可按需通过 npm 安装或更新）。本仓库中的集成代码为我们自己的工作。
 - 界面字体 — 28 种 Google Fonts 字族（latin / latin-ext 子集）随应用自托管，由 [scripts/build-themes.mjs](scripts/build-themes.mjs) 从 tweakcn registry 构建；各字族许可（多为 OFL）见其 Google Fonts 页面。
+
+---
+
+## 📄 许可证
+
+本项目基于 [MIT License](LICENSE) 开源（© 2026 Eric Tao）。许可适用于启动器自身代码；内置的第三方组件遵循各自条款（见上文第三方声明）。
 
 ---
 

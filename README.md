@@ -8,6 +8,7 @@
 [![Tauri 2](https://img.shields.io/badge/Tauri-2.x-FFC131?logo=tauri&logoColor=white)](https://tauri.app)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Rust](https://img.shields.io/badge/Rust-stable-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
@@ -158,6 +159,12 @@ pnpm run build:updater      # generate updater artifacts
 - [FastCtx](https://github.com/yc-duan/fastctx) — optional integration, licensed under [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0). This launcher does **not** redistribute or embed FastCtx; it invokes a user-installed `fastctx` CLI at runtime. All integration code in this repository is our own work and our sole responsibility; it is not endorsed by the FastCtx authors, who bear no liability for it. FastCtx embeds Pdfium — see FastCtx's `THIRD_PARTY_LICENSES.md` (relevant only when redistributing FastCtx binaries).
 - [DeepSeek Harness (dsh)](https://www.npmjs.com/package/@deepseek-ai/dsh) — optional integration: this launcher does **not** redistribute or embed dsh; it invokes a user-installed `@deepseek-ai/dsh` npm package at runtime (and can install or update it via npm on demand). Integration code in this repository is our own work.
 - UI fonts — 28 Google Fonts families (latin / latin-ext subsets) self-hosted inside the app, fetched from the tweakcn registry by [scripts/build-themes.mjs](scripts/build-themes.mjs); each family's license (mostly OFL) is on its Google Fonts page.
+
+---
+
+## 📄 License
+
+Released under the [MIT License](LICENSE) — © 2026 Eric Tao. The license covers this launcher's own code; bundled third-party components keep their own terms (see Third-Party Notices above).
 
 ---
 
