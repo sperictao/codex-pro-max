@@ -70,11 +70,14 @@ interface AppStore {
   // 看守（视图数据 + 文件列表；操作逻辑在 features/guard/ops.ts）
   guardView: GuardView | null;
   guardFiles: GuardFileView[];
-  // 更新器（updateInfo 即旧 pendingUpdateInfo：仅有可用更新时非空）
+  // 更新器（updateInfo 即旧 pendingUpdateInfo：仅有可用更新时非空；
+  // updateLastCheckAt/updateCheckError 供关于页状态卡持久展示检查结果，不再只靠瞬态 toast）
   updaterHealth: UpdaterConfigHealth | null;
   updaterHealthError: string | null;
   updateInfo: UpdateInfo | null;
   updateBusyKind: "check" | "install" | null;
+  updateLastCheckAt: number | null;
+  updateCheckError: string | null;
   // 主题（localStorage 是唯一事实来源，store 是渲染镜像）
   themeMode: ThemeMode;
   themeFamily: string;
@@ -123,6 +126,8 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   updaterHealthError: null,
   updateInfo: null,
   updateBusyKind: null,
+  updateLastCheckAt: null,
+  updateCheckError: null,
   guardView: null,
   guardFiles: [],
   themeMode: getStoredTheme(readStored("theme")),
@@ -268,13 +273,13 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     }
   },
 
-  // 检查更新（旧 checkUpdate；silent 时静默失败/静默无更新）
+  // 检查更新（旧 checkUpdate；silent 时静默失败/静默无更新；结果记录供状态卡展示）
   checkForUpdates: async (silent = false) => {
     if (get().updateBusyKind) return;
     set({ updateBusyKind: "check" });
     try {
       const info = await cmd.checkUpdate();
-      set({ updateInfo: info.hasUpdate ? info : null });
+      set({ updateInfo: info.hasUpdate ? info : null, updateLastCheckAt: Date.now(), updateCheckError: null });
       if (info.hasUpdate) {
         get().toast(i18n.t("New version available: v{{version}}", { version: String(info.availableVersion) }), "info");
       } else if (info.message) {
@@ -283,6 +288,7 @@ export const useAppStore = create<AppStore>()((set, get) => ({
         get().toast(i18n.t("Already up to date"), "info");
       }
     } catch (e) {
+      set({ updateCheckError: String(e) });
       if (!silent) get().toast(i18n.t("Failed to check for updates: {{error}}", { error: String(e) }), "error");
     } finally {
       set({ updateBusyKind: null });

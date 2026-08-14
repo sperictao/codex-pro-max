@@ -103,6 +103,8 @@ export const zhCN: Record<I18nKey, string> = {
   "Check for Updates": "检查更新",
   "Available Update": "可用更新",
   "Update Progress": "更新进度",
+  "Updates": "更新",
+  "Last checked {{at}}": "上次检查 {{at}}",
   "Open in Browser": "在浏览器中打开",
   "Save Settings": "保存配置",
   "Ready": "已就绪",

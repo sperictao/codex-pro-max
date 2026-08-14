@@ -1,10 +1,11 @@
-// 关于分区（updater 域）：版本、更新源健康、检查/安装更新、下载进度、GitHub 链接
+// 关于分区（updater 域）：版本 + 更新状态聚合卡（源健康/版本对比/上次检查时间/失败原因持久展示）+ GitHub 链接
 // 进度行可见性 = store.downloadProgress 非空（事件到达即显示；安装结束清空即隐藏并归零，同旧 finally）
 
 import { useTranslation } from "react-i18next";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
 import { useAppStore } from "@/shared/store";
 import * as cmd from "@/shared/commands";
+import { fmtTs } from "@/shared/lib/format";
 import { BTN } from "@/shared/lib/ui";
 
 export function AboutSection() {
@@ -14,6 +15,8 @@ export function AboutSection() {
   const updaterHealthError = useAppStore((s) => s.updaterHealthError);
   const updateInfo = useAppStore((s) => s.updateInfo);
   const updateBusyKind = useAppStore((s) => s.updateBusyKind);
+  const updateLastCheckAt = useAppStore((s) => s.updateLastCheckAt);
+  const updateCheckError = useAppStore((s) => s.updateCheckError);
   const downloadProgress = useAppStore((s) => s.downloadProgress);
   const installPendingUpdate = useAppStore((s) => s.installPendingUpdate);
   const toast = useAppStore((s) => s.toast);
@@ -34,22 +37,20 @@ export function AboutSection() {
     }
   };
 
-  // 健康单元格：错误 / 检测中 / 就绪 / 未就绪原因
-  const healthText = updaterHealthError
+  // 更新源健康徽标：就绪 / 检测中 / 异常（原因在卡片内展开）
+  const healthBadge = updaterHealthError
+    ? { cls: "failed", text: t("Error") }
+    : updaterHealth === null
+      ? { cls: "starting", text: t("Checking...") }
+      : updaterHealth.configured
+        ? { cls: "running", text: t("Ready") }
+        : { cls: "failed", text: t("Error") };
+  const healthProblem = updaterHealthError !== null || (updaterHealth !== null && !updaterHealth.configured);
+  const healthDetail = updaterHealthError
     ? t("Check failed: {{error}}", { error: updaterHealthError })
-    : updaterHealth === null
-      ? t("Checking...")
-      : updaterHealth.configured
-        ? t("Ready")
-        : updaterHealth.message;
-  const healthCls = updaterHealthError
-    ? "err"
-    : updaterHealth === null
-      ? ""
-      : updaterHealth.configured
-        ? "ok"
-        : "err";
-  const helpVisible = updaterHealthError !== null || (updaterHealth !== null && !updaterHealth.configured);
+    : updaterHealth && !updaterHealth.configured
+      ? updaterHealth.message
+      : null;
 
   const updateBtnText =
     updateBusyKind === "check"
@@ -90,57 +91,71 @@ export function AboutSection() {
         <span className="font-mono text-sm" id="about-version">{appVersion}</span>
       </div>
 
-      <div className="flex items-start gap-4 border-b border-border py-3">
-        <span className="w-36 shrink-0 text-sm font-medium">{t("Update Source Status")}</span>
-        {/* 旧实现检测后整替换 className 为 health-status ok/err（丢掉 text-sm），初始静态为 text-sm */}
-        <span className={healthCls ? `health-status ${healthCls}` : "text-sm"}>{healthText}</span>
-      </div>
-
-      {helpVisible && (
-        <div className="flex items-start gap-4 border-b border-border py-3" id="updater-help-row">
-          <span className="w-36 shrink-0 text-sm font-medium">{t("Configuration Help")}</span>
-          <span className="text-sm">
-            <a className="cursor-pointer text-primary underline-offset-4 hover:underline" onClick={() => void openHelp("docs")}>
-              {t("Setup Guide")}
-            </a>
-            {" · "}
-            <a className="cursor-pointer text-primary underline-offset-4 hover:underline" onClick={() => void openHelp("template")}>
-              {t("Config Template")}
-            </a>
+      {/* 更新状态聚合卡 */}
+      <div className="mt-3 flex max-w-2xl flex-col gap-3 rounded-xl border border-border bg-card p-4 text-card-foreground">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm font-medium">{t("Updates")}</div>
+          <span className={`status-badge ${healthBadge.cls}`}>
+            <span className="dot"></span>
+            <span>{healthBadge.text}</span>
           </span>
         </div>
-      )}
 
-      <div className="flex items-start gap-4 border-b border-border py-3">
-        <span className="w-36 shrink-0 text-sm font-medium"></span>
-        <button className={BTN} id="btn-check-update" disabled={updateBusyKind !== null} onClick={() => void installPendingUpdate()}>
-          {updateBtnText}
-        </button>
-      </div>
-
-      {updateInfo?.hasUpdate && updateInfo.availableVersion && (
-        <div className="flex items-start gap-4 border-b border-border py-3" id="update-available-row">
-          <span className="w-36 shrink-0 text-sm font-medium">{t("Available Update")}</span>
-          <div className="flex flex-col gap-1">
-            <span className="font-mono text-sm">{`v${updateInfo.availableVersion}`}</span>
-            {notes && <span className="text-xs whitespace-pre-wrap opacity-70">{notes}</span>}
+        {healthProblem && healthDetail && (
+          <div className="text-xs text-destructive">
+            {healthDetail}
+            <span className="ml-2">
+              {t("Configuration Help")}:{" "}
+              <a className="cursor-pointer text-primary underline-offset-4 hover:underline" onClick={() => void openHelp("docs")}>
+                {t("Setup Guide")}
+              </a>
+              {" · "}
+              <a className="cursor-pointer text-primary underline-offset-4 hover:underline" onClick={() => void openHelp("template")}>
+                {t("Config Template")}
+              </a>
+            </span>
           </div>
-        </div>
-      )}
+        )}
 
-      {p && (
-        <div className="flex items-start gap-4 border-b border-border py-3" id="update-progress-row">
-          <span className="w-36 shrink-0 text-sm font-medium">{t("Update Progress")}</span>
+        <div className="text-sm">
+          {updateInfo?.hasUpdate && updateInfo.availableVersion ? (
+            <span>
+              v{updateInfo.currentVersion} →{" "}
+              <span className="font-medium text-primary">v{updateInfo.availableVersion}</span>
+            </span>
+          ) : updateCheckError ? (
+            <span className="text-destructive">{t("Check failed: {{error}}", { error: updateCheckError })}</span>
+          ) : updateLastCheckAt !== null ? (
+            <span>{t("Already up to date")}</span>
+          ) : (
+            <span className="opacity-60">{t("Checking...")}</span>
+          )}
+        </div>
+        {notes && <div className="text-xs whitespace-pre-wrap opacity-70">{notes}</div>}
+        {updateLastCheckAt !== null && (
+          <div className="text-xs opacity-50">
+            {t("Last checked {{at}}", { at: fmtTs(Math.floor(updateLastCheckAt / 1000)) })}
+          </div>
+        )}
+
+        <div className="flex items-center gap-3">
+          <button className={BTN} id="btn-check-update" disabled={updateBusyKind !== null} onClick={() => void installPendingUpdate()}>
+            {updateBtnText}
+          </button>
+        </div>
+
+        {p && (
           <div className="flex items-center gap-3">
+            <span className="shrink-0 text-xs font-medium">{t("Update Progress")}</span>
             <div className="update-progress-track">
               <div className="update-progress-bar" style={progressWidth ? { width: progressWidth } : undefined}></div>
             </div>
             <span className="text-xs">{progressText}</span>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      <div className="flex items-start gap-4 py-3">
+      <div className="mt-3 flex items-start gap-4 border-t border-border py-3">
         <span className="w-36 shrink-0 text-sm font-medium">GitHub</span>
         <a className="cursor-pointer text-sm text-primary underline-offset-4 hover:underline" onClick={() => void openGithub()}>
           {t("Open in Browser")}

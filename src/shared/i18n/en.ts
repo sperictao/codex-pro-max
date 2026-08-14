@@ -101,6 +101,8 @@ export const en = {
   "Check for Updates": "Check for Updates",
   "Available Update": "Available Update",
   "Update Progress": "Update Progress",
+  "Updates": "Updates",
+  "Last checked {{at}}": "Last checked {{at}}",
   "Open in Browser": "Open in Browser",
   "Save Settings": "Save Settings",
   "Ready": "Ready",
