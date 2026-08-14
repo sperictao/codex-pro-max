@@ -201,6 +201,8 @@ fn zh_cn(key: &str) -> Option<&'static str> {
         "Cannot locate the Windows Startup folder (APPDATA is missing)" => "无法定位 Windows 启动文件夹（缺少 APPDATA 环境变量）",
         "Cannot enable systemd unit: {error}" => "无法启用 systemd 服务: {error}",
         "Update failed: {error}" => "更新失败: {error}",
+        "npm view failed: {error}" => "查询 npm 最新版本失败: {error}",
+        "npm returned an empty version for @deepseek-ai/dsh" => "npm 对 @deepseek-ai/dsh 返回了空版本号",
 
         // —— Codex 配置看守（codex_guard.rs）——
         "File path cannot be empty" => "文件路径不能为空",

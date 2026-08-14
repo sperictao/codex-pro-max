@@ -297,6 +297,7 @@ export const en = {
   "Update to {{version}}": "Update to {{version}}",
   "dsh updated to {{version}}": "dsh updated to {{version}}",
   "dsh update failed: {{error}}": "dsh update failed: {{error}}",
+  "Version check failed: {{error}}": "Version check failed: {{error}}",
 
   // —— 更新 ——
   "Check failed: {{error}}": "Check failed: {{error}}",

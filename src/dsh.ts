@@ -147,6 +147,17 @@ export function renderDsh(): void {
     statusEl.textContent = t("Detecting…");
   }
 
+  // 版本检测失败（如 npm view 不可用）以醒目弱化文案展示，不再静默
+  const errorEl = document.getElementById("dsh-error");
+  if (errorEl) {
+    if (dshStatus?.error && !dshBusy) {
+      errorEl.classList.remove("hidden");
+      errorEl.textContent = t("Version check failed: {{error}}", { error: dshStatus.error });
+    } else {
+      errorEl.classList.add("hidden");
+    }
+  }
+
   // 已安装时显示当前版本胶囊
   if (versionEl) {
     if (dshStatus?.dshVersion) {
@@ -229,6 +240,9 @@ export async function startDshRemote(): Promise<void> {
   try {
     await invoke("dsh_setup");
     toast(t("Remote access is ready"), "success");
+    // 成功后回到状态驱动视图：时间轴由实时检测结果推导，Stop 等状态变化立即同步。
+    // 失败时保留事件时间轴，让 failed/skipped 节点上的问题+解决方案持续可见
+    hasRunSetup = false;
   } catch {
     // 失败详情（问题 + 解决方案）已由 dsh-step 事件渲染在时间轴节点上
   } finally {
@@ -244,6 +258,8 @@ export async function stopDshRemote(): Promise<void> {
   } catch (e) {
     toast(t("Stop failed: {{error}}", { error: String(e) }), "error");
   }
+  // 停止后回到状态驱动时间轴，避免事件时间轴残留「已就绪」的历史状态
+  hasRunSetup = false;
   await refreshDshStatus();
 }
 
@@ -272,6 +288,8 @@ export async function updateDsh(): Promise<void> {
     toast(t("dsh update failed: {{error}}", { error: String(e) }), "error");
   } finally {
     dshBusy = false;
+    // 更新流程不走 dsh-step 事件流：回到状态驱动时间轴，让版本/运行状态如实呈现
+    hasRunSetup = false;
     await refreshDshStatus();
   }
 }

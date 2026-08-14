@@ -31,7 +31,7 @@ use tauri::Emitter;
 
 use crate::config;
 use crate::i18n::{tr, trf};
-use crate::version::is_newer;
+use crate::version::{is_newer, parse_version};
 
 /// dsh web 端口（与教程一致）
 const WEB_PORT: u16 = 3899;
@@ -362,14 +362,28 @@ fn npm_bin() -> String {
     which("npm").unwrap_or_else(|| "npm".to_string())
 }
 
-/// dsh --version 输出；未安装返回 None
+/// 从 dsh --version 原始输出中提取可解析的版本号：容忍 "dsh 0.1.0"、"v0.1.0-rc.6"、
+/// 尾部构建信息等前缀/杂质，保证版本胶囊显示与 semver 比较（version::is_newer）
+/// 使用同一份干净版本号。提取失败回退原串（比较侧解析失败会安全降级为无更新）
+fn normalize_version(raw: &str) -> String {
+    let t = raw.trim();
+    for tok in t.split_whitespace() {
+        let tok = tok.trim_start_matches(['v', 'V']);
+        if parse_version(tok).is_some() {
+            return tok.to_string();
+        }
+    }
+    t.to_string()
+}
+
+/// dsh --version 输出（经 normalize_version 规范化）；未安装返回 None
 fn dsh_version() -> Option<String> {
     let bin = which("dsh")?;
     let (out, _, ok) = run_capture(&bin, &["--version"]).ok()?;
     if !ok {
         return None;
     }
-    let v = out.trim().to_string();
+    let v = normalize_version(&out);
     if v.is_empty() { None } else { Some(v) }
 }
 
@@ -634,10 +648,14 @@ pub async fn dsh_detect() -> Result<DshStatus, String> {
         None => (false, None),
     };
     let version = dsh_version();
-    // 有可执行版时向 npm 查最新版，仅比已装版新才带上（网络/查询失败静默降级为 None）
-    let latest_version = match &version {
-        Some(cur) => dsh_latest_version(cur),
-        None => None,
+    // 有可执行版时向 npm 查最新版，仅比已装版新才带上；
+    // 查询失败不再静默吞掉，写入 error 字段由 UI 呈现（此前用户无法区分「已最新」与「检测失败」）
+    let (latest_version, version_error) = match &version {
+        Some(cur) => match dsh_latest_version(cur) {
+            Ok(v) => (v, None),
+            Err(e) => (None, Some(e)),
+        },
+        None => (None, None),
     };
     Ok(DshStatus {
         node_available: which("node").is_some(),
@@ -656,21 +674,61 @@ pub async fn dsh_detect() -> Result<DshStatus, String> {
             .map(|d| d.join(PROXY_SCRIPT).exists())
             .unwrap_or(false),
         autostart_enabled: autostart_enabled(),
-        error: None,
+        error: version_error,
     })
 }
 
-/// 查 npm 最新 dsh 版本；仅当比已装版本新时返回 Some。网络/查询失败静默降级为 None
-fn dsh_latest_version(current: &str) -> Option<String> {
-    let (out, _, ok) = run_capture(&npm_bin(), &["view", "@deepseek-ai/dsh", "version"]).ok()?;
+/// npm 最新版本查询结果缓存：避免每次检测都打 npm registry 网络请求。
+/// 成功结果缓存 10 分钟；失败结果缓存 60 秒（下次检测可较快重试）
+struct NpmVersionCache {
+    at: std::time::Instant,
+    ttl: Duration,
+    result: Result<Option<String>, String>,
+}
+
+static NPM_VERSION_CACHE: std::sync::OnceLock<std::sync::Mutex<Option<NpmVersionCache>>> =
+    std::sync::OnceLock::new();
+
+const NPM_CACHE_TTL_OK: Duration = Duration::from_secs(600);
+const NPM_CACHE_TTL_ERR: Duration = Duration::from_secs(60);
+
+/// 查 npm 最新 dsh 版本；返回 Ok(Some(v)) 仅当比已装版本新。
+/// 网络/查询失败返回 Err(原因)，由调用方决定如何呈现。
+/// 结果按 TTL 缓存（成功 10 分钟 / 失败 60 秒），不重复打网络
+fn dsh_latest_version(current: &str) -> Result<Option<String>, String> {
+    let cache = NPM_VERSION_CACHE.get_or_init(|| std::sync::Mutex::new(None));
+    if let Ok(guard) = cache.lock() {
+        if let Some(c) = guard.as_ref() {
+            if c.at.elapsed() < c.ttl {
+                return c.result.clone();
+            }
+        }
+    }
+    let result = query_latest_version(current);
+    if let Ok(mut guard) = cache.lock() {
+        let ttl = if result.is_ok() { NPM_CACHE_TTL_OK } else { NPM_CACHE_TTL_ERR };
+        *guard = Some(NpmVersionCache {
+            at: std::time::Instant::now(),
+            ttl,
+            result: result.clone(),
+        });
+    }
+    result
+}
+
+/// 实际执行 npm view（不带缓存）
+fn query_latest_version(current: &str) -> Result<Option<String>, String> {
+    let (out, err, ok) = run_capture(&npm_bin(), &["view", "@deepseek-ai/dsh", "version"])
+        .map_err(|e| trf("npm view failed: {error}", &[("error", e)]))?;
     if !ok {
-        return None;
+        let e = if err.is_empty() { "npm view @deepseek-ai/dsh version failed".to_string() } else { err };
+        return Err(trf("npm view failed: {error}", &[("error", e)]));
     }
     let latest = out.trim().to_string();
     if latest.is_empty() {
-        return None;
+        return Err(tr("npm returned an empty version for @deepseek-ai/dsh"));
     }
-    is_newer(&latest, current).then_some(latest)
+    Ok(is_newer(&latest, current).then_some(latest))
 }
 
 // ============ 一键启动（时间轴事件流） ============
@@ -1483,8 +1541,8 @@ fn render_desktop_entry(name: &str, script: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        port_guard_js, render_desktop_entry, render_start_proxy, render_start_web, sh_quote,
-        win_cmd_line, win_quote,
+        normalize_version, port_guard_js, render_desktop_entry, render_start_proxy, render_start_web,
+        sh_quote, win_cmd_line, win_quote,
     };
     use std::path::Path;
 
@@ -1547,5 +1605,19 @@ mod tests {
             win_cmd_line(r"C:\Users\a b\.dsh\loopback-proxy.js", &[]),
             "\"\"C:\\Users\\a b\\.dsh\\loopback-proxy.js\"\""
         );
+    }
+
+    #[test]
+    fn normalize_version_extracts_parseable_core() {
+        // dsh 实测输出（无 v 前缀）
+        assert_eq!(normalize_version("0.1.0-rc.6"), "0.1.0-rc.6");
+        // v 前缀被剥掉
+        assert_eq!(normalize_version("v0.1.0-rc.6"), "0.1.0-rc.6");
+        // 带前缀/尾缀杂质也能提取
+        assert_eq!(normalize_version("dsh 0.1.0-rc.6"), "0.1.0-rc.6");
+        assert_eq!(normalize_version("0.1.0-rc.6 (build abc)"), "0.1.0-rc.6");
+        // 无法解析时回退原串（比较侧 is_newer 会安全降级为无更新）
+        assert_eq!(normalize_version("garbage"), "garbage");
+        assert_eq!(normalize_version(""), "");
     }
 }

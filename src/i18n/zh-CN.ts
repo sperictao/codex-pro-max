@@ -299,6 +299,7 @@ export const zhCN: Record<I18nKey, string> = {
   "Update to {{version}}": "更新到 {{version}}",
   "dsh updated to {{version}}": "dsh 已更新到 {{version}}",
   "dsh update failed: {{error}}": "dsh 更新失败: {{error}}",
+  "Version check failed: {{error}}": "版本检查失败: {{error}}",
 
   // —— 更新 ——
   "Check failed: {{error}}": "检查失败: {{error}}",
