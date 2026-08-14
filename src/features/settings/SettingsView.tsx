@@ -1,11 +1,15 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useAppStore, type SettingsSection } from "@/shared/store";
+import { BTN_PRIMARY } from "@/shared/lib/ui";
 import { GeneralSection } from "./GeneralSection";
 import { AppearanceSection } from "./AppearanceSection";
+import { NetworkSection } from "./NetworkSection";
+import { ModeSection } from "./ModeSection";
+import { GuardSection } from "./GuardSection";
+import { AboutSection } from "./AboutSection";
 
-// 设置视图：侧栏 6 分区 + 内容区。进入看守分区刷新文件列表等数据接线在单元 4/8 补齐；
-// 保存 footer（外观/看守/关于隐藏）在单元 4 补齐。
+// 设置视图：侧栏 6 分区 + 内容区 + 保存 footer（外观/看守/关于隐藏，旧 switchSection 行为）
 const SECTIONS: { id: SettingsSection; labelKey: string; icon: ReactNode }[] = [
   {
     id: "general",
@@ -51,19 +55,13 @@ const SECTIONS: { id: SettingsSection; labelKey: string; icon: ReactNode }[] = [
   },
 ];
 
-function SectionPlaceholder({ titleKey }: { titleKey: string }) {
-  const { t } = useTranslation();
-  return (
-    <section className="settings-section">
-      <h2 className="mb-4 text-base font-semibold">{t(titleKey)}</h2>
-    </section>
-  );
-}
-
 export function SettingsView() {
   const { t } = useTranslation();
   const section = useAppStore((s) => s.settingsSection);
   const setSettingsSection = useAppStore((s) => s.setSettingsSection);
+  const saveConfig = useAppStore((s) => s.saveConfig);
+  // 保存 footer 仅在外观/看守/关于分区隐藏（旧 switchSection 行为）
+  const footerHidden = section === "about" || section === "appearance" || section === "guard";
 
   return (
     <main className="min-h-0 flex-1" id="settings-view">
@@ -84,10 +82,18 @@ export function SettingsView() {
         <div className="flex-1 overflow-y-auto p-6">
           {section === "general" && <GeneralSection />}
           {section === "appearance" && <AppearanceSection />}
-          {section === "network" && <SectionPlaceholder titleKey="Network" />}
-          {section === "mode" && <SectionPlaceholder titleKey="Mode" />}
-          {section === "guard" && <SectionPlaceholder titleKey="Config Guard" />}
-          {section === "about" && <SectionPlaceholder titleKey="About" />}
+          {section === "network" && <NetworkSection />}
+          {section === "mode" && <ModeSection />}
+          {section === "guard" && <GuardSection />}
+          {section === "about" && <AboutSection />}
+
+          {!footerHidden && (
+            <div className="mt-4 flex justify-end border-t border-border pt-4" id="settings-footer">
+              <button className={BTN_PRIMARY} id="btn-save-config" onClick={() => void saveConfig()}>
+                {t("Save Settings")}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </main>

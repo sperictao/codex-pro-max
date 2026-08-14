@@ -5,6 +5,7 @@ import { create } from "zustand";
 import { getStoredFamily, getStoredTheme, resolveDataTheme, type ThemeMode } from "@/theme";
 import { currentLanguage, i18n } from "./i18n";
 import * as cmd from "./commands";
+import { currentConfigDraft } from "./config";
 import type { DownloadProgress, DshStepEvent, GuardState, LauncherConfig, ProcessInfo } from "./types";
 
 export type View = "home" | "skill" | "guard" | "integration" | "settings";
@@ -39,6 +40,7 @@ interface AppStore {
   guardState: GuardState;
   autostart: boolean;
   languageSetting: string;
+  appVersion: string;
   // 进程状态（received 标记是否收到过首次状态：未收到时消息行显示 "Not started"，
   // 收到后空消息显示 "-"——复刻旧静态 HTML 初始文案与 updateStatusUI 的差异）
   services: { taskboard: ProcessInfo; injector: ProcessInfo };
@@ -66,6 +68,10 @@ interface AppStore {
   handleDshStep: (step: DshStepEvent) => void;
   setDownloadProgress: (p: DownloadProgress) => void;
   setLanguageSetting: (setting: string) => Promise<void>;
+  saveConfig: () => Promise<void>;
+  toggleAutostart: () => Promise<void>;
+  toggleGuardEnabled: () => Promise<void>;
+  setAppVersion: (v: string) => void;
 }
 
 export const useAppStore = create<AppStore>()((set, get) => ({
@@ -75,6 +81,7 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   guardState: { enabled: false, params: {} },
   autostart: false,
   languageSetting: "system",
+  appVersion: "-",
   services: initialServices(),
   servicesReceived: { taskboard: false, injector: false },
   dshTimeline: [],
@@ -170,4 +177,45 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       get().toast(i18n.t("Save failed: {{error}}", { error: String(e) }), "error");
     }
   },
+
+  // 保存设置（旧 core.saveConfig）：update_settings 不动看守状态，保存后回读同步 guardState
+  saveConfig: async () => {
+    try {
+      await cmd.updateSettings(currentConfigDraft(get()));
+      const latest = await cmd.loadConfig();
+      set({ guardState: latest.codex_guard ?? { enabled: false, params: {} } });
+      get().toast(i18n.t("Settings saved"), "success");
+    } catch (e) {
+      get().toast(i18n.t("Save failed: {{error}}", { error: String(e) }), "error");
+    }
+  },
+
+  // 自启开关即时写 OS 注册项，失败回退（旧 toggleAutostart）
+  toggleAutostart: async () => {
+    const next = !get().autostart;
+    set({ autostart: next });
+    try {
+      await cmd.autostartSet(next);
+    } catch (e) {
+      set({ autostart: !next });
+      get().toast(String(e), "error");
+    }
+  },
+
+  // 看守总开关（旧 guard.toggleGuard；失败时开关状态不变即回退）
+  toggleGuardEnabled: async () => {
+    const next = !get().guardState.enabled;
+    try {
+      await cmd.guardSetEnabled(next);
+      set((s) => ({ guardState: { ...s.guardState, enabled: next } }));
+      get().toast(
+        next ? i18n.t("Config guard enabled") : i18n.t("Config guard disabled"),
+        next ? "success" : "info",
+      );
+    } catch (e) {
+      get().toast(i18n.t("Toggle failed: {{error}}", { error: String(e) }), "error");
+    }
+  },
+
+  setAppVersion: (v) => set({ appVersion: v }),
 }));

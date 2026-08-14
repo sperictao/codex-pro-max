@@ -1,9 +1,11 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
+import { getVersion } from "@tauri-apps/api/app";
 import { useAppStore, type View } from "./shared/store";
 import { onDshStep, onStatusUpdate, onUpdaterDownloadProgress } from "./shared/events";
-import { autostartIsEnabled, loadConfig } from "./shared/commands";
+import * as cmd from "./shared/commands";
+import { currentConfigDraft } from "./shared/config";
 import { i18n } from "./shared/i18n";
 import { Toaster } from "./shared/components/Toaster";
 import { HomeView } from "./features/home/HomeView";
@@ -56,14 +58,32 @@ export function App() {
 
     void (async () => {
       try {
-        const cfg = await loadConfig();
+        const cfg = await cmd.loadConfig();
         if (disposed) return;
         useAppStore.getState().applyConfig(cfg);
         try {
-          const autostart = await autostartIsEnabled();
+          const autostart = await cmd.autostartIsEnabled();
           if (!disposed) useAppStore.getState().setAutostart(autostart);
         } catch {
           /* 读不到就当关 */
+        }
+
+        // 应用版本（关于页）
+        try {
+          useAppStore.getState().setAppVersion(await getVersion());
+        } catch {
+          useAppStore.getState().setAppVersion("unknown");
+        }
+
+        // codex 路径为空或已失效时，自动探测真实安装位置并回填落盘
+        const codexPath = useAppStore.getState().config?.codex_app_path ?? "";
+        const currentValid = codexPath !== "" && (await cmd.checkCodexApp(codexPath));
+        if (!currentValid) {
+          const found = await cmd.detectCodexApp();
+          if (found && !disposed) {
+            useAppStore.getState().setConfigField({ codex_app_path: found });
+            await cmd.updateSettings(currentConfigDraft(useAppStore.getState()));
+          }
         }
       } catch (e) {
         useAppStore.getState().toast(i18n.t("Initialization failed: {{error}}", { error: String(e) }), "error");

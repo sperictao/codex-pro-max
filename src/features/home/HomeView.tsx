@@ -7,6 +7,7 @@ import { useAppStore } from "@/shared/store";
 import { currentConfigDraft } from "@/shared/config";
 import * as cmd from "@/shared/commands";
 import { Modal } from "@/shared/components/Modal";
+import { BTN, BTN_DESTRUCTIVE_LG, BTN_PRIMARY_LG } from "@/shared/lib/ui";
 import type { ProcessInfo, ProcessStatus } from "@/shared/types";
 
 // 后端错误前缀：Codex 已运行但未开 CDP（仅 Windows 发出）
@@ -96,13 +97,6 @@ function ServiceCard({
     </div>
   );
 }
-
-const BTN =
-  "inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-8 px-3 text-xs";
-const BTN_PRIMARY =
-  "inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-base font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-12 w-64";
-const BTN_DESTRUCTIVE =
-  "inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-base font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-destructive text-destructive-foreground hover:bg-destructive/90 h-12 w-64";
 
 export function HomeView() {
   const { t } = useTranslation();
@@ -261,10 +255,10 @@ export function HomeView() {
       </div>
 
       <div className="mt-6 flex justify-center gap-4">
-        <button className={BTN_PRIMARY} id="btn-start-all" disabled={anyRunning || startAllBusy} onClick={() => void onStartAll()}>
+        <button className={BTN_PRIMARY_LG} id="btn-start-all" disabled={anyRunning || startAllBusy} onClick={() => void onStartAll()}>
           {startAllBusy ? t("Starting...") : t("Start All")}
         </button>
-        <button className={BTN_DESTRUCTIVE} id="btn-stop-all" disabled={allStopped || stopAllBusy} onClick={() => void onStopAll()}>
+        <button className={BTN_DESTRUCTIVE_LG} id="btn-stop-all" disabled={allStopped || stopAllBusy} onClick={() => void onStopAll()}>
           {stopAllBusy ? t("Stopping...") : t("Stop All")}
         </button>
       </div>
