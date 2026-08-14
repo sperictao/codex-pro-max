@@ -56,8 +56,9 @@ export function UpdateBadge() {
           </>
         )}
       </svg>
-      {/* lucide ArrowUp（无圆圈本体，圆环由上方边框承担） */}
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      {/* lucide ArrowUp（无圆圈本体，圆环由按钮边框承担）；
+          描边与圆环同量级：环有效 2.8px（2/20×28），箭头 4.2/24×16 ≈ 2.8px */}
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4.2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M12 19V5" />
         <path d="m5 12 7-7 7 7" />
       </svg>
