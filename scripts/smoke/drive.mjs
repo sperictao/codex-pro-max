@@ -315,6 +315,7 @@ await shot("14-about-update");
 
 // 头部更新徽标 + 软件名链接
 check("头部：检测到更新显示绿色下载按钮", await visible("[data-testid='update-badge']"));
+check("头部：未下载时无进度环（仅下载时出现）", (await page.locator("[data-progress-ring]").count()) === 0);
 await page.click("header button:has-text('Codex Pro Max')");
 await page.waitForTimeout(200);
 const calls = await page.evaluate(() => window.__smoke.calls);
