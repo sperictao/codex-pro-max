@@ -66,6 +66,7 @@ interface AppStore {
   updateService: (info: ProcessInfo) => void;
   refreshStatus: () => Promise<void>;
   handleDshStep: (step: DshStepEvent) => void;
+  setDshTimeline: (steps: DshStepEvent[]) => void;
   setDownloadProgress: (p: DownloadProgress) => void;
   setLanguageSetting: (setting: string) => Promise<void>;
   saveConfig: () => Promise<void>;
@@ -161,6 +162,7 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       }
       return { dshTimeline: tl };
     }),
+  setDshTimeline: (steps) => set({ dshTimeline: steps }),
   setDownloadProgress: (p) => set({ downloadProgress: p }),
 
   // 语言切换编排（旧 shell.setLanguage）：落盘 + Rust 重建托盘 + react-i18next 响应式重渲染
