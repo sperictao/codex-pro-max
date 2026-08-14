@@ -6,7 +6,15 @@ import { getStoredFamily, getStoredTheme, resolveDataTheme, type ThemeMode } fro
 import { currentLanguage, i18n } from "./i18n";
 import * as cmd from "./commands";
 import { currentConfigDraft } from "./config";
-import type { DownloadProgress, DshStepEvent, GuardState, LauncherConfig, ProcessInfo } from "./types";
+import type {
+  DownloadProgress,
+  DshStepEvent,
+  GuardState,
+  LauncherConfig,
+  ProcessInfo,
+  UpdateInfo,
+  UpdaterConfigHealth,
+} from "./types";
 
 export type View = "home" | "skill" | "guard" | "integration" | "settings";
 export type SettingsSection = "general" | "appearance" | "network" | "mode" | "guard" | "about";
@@ -48,6 +56,11 @@ interface AppStore {
   // 事件桥写入区
   dshTimeline: DshStepEvent[];
   downloadProgress: DownloadProgress | null;
+  // 更新器（updateInfo 即旧 pendingUpdateInfo：仅有可用更新时非空）
+  updaterHealth: UpdaterConfigHealth | null;
+  updaterHealthError: string | null;
+  updateInfo: UpdateInfo | null;
+  updateBusyKind: "check" | "install" | null;
   // 主题（localStorage 是唯一事实来源，store 是渲染镜像）
   themeMode: ThemeMode;
   themeFamily: string;
@@ -73,6 +86,9 @@ interface AppStore {
   toggleAutostart: () => Promise<void>;
   toggleGuardEnabled: () => Promise<void>;
   setAppVersion: (v: string) => void;
+  refreshUpdaterHealth: () => Promise<void>;
+  checkForUpdates: (silent?: boolean) => Promise<void>;
+  installPendingUpdate: () => Promise<void>;
 }
 
 export const useAppStore = create<AppStore>()((set, get) => ({
@@ -87,6 +103,10 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   servicesReceived: { taskboard: false, injector: false },
   dshTimeline: [],
   downloadProgress: null,
+  updaterHealth: null,
+  updaterHealthError: null,
+  updateInfo: null,
+  updateBusyKind: null,
   themeMode: getStoredTheme(localStorage.getItem("theme")),
   themeFamily: getStoredFamily(localStorage.getItem("theme-family")),
   toasts: [],
@@ -220,4 +240,55 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   },
 
   setAppVersion: (v) => set({ appVersion: v }),
+
+  // 更新源健康（旧 checkUpdaterHealth）
+  refreshUpdaterHealth: async () => {
+    try {
+      set({ updaterHealth: await cmd.getUpdaterConfigHealth(), updaterHealthError: null });
+    } catch (e) {
+      set({ updaterHealth: null, updaterHealthError: String(e) });
+    }
+  },
+
+  // 检查更新（旧 checkUpdate；silent 时静默失败/静默无更新）
+  checkForUpdates: async (silent = false) => {
+    if (get().updateBusyKind) return;
+    set({ updateBusyKind: "check" });
+    try {
+      const info = await cmd.checkUpdate();
+      set({ updateInfo: info.hasUpdate ? info : null });
+      if (info.hasUpdate) {
+        get().toast(i18n.t("New version available: v{{version}}", { version: String(info.availableVersion) }), "info");
+      } else if (info.message) {
+        if (!silent) get().toast(info.message, "error");
+      } else if (!silent) {
+        get().toast(i18n.t("Already up to date"), "info");
+      }
+    } catch (e) {
+      if (!silent) get().toast(i18n.t("Failed to check for updates: {{error}}", { error: String(e) }), "error");
+    } finally {
+      set({ updateBusyKind: null });
+    }
+  },
+
+  // 无待装更新时退化为检查更新（旧 onUpdateButton）
+  installPendingUpdate: async () => {
+    const pending = get().updateInfo;
+    if (!pending) {
+      await get().checkForUpdates();
+      return;
+    }
+    if (get().updateBusyKind) return;
+    set({ updateBusyKind: "install" });
+    try {
+      const msg = await cmd.installUpdate(pending.availableVersion);
+      get().toast(msg, "success");
+      set({ updateInfo: null });
+    } catch (e) {
+      get().toast(i18n.t("Update failed: {{error}}", { error: String(e) }), "error");
+    } finally {
+      // 旧 finally：隐藏进度行并归零进度条
+      set({ updateBusyKind: null, downloadProgress: null });
+    }
+  },
 }));

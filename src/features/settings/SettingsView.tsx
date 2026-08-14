@@ -7,7 +7,7 @@ import { AppearanceSection } from "./AppearanceSection";
 import { NetworkSection } from "./NetworkSection";
 import { ModeSection } from "./ModeSection";
 import { GuardSection } from "./GuardSection";
-import { AboutSection } from "./AboutSection";
+import { AboutSection } from "@/features/updater/AboutSection";
 
 // 设置视图：侧栏 6 分区 + 内容区 + 保存 footer（外观/看守/关于隐藏，旧 switchSection 行为）
 const SECTIONS: { id: SettingsSection; labelKey: string; icon: ReactNode }[] = [

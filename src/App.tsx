@@ -85,6 +85,10 @@ export function App() {
             await cmd.updateSettings(currentConfigDraft(useAppStore.getState()));
           }
         }
+
+        // 更新源健康检查 + 静默检查更新（有新版本才提示）
+        await useAppStore.getState().refreshUpdaterHealth();
+        void useAppStore.getState().checkForUpdates(true);
       } catch (e) {
         useAppStore.getState().toast(i18n.t("Initialization failed: {{error}}", { error: String(e) }), "error");
       }
