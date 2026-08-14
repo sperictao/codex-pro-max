@@ -313,16 +313,27 @@ check("关于：release notes 显示", (await txt("#section-about"))?.includes("
 check("关于：按钮文案 Update Now", (await txt("#btn-check-update")) === "Update Now");
 await shot("14-about-update");
 
+// 头部更新徽标 + 软件名链接
+check("头部：检测到更新显示绿色下载按钮", await visible("[data-testid='update-badge']"));
+await page.click("header button:has-text('Codex Pro Max')");
+await page.waitForTimeout(200);
+const calls = await page.evaluate(() => window.__smoke.calls);
+check("头部：软件名点击打开 GitHub 仓库", calls.some((c) => c.cmd === "shell:open" && String(c.args?.path ?? c.args ?? "").includes("sperictao/codex-pro-max")), JSON.stringify(calls));
+
 // 下载进度事件桥
 await page.evaluate(() => window.__smoke.emit("updater-download-progress", { stage: "downloading", version: "1.3.0", downloadedBytes: 0, totalBytes: 100, percent: 42.4, attempt: 1, maxAttempts: 3 }));
 await page.waitForTimeout(200);
 check("事件桥：下载进度行出现 42%", (await txt("#section-about"))?.includes("42%"));
+const ringOffset = await page.locator("[data-progress-ring]").getAttribute("stroke-dashoffset");
+const ringExpected = 2 * Math.PI * 8 * (1 - 0.424);
+check("头部：进度环随百分比填充（stroke-dashoffset）", ringOffset !== null && Math.abs(parseFloat(ringOffset) - ringExpected) < 0.6, `${ringOffset} vs ${ringExpected.toFixed(2)}`);
 await shot("15-update-progress");
 
 // Update Now → install
-await page.click("#btn-check-update");
+await page.click("[data-testid='update-badge']");
 await page.waitForSelector(".toast:has-text('Updated to v1.3.0')");
-check("关于：安装更新成功 toast", true);
+check("头部：徽标点击即安装（成功 toast）", true);
+check("头部：安装后更新徽标消失", !(await visible("[data-testid='update-badge']")));
 check("关于：安装后更新行隐藏 + 按钮回 Check for Updates", !(await txt("#section-about"))?.includes("Available Update") && (await txt("#btn-check-update")) === "Check for Updates");
 check("关于：安装后进度行隐藏", !(await txt("#section-about"))?.includes("Update Progress"));
 

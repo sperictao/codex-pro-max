@@ -8,6 +8,8 @@ import * as cmd from "./shared/commands";
 import { currentConfigDraft } from "./shared/config";
 import { i18n } from "./shared/i18n";
 import { Toaster } from "./shared/components/Toaster";
+import { openRepo } from "./shared/lib/links";
+import { UpdateBadge } from "./features/updater/UpdateBadge";
 import { HomeView } from "./features/home/HomeView";
 import { SettingsView } from "./features/settings/SettingsView";
 import { SkillView } from "./features/skill/SkillView";
@@ -124,7 +126,17 @@ export function App() {
   return (
     <>
       <header className="flex shrink-0 items-center justify-between border-b border-border px-4 py-2.5">
-        <div className="text-sm font-semibold">Codex Pro Max</div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="cursor-pointer text-sm font-semibold"
+            title="GitHub"
+            onClick={() => void openRepo()}
+          >
+            Codex Pro Max
+          </button>
+          <UpdateBadge />
+        </div>
         <div className="flex items-center gap-1">
           {NAV_ITEMS.filter((item) => item.view !== "guard" || guardEnabled).map((item) => (
             <button

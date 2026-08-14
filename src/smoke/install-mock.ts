@@ -200,7 +200,10 @@ const routes: Record<string, (args: AnyRec) => any> = {
   "plugin:notification|request_permission": () => "granted",
   "plugin:dialog|message": () => ((window as any).__smoke?.askAnswer === false ? "No" : "Yes"),
   "plugin:dialog|open": () => "/Users/me/.codex/picked.toml",
-  "plugin:shell|open": () => null,
+  "plugin:shell|open": (args) => {
+    (window as any).__smoke?.calls.push({ cmd: "shell:open", args });
+    return null;
+  },
   "plugin:event|listen": ({ event, handler }) => {
     const arr = eventListeners.get(event) ?? [];
     arr.push(handler);
@@ -240,6 +243,7 @@ w.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => undefined };
 // 驱动脚本挂钩
 w.__smoke = {
   askAnswer: true,
+  calls: [] as AnyRec[],
   emit(event: string, payload: AnyRec) {
     for (const id of eventListeners.get(event) ?? []) cbMap.get(id)?.({ event, id: 0, payload });
   },

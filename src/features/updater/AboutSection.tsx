@@ -6,6 +6,7 @@ import { open as openUrl } from "@tauri-apps/plugin-shell";
 import { useAppStore } from "@/shared/store";
 import * as cmd from "@/shared/commands";
 import { fmtTs } from "@/shared/lib/format";
+import { openRepo } from "@/shared/lib/links";
 import { BTN } from "@/shared/lib/ui";
 
 export function AboutSection() {
@@ -27,13 +28,6 @@ export function AboutSection() {
       await openUrl(target === "docs" ? paths.docsPath : paths.templatePath);
     } catch (e) {
       toast(t("Failed to open help: {{error}}", { error: String(e) }), "error");
-    }
-  };
-  const openGithub = async () => {
-    try {
-      await openUrl("https://github.com/sperictao/codex-pro-max");
-    } catch (e) {
-      toast(t("Failed to open link: {{error}}", { error: String(e) }), "error");
     }
   };
 
@@ -157,7 +151,7 @@ export function AboutSection() {
 
       <div className="mt-3 flex items-start gap-4 border-t border-border py-3">
         <span className="w-36 shrink-0 text-sm font-medium">GitHub</span>
-        <a className="cursor-pointer text-sm text-primary underline-offset-4 hover:underline" onClick={() => void openGithub()}>
+        <a className="cursor-pointer text-sm text-primary underline-offset-4 hover:underline" onClick={() => void openRepo()}>
           {t("Open in Browser")}
         </a>
       </div>
