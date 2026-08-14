@@ -1,5 +1,7 @@
 # 前端保持 vanilla TS + ES modules，不引入框架
 
+> 状态：已被 [ADR 0010](0010-shell-frontend-react-rewrite.md) 取代（预设的重审条件「交互面显著增长」已成立）。
+
 `src/main.ts`（约 1800 行）拆分时定下的栈决策：前端保持 vanilla TypeScript + 原生 ES modules，按域切分为 core / service / guard / fastctx / updater / shell 六个模块 + `state.ts` 共享状态，不引入 React / Vue / Svelte 等任何框架。壳 UI 的交互面很窄（表单、列表、开关、弹窗），直写 DOM 已够用；「单文件太大」用 import 就能解决，不值得为此引入运行时与重写成本。构建链保持 vite + tsc 极简形态，严格 CSP（`script-src 'self'`）不变。
 
 **Considered Options**：

@@ -1,10 +1,17 @@
-import { defineConfig } from "vite";
+import { fileURLToPath, URL } from "node:url";
+import { defineConfig } from "vitest/config";
+import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  plugins: [tailwindcss()],
+  plugins: [react(), tailwindcss()],
   root: ".",
   clearScreen: false,
+  resolve: {
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
+  },
   server: {
     port: 5173,
     strictPort: true,
@@ -20,5 +27,9 @@ export default defineConfig({
     minify: "esbuild",
     sourcemap: false,
     outDir: "dist",
+  },
+  test: {
+    environment: "jsdom",
+    setupFiles: ["./src/shared/test/setup.ts"],
   },
 });

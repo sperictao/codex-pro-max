@@ -11,6 +11,9 @@
     "noUnusedParameters": true,
     "outDir": "./dist",
     "rootDir": "./src",
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] },
     "types": ["@tauri-apps/api"]
   },
   "include": ["src"]
