@@ -30,6 +30,10 @@ npm-debug.log*
 *.swo
 *~
 
+# Local agent working notes
+.zcode/
+docs/agent/
+
 # OS metadata
 .DS_Store
 Thumbs.db
