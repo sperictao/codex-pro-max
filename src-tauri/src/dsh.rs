@@ -917,7 +917,14 @@ pub async fn dsh_setup(app: tauri::AppHandle) -> Result<(), String> {
         let serve_ok = tailscale_path()
             .map(|ts| serve_configured(&ts))
             .unwrap_or(false);
-        if web_ok && proxy_ok && serve_ok {
+        // 真实 HTTPS 链路检查：curl -k 请求本机自己的 tailnet 域名（走 tailscaled
+        // 的 serve 监听器）。只查 serve status 文本会假成功——配置存在但监听器
+        // 没起来（443 被占用/防火墙拦截）时，远程依然不可达（Windows 实机踩坑）
+        let https_ok = url
+            .as_deref()
+            .map(https_endpoint_ok)
+            .unwrap_or(false);
+        if web_ok && proxy_ok && serve_ok && https_ok {
             ctx.done(&trf("Remote access is ready: {url}", &[("url", url_text.clone())]));
         } else {
             let mut checks: Vec<String> = Vec::new();
@@ -930,6 +937,9 @@ pub async fn dsh_setup(app: tauri::AppHandle) -> Result<(), String> {
             if !serve_ok {
                 checks.push(tr("tailscale serve is not configured (tailscale serve status)"));
             }
+            if !https_ok {
+                checks.push(trf("HTTPS endpoint is not responding ({url}); the serve listener may be blocked by a port conflict or firewall", &[("url", url_text.clone())]));
+            }
             return ctx.fail(
                 &tr("Verification failed; some components are not ready"),
                 &checks.join("；"),
@@ -939,6 +949,23 @@ pub async fn dsh_setup(app: tauri::AppHandle) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// 真实 HTTPS 端点检查：curl -k 请求本机自己的 tailnet 域名。
+/// Windows 10 1803+ 自带 curl.exe；macOS/Linux 标配 curl。
+/// 返回是否拿到 2xx/3xx 响应
+fn https_endpoint_ok(url: &str) -> bool {
+    let null_dev = if cfg!(windows) { "NUL" } else { "/dev/null" };
+    match run_capture(
+        "curl",
+        &["-sk", "--max-time", "10", "-o", null_dev, "-w", "%{http_code}", url],
+    ) {
+        Ok((out, _, ok)) => {
+            let code = out.trim();
+            ok && (code.starts_with('2') || code.starts_with('3'))
+        }
+        Err(_) => false,
+    }
 }
 
 // ============ 停止 ============

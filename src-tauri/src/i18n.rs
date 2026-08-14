@@ -194,6 +194,7 @@ fn zh_cn(key: &str) -> Option<&'static str> {
         "loopback proxy is not responding (curl http://127.0.0.1:3898/)" => "本地回环反代无响应（curl http://127.0.0.1:3898/）",
         "tailscale serve is not configured (tailscale serve status)" => "tailscale serve 未配置（tailscale serve status）",
         "Verification failed; some components are not ready" => "验证失败，部分组件未就绪",
+        "HTTPS endpoint is not responding ({url}); the serve listener may be blocked by a port conflict or firewall" => "HTTPS 端点无响应（{url}）；serve 监听器可能被端口占用或防火墙拦截",
         "Cannot register launchd agent: {error}" => "无法注册 launchd 自启项: {error}",
         "Cannot locate the Windows Startup folder (APPDATA is missing)" => "无法定位 Windows 启动文件夹（缺少 APPDATA 环境变量）",
         "Cannot enable systemd unit: {error}" => "无法启用 systemd 服务: {error}",
