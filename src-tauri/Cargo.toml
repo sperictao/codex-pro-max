@@ -1,6 +1,6 @@
 [package]
 name = "codex-pro-max"
-version = "1.2.0"
+version = "1.3.0"
 description = "One-click launcher for dashi-taskboard integrated with Codex"
 authors = ["codex-pro-max"]
 edition = "2021"
