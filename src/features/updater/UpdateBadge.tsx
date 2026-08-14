@@ -1,4 +1,5 @@
-// 更新徽标：检测到更新时出现在 header 软件名右侧的圆形下载按钮（bg-primary 主题色）。
+// 更新徽标：检测到更新时出现在 header 软件名右侧的圆形箭头按钮（幽灵样式，
+// 绿色随亮暗模式——参照 cc-switch 的 green-600/green-400，见 style.css .update-badge）。
 // 点击立即安装；下载期间外圈圆环按 percent 顺时针填充（installing/restarting 视为满环）。
 
 import { useTranslation } from "react-i18next";
@@ -25,33 +26,36 @@ export function UpdateBadge() {
     <button
       type="button"
       data-testid="update-badge"
-      className="relative inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+      className="update-badge relative inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60"
       title={t("Update to {{version}}", { version: updateInfo.availableVersion })}
       aria-label={t("Update Now")}
       disabled={busyKind !== null}
       onClick={() => void installPendingUpdate()}
     >
       <svg className="absolute inset-0 h-full w-full -rotate-90" viewBox="0 0 20 20" aria-hidden="true">
-        <circle cx="10" cy="10" r={R} fill="none" stroke="currentColor" strokeOpacity="0.35" strokeWidth="2" />
         {clamped !== null && (
-          <circle
-            cx="10"
-            cy="10"
-            r={R}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeDasharray={CIRCUMFERENCE}
-            strokeDashoffset={CIRCUMFERENCE * (1 - clamped / 100)}
-            data-progress-ring
-          />
+          <>
+            <circle cx="10" cy="10" r={R} fill="none" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2" />
+            <circle
+              cx="10"
+              cy="10"
+              r={R}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeDasharray={CIRCUMFERENCE}
+              strokeDashoffset={CIRCUMFERENCE * (1 - clamped / 100)}
+              data-progress-ring
+            />
+          </>
         )}
       </svg>
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-        <polyline points="7 10 12 15 17 10" />
-        <line x1="12" y1="15" x2="12" y2="3" />
+      {/* lucide ArrowUpCircle（与 cc-switch 更新入口同款） */}
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <path d="m16 12-4-4-4 4" />
+        <path d="M12 16V8" />
       </svg>
     </button>
   );

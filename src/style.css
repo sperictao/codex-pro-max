@@ -626,3 +626,10 @@
 @keyframes timeline-spin {
   to { transform: rotate(360deg); }
 }
+
+/* 更新徽标（header 软件名右侧）：幽灵圆形按钮，绿色随亮暗模式
+   （参照 cc-switch：light green-600 / dark green-400 + 同色淡底 hover） */
+.update-badge { color: #16a34a; }
+.update-badge:hover { background-color: rgb(22 163 74 / 0.08); }
+[data-theme$="-dark"] .update-badge { color: #4ade80; }
+[data-theme$="-dark"] .update-badge:hover { background-color: rgb(74 222 128 / 0.12); }
