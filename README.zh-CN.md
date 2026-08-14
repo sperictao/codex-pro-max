@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./assets/readme/hero.zh-CN.svg" width="100%" alt="Codex Pro Max — Tauri v2 桌面启动器：Taskboard 服务托管、Codex CDP 注入、~/.codex 配置看守、应用自更新">
+<img src="./assets/readme/hero.zh-CN.svg" width="100%" alt="Codex Pro Max — Tauri v2 桌面启动器：Taskboard 服务托管、Codex CDP 面板注入、~/.codex 配置看守、FastCtx MCP 集成、DeepSeek Harness 远程访问、应用自更新">
 
 **图形界面替代手写命令，一站式管理 dashi-taskboard 的使用体验。**
 
@@ -24,7 +24,7 @@
 - 💉 **Codex 注入器** — 以独立 CDP 端口启动 Codex 桌面端并注入 Taskboard 面板（macOS / Windows 商店版均可识别）
 - 🔒 **Codex 配置看守** — 对 `~/.codex/` 下配置文件做 schema 驱动的参数托管、锁定与漂移自动恢复（词汇与边界见 [CONTEXT.md](CONTEXT.md)）
 - 🧰 **FastCtx 集成** — 一键安装 [FastCtx](https://github.com/yc-duan/fastctx) MCP 运行时并接入/摘除 Codex，全程委托 `fastctx` CLI
-- 🌐 **DeepSeek Harness 远程访问** — 一键配置 Tailscale HTTPS 远程访问 dsh Web UI：安装 CLI → 启动 dsh web（回环 :3899）→ 启用 MagicDNS → 启动回环反代（:3898）→ 配置 tailscale serve → 验证真实 HTTPS 端点；8 步安装进度时间轴逐步呈现，失败节点内嵌问题与解决方案，另含版本胶囊、一键更新与开机自启
+- 🌐 **DeepSeek Harness 远程访问** — 一键配置 Tailscale HTTPS 远程访问 dsh Web UI；8 步安装进度时间轴逐步呈现，失败节点内嵌问题与解决方案，另含版本胶囊、一键更新与开机自启
 - 🎨 **主题** — 42 个 tweakcn 主题族，原生支持亮 / 暗 / 跟随系统；28 种界面字体应用内自托管，完全离线
 - 🔄 **应用自更新** — 内置 Tauri Updater，检查更新、下载、重启一条龙
 
@@ -41,8 +41,8 @@
 1. **拉起服务** — 启动打包在内的 taskboard Node 服务，健康检查通过后标记就绪
 2. **注入面板** — 以独立 CDP 端口拉起 Codex 桌面端，把 Taskboard 面板注入其界面
 3. **看守配置** — 按 schema 托管 `~/.codex/` 参数；锁定后轮询（60s），发现漂移自动改回（写入前备份）
-4. **自我更新** — 检查 GitHub Releases 的 `latest.json`，下载、验签、重启完成升级
-5. **暴露 dsh 远程访问** — 一键安装并运行 [DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh)，配置 Tailscale HTTPS 链路（`https://<hostname>.ts.net` → 回环反代 :3898 → dsh web :3899）；时间轴逐步展示进度与失败指引
+4. **暴露 dsh 远程访问** — 一键安装并运行 [DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh)，配置 Tailscale HTTPS 链路（`https://<hostname>.ts.net` → 回环反代 :3898 → dsh web :3899）；时间轴逐步展示进度与失败指引
+5. **自我更新** — 检查 GitHub Releases 的 `latest.json`，下载、验签、重启完成升级
 
 ---
 
@@ -113,7 +113,7 @@ tag 推送触发 CI 五路构建（macOS aarch64 / x86_64 / universal、Windows�
 | 层 | 技术 |
 | --- | --- |
 | 桌面框架 | Tauri 2.x（Rust） |
-| 前端 | TypeScript 5 + Vite 6（单页 UI） |
+| 前端 | TypeScript 5 + Vite 8（单页 UI） |
 | UI 与主题 | Tailwind CSS v4 + tweakcn（shadcn token）主题体系；42 个主题族、28 种自托管字体（[ADR 0008](docs/adr/0008-tweakcn-token-theming.md)） |
 | taskboard 集成 | git submodule（fork 仓库消费上游） |
 | 配置看守 | schema 驱动，TOML / Markdown 区块 / 整文件三种比对模式 |
