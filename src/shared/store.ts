@@ -2,7 +2,7 @@
 // 输入即改草稿，Save/启动时才落盘）。Tauri 推送事件经事件桥直写本 store。
 
 import { create } from "zustand";
-import { getStoredFamily, getStoredTheme, resolveDataTheme, type ThemeMode } from "@/theme";
+import { getStoredFamily, getStoredTheme, resolveDataTheme, type ThemeMode } from "./theme";
 import { currentLanguage, i18n } from "./i18n";
 import * as cmd from "./commands";
 import { currentConfigDraft } from "./config";

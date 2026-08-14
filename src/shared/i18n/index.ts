@@ -1,11 +1,11 @@
-// shared/i18n：react-i18next 初始化。字典复用旧 src/i18n/ 两份文件（单元 9 再物理迁移过来）。
-// key 即英文原文，缺失 key 返回 key 本身 + fallbackLng en 构成双层英文兜底（语义与旧实现及 Rust tr() 一致）。
+// shared/i18n：react-i18next 初始化。字典 en/zh-CN 就在本目录（key 即英文原文）。
+// 缺失 key 返回 key 本身 + fallbackLng en 构成双层英文兜底（语义与旧实现及 Rust tr() 一致）。
 // 语言切换由 i18next.changeLanguage 驱动，订阅组件自动重渲染——旧 rerenderDynamicText 手动清单随之消失。
 
 import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
-import { en } from "@/i18n/en";
-import { zhCN } from "@/i18n/zh-CN";
+import { en } from "./en";
+import { zhCN } from "./zh-CN";
 
 export type ResolvedLanguage = "en" | "zh-CN";
 

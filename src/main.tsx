@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { getResolvedLanguage } from "./shared/commands";
 import { initI18n, type ResolvedLanguage } from "./shared/i18n";
-import { getStoredFamily, getStoredTheme, resolveDataTheme } from "./theme";
+import { getStoredFamily, getStoredTheme, resolveDataTheme } from "./shared/theme";
 
 // 主题必须在首次绘制前同步应用，避免首屏按默认色绘制后再闪切（沿用旧 init 的约束）
 document.documentElement.dataset.theme = resolveDataTheme(
