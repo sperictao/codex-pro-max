@@ -270,6 +270,8 @@ export const en = {
   "DeepSeek Harness": "DeepSeek Harness",
   "Remote access to the dsh Web UI over Tailscale HTTPS: https://<hostname>.ts.net → loopback proxy :3898 → dsh web :3899. Timeline nodes show the problem and its solution if a step fails.": "Remote access to the dsh Web UI over Tailscale HTTPS: https://<hostname>.ts.net → loopback proxy :3898 → dsh web :3899. Timeline nodes show the problem and its solution if a step fails.",
   "One-click remote access": "One-click remote access",
+  "One-click start dsh web": "One-click start dsh web",
+  "dsh start failed: {{error}}": "dsh start failed: {{error}}",
   "Setup Progress": "Setup Progress",
   "Boot Auto-start": "Boot Auto-start",
   "Auto-start dsh web and the loopback proxy in the background at login": "Auto-start dsh web and the loopback proxy in the background at login",

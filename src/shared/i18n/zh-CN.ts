@@ -272,6 +272,8 @@ export const zhCN: Record<I18nKey, string> = {
   "DeepSeek Harness": "DeepSeek Harness",
   "Remote access to the dsh Web UI over Tailscale HTTPS: https://<hostname>.ts.net → loopback proxy :3898 → dsh web :3899. Timeline nodes show the problem and its solution if a step fails.": "通过 Tailscale HTTPS 远程访问 dsh Web UI：https://<hostname>.ts.net → 回环反代 :3898 → dsh web :3899。步骤失败时，时间轴节点会显示问题与解决方案。",
   "One-click remote access": "一键启动远程访问",
+  "One-click start dsh web": "一键启动dsh web",
+  "dsh start failed: {{error}}": "dsh 启动失败: {{error}}",
   "Setup Progress": "安装进度",
   "Boot Auto-start": "开机自启",
   "Auto-start dsh web and the loopback proxy in the background at login": "登录时后台自动启动 dsh 与回环反代",

@@ -126,6 +126,28 @@ export function DshCard() {
     }
   };
 
+  // 一键启动 dsh（纯本地）：后端幂等保证 3899 就绪并返回本地地址，这里只管打开浏览器；
+  // 已在跑时等同于「打开 dsh Web」。结束后刷新状态，时间轴经 timelineFromStatus 反映就绪
+  const startLocal = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const url = await cmd.dshStartWeb();
+      await openUrl(url);
+    } catch (e) {
+      toast(t("dsh start failed: {{error}}", { error: String(e) }), "error");
+    } finally {
+      setBusy(false);
+      try {
+        const s = await cmd.dshDetect();
+        setStatus(s);
+        if (!hasRunSetup) setDshTimeline(timelineFromStatus(s));
+      } catch (e) {
+        toast(t("dsh detection failed: {{error}}", { error: String(e) }), "error");
+      }
+    }
+  };
+
   const stop = async () => {
     try {
       await cmd.dshStop();
@@ -254,6 +276,9 @@ export function DshCard() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        <button className={BTN_PRIMARY} disabled={busy} onClick={() => void startLocal()}>
+          {t("One-click start dsh web")}
+        </button>
         <button className={BTN_PRIMARY} disabled={busy} onClick={() => void start()}>
           {busy ? t("Working…") : t("One-click remote access")}
         </button>

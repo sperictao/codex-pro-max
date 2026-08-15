@@ -74,6 +74,7 @@ export const fastctxOpenConsole = () => invoke<void>("fastctx_open_console");
 // ============ dsh ============
 export const dshDetect = () => invoke<DshStatus>("dsh_detect");
 export const dshSetup = () => invoke<void>("dsh_setup");
+export const dshStartWeb = () => invoke<string>("dsh_start_web");
 export const dshStop = () => invoke<void>("dsh_stop");
 export const dshUpdate = () => invoke<string>("dsh_update");
 export const dshSetAutostart = (enabled: boolean) => invoke<void>("dsh_set_autostart", { enabled });
