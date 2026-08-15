@@ -1425,8 +1425,38 @@ fn ws_endpoint_ok(url: &str) -> bool {
 
 // ============ 停止 ============
 
+/// 停止自启监管下的 dsh 服务（launchd / systemd --user）；best-effort。
+/// 只停当前会话、不动开机自启配置：launchd 用不带 -w 的 unload（plist 保留，
+/// 下次登录仍自启）；systemd stop ≠ disable，干净停止不触发 on-failure 重启。
+/// Windows 自启是启动文件夹 .vbs（仅登录时跑一次，无 KeepAlive），无需处理
+fn stop_supervised_services() {
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(home) = config::home_dir() {
+            let agents = home.join("Library/LaunchAgents");
+            for name in ["web", "proxy"] {
+                let plist = agents.join(format!("{}.{}.plist", AUTOSTART_PREFIX, name));
+                if plist.exists() {
+                    let _ = Command::new("launchctl").arg("unload").arg(&plist).output();
+                }
+            }
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = Command::new("systemctl")
+            .args(["--user", "stop", "dsh-remote-web.service", "dsh-remote-proxy.service"])
+            .output();
+    }
+}
+
 #[tauri::command]
 pub fn dsh_stop() -> Result<(), String> {
+    // 先停自启监管再杀进程：launchd KeepAlive / systemd Restart=on-failure
+    // 会把被 pkill 杀掉的进程判作「非成功退出」立刻拉活（实测：pkill 反代后
+    // 2 秒 launchd 就用新 PID 重新监听 3898），不先停监管 Stop 形同虚设
+    stop_supervised_services();
+    // 兜底：未经自启机制、由一键启动直接拉起的游离进程。
     // 注意：Windows 上 dsh web 的进程命令行是
     // `node ...\dsh\dist\index.js --profile web --port 3899`（npm 包布局），
     // 不以 "dsh --profile" 开头；"profile web --port 3899" 在 macOS 直启、
