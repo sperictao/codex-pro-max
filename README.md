@@ -42,7 +42,7 @@ Grab the installer for your platform from [Releases](https://github.com/spericta
 1. **Start the service** — launches the bundled taskboard Node service and marks it ready once the health check passes
 2. **Inject the panel** — starts Codex on a dedicated CDP port and injects the Taskboard panel into its UI
 3. **Guard the config** — manages `~/.codex/` parameters per schema; while locked, polling (60s) detects drift and restores the configured value, backing up before every write
-4. **Expose dsh remotely** — one click installs/runs [DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh) and wires the Tailscale HTTPS chain (`https://<hostname>.ts.net` → loopback proxy :3898 → dsh web :3899); the setup timeline shows per-step progress and failure guidance
+4. **Expose dsh remotely** — one click installs/runs [DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh) and wires the Tailscale HTTPS chain (`https://<hostname>.ts.net` → loopback proxy :3898 → dsh web :3899); the setup timeline shows per-step progress and failure guidance. URL won't open on the client device? Proxy tools (Shadowrocket / Clash / Surge) often hijack `*.ts.net` traffic — see [docs/dsh-remote-access.md](docs/dsh-remote-access.md)
 5. **Update itself** — checks `latest.json` on GitHub Releases, downloads, verifies, and restarts
 
 ---

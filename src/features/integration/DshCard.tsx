@@ -156,6 +156,18 @@ export function DshCard() {
     }
   };
 
+  // 复制远程地址：Open 只会用系统默认浏览器打开，用户想把地址发到手机/
+  // 换已配好代理规则的浏览器时需要手动复制
+  const copyUrl = async () => {
+    if (!status?.url) return;
+    try {
+      await navigator.clipboard.writeText(status.url);
+      toast(t("Remote URL copied"), "info");
+    } catch (e) {
+      toast(t("Failed to copy: {{error}}", { error: String(e) }), "error");
+    }
+  };
+
   const update = async () => {
     if (busy) return;
     setBusy(true);
@@ -224,6 +236,21 @@ export function DshCard() {
         <div className="mt-1 text-xs opacity-60">
           {t("Remote access to the dsh Web UI over Tailscale HTTPS: https://<hostname>.ts.net → loopback proxy :3898 → dsh web :3899. Timeline nodes show the problem and its solution if a step fails.")}
         </div>
+        {status?.url && !busy && (
+          <div className="mt-1 text-xs opacity-60">
+            {t("URL won't open? Proxy tools (Shadowrocket / Clash / Surge) often hijack *.ts.net traffic — add a DIRECT rule for it on the client device.")}{" "}
+            <a
+              className="underline underline-offset-2 hover:opacity-80"
+              href="https://github.com/sperictao/codex-pro-max/blob/main/docs/dsh-remote-access.md"
+              onClick={(e) => {
+                e.preventDefault();
+                void openUrl("https://github.com/sperictao/codex-pro-max/blob/main/docs/dsh-remote-access.md");
+              }}
+            >
+              {t("Troubleshooting guide")}
+            </a>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -239,6 +266,9 @@ export function DshCard() {
               {status.url}
             </span>
           )}
+          <button className={BTN} disabled={busy || !status?.url} onClick={() => void copyUrl()}>
+            {t("Copy URL")}
+          </button>
           <button className={BTN} disabled={busy || !status?.url} onClick={() => void open()}>
             {t("Open")}
           </button>

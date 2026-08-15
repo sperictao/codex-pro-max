@@ -42,7 +42,7 @@
 1. **拉起服务** — 启动打包在内的 taskboard Node 服务，健康检查通过后标记就绪
 2. **注入面板** — 以独立 CDP 端口拉起 Codex 桌面端，把 Taskboard 面板注入其界面
 3. **看守配置** — 按 schema 托管 `~/.codex/` 参数；锁定后轮询（60s），发现漂移自动改回（写入前备份）
-4. **暴露 dsh 远程访问** — 一键安装并运行 [DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh)，配置 Tailscale HTTPS 链路（`https://<hostname>.ts.net` → 回环反代 :3898 → dsh web :3899）；时间轴逐步展示进度与失败指引
+4. **暴露 dsh 远程访问** — 一键安装并运行 [DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh)，配置 Tailscale HTTPS 链路（`https://<hostname>.ts.net` → 回环反代 :3898 → dsh web :3899）；时间轴逐步展示进度与失败指引。访问地址打不开？多半是代理工具（Shadowrocket / Clash / Surge）拦截了 `*.ts.net` 流量——见 [docs/dsh-remote-access.md](docs/dsh-remote-access.md)
 5. **自我更新** — 检查 GitHub Releases 的 `latest.json`，下载、验签、重启完成升级
 
 ---
