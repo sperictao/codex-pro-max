@@ -80,6 +80,7 @@ fn zh_cn(key: &str) -> Option<&'static str> {
         "Launch failed: {error}" => "启动失败: {error}",
         "Exited immediately after start ({status}){detail}" => "启动后立即退出 ({status}){detail}",
         "Process exited unexpectedly ({status}){detail}" => "进程意外退出 ({status}){detail}",
+        "Codex exited; injector lost CDP port {port}" => "Codex 已退出，注入器失去 CDP 端口 {port}",
         "{name} failed" => "{name} 运行失败",
         "CDP port {port} is not responding and no Codex app path is configured. Select the Codex app in Settings, or start Codex manually with --remote-debugging-port={port}" => "CDP 端口 {port} 无响应，且未配置 Codex 应用路径。请在设置中选择 Codex 应用，或手动以 --remote-debugging-port={port} 启动 Codex",
         "Cannot launch Codex: {error}" => "无法启动 Codex: {error}",
