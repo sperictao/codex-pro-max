@@ -105,7 +105,9 @@ export interface DshStatus {
   nodeAvailable: boolean;
   dshInstalled: boolean;
   dshVersion: string | null;
-  latestVersion: string | null;
+  supportedVersion: string;
+  dshCompatible: boolean;
+  pluginsInstalled: boolean;
   dshRunning: boolean;
   tailscaleInstalled: boolean;
   tailscaleOnline: boolean;
@@ -113,8 +115,6 @@ export interface DshStatus {
   url: string | null;
   magicDnsEnabled: boolean;
   serveConfigured: boolean;
-  proxyRunning: boolean;
-  proxyConfigured: boolean;
   autostartEnabled: boolean;
   error: string | null;
 }

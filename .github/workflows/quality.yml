@@ -52,6 +52,8 @@ jobs:
           workspaces: src-tauri
       - name: Ensure taskboard resource dirs exist
         run: mkdir -p vendor/dashi-taskboard/dist/web
+      - name: Build bundled dsh plugins
+        run: pnpm run build:dsh-plugins
       - name: Clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
       - name: Test

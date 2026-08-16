@@ -25,7 +25,7 @@
 - 💉 **Codex Injector** — launch Codex on a dedicated CDP port and inject the Taskboard panel into its UI (macOS and Windows Store builds)
 - 🔒 **Codex Config Guard** — schema-driven parameter management, locking, and automatic drift recovery for config files under `~/.codex/` (terminology and boundaries in [CONTEXT.md](CONTEXT.md))
 - 🧰 **FastCtx Integration** — one-click install of the [FastCtx](https://github.com/yc-duan/fastctx) MCP runtime and integrate/unapply it into Codex, delegated to the `fastctx` CLI
-- 🌐 **DeepSeek Harness Remote Access** — one-click Tailscale HTTPS access to the dsh Web UI, shown as an 8-step progress timeline with inline problem + fix on failure, plus version pill, one-click update, and boot auto-start
+- 🌐 **DeepSeek Harness Remote Access** — one-click Tailscale HTTPS access to the dsh Web UI through bundled identity-authorization plugins, shown as an 8-step progress timeline with compatibility repair and boot auto-start
 - 🎨 **Themes** — 42 tweakcn theme families with native light / dark / system modes; 28 UI fonts self-hosted in-app, fully offline
 - 🔄 **Self-Update** — built-in Tauri Updater: check, download, restart, done
 
@@ -42,7 +42,7 @@ Grab the installer for your platform from [Releases](https://github.com/spericta
 1. **Start the service** — launches the bundled taskboard Node service and marks it ready once the health check passes
 2. **Inject the panel** — starts Codex on a dedicated CDP port and injects the Taskboard panel into its UI
 3. **Guard the config** — manages `~/.codex/` parameters per schema; while locked, polling (60s) detects drift and restores the configured value, backing up before every write
-4. **Expose dsh remotely** — one click installs/runs [DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh) and wires the Tailscale HTTPS chain (`https://<hostname>.ts.net` → loopback proxy :3898 → dsh web :3899); the setup timeline shows per-step progress and failure guidance. URL won't open on the client device? Proxy tools (Shadowrocket / Clash / Surge) often hijack `*.ts.net` traffic — see [docs/dsh-remote-access.md](docs/dsh-remote-access.md)
+4. **Expose dsh remotely** — one click installs the launcher-pinned dsh version and two bundled authorization plugins, disables the built-in connection, and wires Tailscale Serve directly to loopback-only dsh (`https://<hostname>.ts.net` → `127.0.0.1:3899`). Remote identity is authorized inside dsh; no Host/Origin-rewriting proxy is used. See [docs/dsh-remote-access.md](docs/dsh-remote-access.md)
 5. **Update itself** — checks `latest.json` on GitHub Releases, downloads, verifies, and restarts
 
 ---
@@ -52,14 +52,14 @@ Grab the installer for your platform from [Releases](https://github.com/spericta
 Requirements: Node ≥ 22.5, Rust stable, and the system Tauri dependencies (see [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)).
 
 ```bash
-# submodules required: vendor/dashi-taskboard is a git submodule
+# submodules required: taskboard plus the two dsh authorization plugins
 git clone --recurse-submodules https://github.com/sperictao/codex-pro-max
 cd codex-pro-max
 pnpm install
 pnpm run tauri dev
 ```
 
-No manual taskboard build is needed before `tauri dev`: `beforeDevCommand` ensures the resource directory exists. Before the first full run, it's recommended to run `pnpm run build:taskboard` once (builds the taskboard web UI into `dist/web`), otherwise the injected panel has no static assets.
+`tauri dev` builds the two pinned dsh plugin tarballs automatically. Before the first full run, it is still recommended to run `pnpm run build:taskboard` once (builds the taskboard web UI into `dist/web`), otherwise the injected panel has no static assets.
 
 ---
 
@@ -70,13 +70,15 @@ codex-pro-max/
 ├── src/                    frontend (TS + Vite, single-page UI)
 ├── src-tauri/              Rust backend (commands, config, process hosting, guard, updater)
 ├── vendor/dashi-taskboard  git submodule → sperictao/dashi-taskboard (fork)
+├── vendor/dsh-client-connection-authz  pinned dsh connection replacement submodule
+├── vendor/dsh-auth-tailscale           pinned Tailscale authorizer submodule
 ├── scripts/                release helpers (build-updater, generate-latest-json)
 ├── release-notes/          per-version release notes (required by CI releases)
 ├── CONTEXT.md              domain glossary
 └── docs/                   design.md, adr/, updater/, release/
 ```
 
-The authoritative source of taskboard code is the upstream repo `chuspeeism/dashi-taskboard`; this repo consumes it through a fork submodule. See [adr/0002](docs/adr/0002-taskboard-submodule-packaging.md) for the three-party relationship and change flow.
+The authoritative source of taskboard code is the upstream repo `chuspeeism/dashi-taskboard`; this repo consumes it through a fork submodule. The two dsh plugins are public first-party integration repositories pinned here as submodules and packed into local tarballs during builds. See [adr/0002](docs/adr/0002-taskboard-submodule-packaging.md) for the taskboard relationship and change flow.
 
 ---
 
@@ -96,7 +98,7 @@ Make taskboard-side changes in the fork repo and push them first, then bump the 
 
 ## 🚢 Build & Release
 
-- Local bundle: `pnpm run tauri build` (runs `build:taskboard` first to build the taskboard web UI, then the frontend and Rust)
+- Local bundle: `pnpm run tauri build` (builds taskboard, packs the two dsh plugins, then builds the frontend and Rust)
 - Release: bump the version in `package.json` / `src-tauri/Cargo.toml` / `src-tauri/tauri.conf.json` (plus lock files), add `release-notes/vX.Y.Z.md`, commit, then tag and push:
 
 ```bash
@@ -105,7 +107,7 @@ git tag vX.Y.Z && git push origin main vX.Y.Z
 
 Pushing the tag triggers five CI builds (macOS aarch64 / x86_64 / universal, Windows, Linux), creates the GitHub Release automatically, and generates the updater `latest.json`. Details in [docs/release/GITHUB_RELEASE.md](docs/release/GITHUB_RELEASE.md); updater key setup in [docs/updater/SETUP.md](docs/updater/SETUP.md).
 
-> **Packaging note**: installers only ship the taskboard runtime whitelist (`server/ shared/ scripts/ inject/ dist/web package.json`); web sources, tests, and docs are excluded. If upstream adds a runtime directory, sync it into `resources` in `src-tauri/tauri.conf.json`.
+> **Packaging note**: installers ship the taskboard runtime whitelist plus two generated dsh plugin tarballs. Plugin source trees, tests, and development dependencies are excluded. If a runtime resource changes, keep `src-tauri/tauri.conf.json` in sync.
 
 ---
 
@@ -119,7 +121,7 @@ Pushing the tag triggers five CI builds (macOS aarch64 / x86_64 / universal, Win
 | taskboard integration | git submodule (consuming upstream via a fork) |
 | Config guard | schema-driven; TOML key / Markdown block / whole-file comparison modes |
 | FastCtx integration | delegated to the `fastctx` CLI (one-click npm global install in Settings) |
-| dsh remote access | delegated to the `@deepseek-ai/dsh` npm CLI + Tailscale serve HTTPS + loopback Node proxy |
+| dsh remote access | pinned `@deepseek-ai/dsh` + bundled connection/authorizer plugins + private Tailscale Serve |
 | Self-update | Tauri Updater + GitHub Releases |
 
 ---
@@ -132,6 +134,7 @@ pnpm run tauri build        # production bundle
 pnpm run build              # frontend only (tsc + vite build)
 pnpm test                   # theme parser tests
 pnpm run build:taskboard    # build the bundled taskboard web UI into dist/web
+pnpm run build:dsh-plugins  # pack both pinned dsh plugin submodules into .artifacts/dsh-plugins
 pnpm run build:updater      # generate updater artifacts
 ```
 
@@ -148,6 +151,7 @@ pnpm run build:updater      # generate updater artifacts
 | [docs/adr/0001](docs/adr/0001-codex-config-guard-boundaries.md) | Guard lifecycle and rollback boundaries |
 | [docs/adr/0002](docs/adr/0002-taskboard-submodule-packaging.md) | taskboard submodule integration and packaging whitelist |
 | [docs/adr/0003](docs/adr/0003-fastctx-delegate-to-cli.md) | FastCtx integration delegates to the fastctx CLI |
+| [docs/dsh-remote-access.md](docs/dsh-remote-access.md) | dsh authorization architecture, security boundary, and troubleshooting |
 | [docs/release/GITHUB_RELEASE.md](docs/release/GITHUB_RELEASE.md) | Release pipeline |
 | [docs/updater/SETUP.md](docs/updater/SETUP.md) | Self-update configuration |
 
@@ -157,7 +161,7 @@ pnpm run build:updater      # generate updater artifacts
 
 - [dashi-taskboard](https://github.com/chuspeeism/dashi-taskboard) — the bundled task board, integrated as a git submodule at `vendor/dashi-taskboard` and shipped inside the installer (see [ADR 0002](docs/adr/0002-taskboard-submodule-packaging.md)). Upstream declares no license; bundling follows the upstream → fork (`sperictao/dashi-taskboard`) → PR workflow described in [CONTEXT.md](CONTEXT.md). Launcher-side integration code is our own work; the taskboard itself remains the upstream author's work.
 - [FastCtx](https://github.com/yc-duan/fastctx) — optional integration, licensed under [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0). This launcher does **not** redistribute or embed FastCtx; it invokes a user-installed `fastctx` CLI at runtime. All integration code in this repository is our own work and our sole responsibility; it is not endorsed by the FastCtx authors, who bear no liability for it. FastCtx embeds Pdfium — see FastCtx's `THIRD_PARTY_LICENSES.md` (relevant only when redistributing FastCtx binaries).
-- [DeepSeek Harness (dsh)](https://www.npmjs.com/package/@deepseek-ai/dsh) — optional integration: this launcher does **not** redistribute or embed dsh; it invokes a user-installed `@deepseek-ai/dsh` npm package at runtime (and can install or update it via npm on demand). Integration code in this repository is our own work.
+- [DeepSeek Harness (dsh)](https://www.npmjs.com/package/@deepseek-ai/dsh) — optional integration: this launcher does **not** redistribute dsh itself; it installs the explicitly supported npm version on demand. The installer does redistribute MIT-licensed tarballs built from [dsh-client-connection-authz](https://github.com/sperictao/dsh-client-connection-authz) and [dsh-auth-tailscale](https://github.com/sperictao/dsh-auth-tailscale), pinned as Git submodules. The connection replacement carries its upstream-derived notices in its package.
 - UI fonts — 28 Google Fonts families (latin / latin-ext subsets) self-hosted inside the app, fetched from the tweakcn registry by [scripts/build-themes.mjs](scripts/build-themes.mjs); each family's license (mostly OFL) is on its Google Fonts page.
 
 ---

@@ -1,3 +1,9 @@
 [submodule "vendor/dashi-taskboard"]
 	path = vendor/dashi-taskboard
 	url = https://github.com/sperictao/dashi-taskboard
+[submodule "vendor/dsh-client-connection-authz"]
+	path = vendor/dsh-client-connection-authz
+	url = https://github.com/sperictao/dsh-client-connection-authz.git
+[submodule "vendor/dsh-auth-tailscale"]
+	path = vendor/dsh-auth-tailscale
+	url = https://github.com/sperictao/dsh-auth-tailscale.git

@@ -88,10 +88,11 @@ let guardFiles: AnyRec[] = [
 let fastctx: AnyRec = { installed: true, version: "1.2.3", integrated: false, latestVersion: "1.3.0" };
 
 const dsh: AnyRec = {
-  nodeAvailable: true, dshInstalled: true, dshVersion: "0.9.0", latestVersion: null,
+  nodeAvailable: true, dshInstalled: true, dshVersion: "0.1.0-rc.6",
+  supportedVersion: "0.1.0-rc.6", dshCompatible: true, pluginsInstalled: true,
   dshRunning: false, tailscaleInstalled: true, tailscaleOnline: true,
   hostname: "mbp", url: null, magicDnsEnabled: true,
-  serveConfigured: false, proxyRunning: false, proxyConfigured: true,
+  serveConfigured: false,
   autostartEnabled: false, error: null,
 };
 
@@ -184,10 +185,17 @@ const routes: Record<string, (args: AnyRec) => any> = {
 
   dsh_detect: () => structuredClone(dsh),
   dsh_setup: () => {
-    Object.assign(dsh, { dshRunning: true, serveConfigured: true, proxyRunning: true, url: "https://mbp.ts.net" });
+    Object.assign(dsh, { dshRunning: true, serveConfigured: true, url: "https://mbp.ts.net" });
   },
-  dsh_stop: () => { Object.assign(dsh, { dshRunning: false, proxyRunning: false, url: null }); },
-  dsh_update: () => "0.9.1",
+  dsh_start_web: () => {
+    dsh.dshRunning = true;
+    return "http://127.0.0.1:3899";
+  },
+  dsh_stop: () => { Object.assign(dsh, { dshRunning: false, serveConfigured: false, url: null }); },
+  dsh_update: () => {
+    Object.assign(dsh, { dshVersion: "0.1.0-rc.6", dshCompatible: true, pluginsInstalled: true });
+    return "0.1.0-rc.6";
+  },
   dsh_set_autostart: ({ enabled }) => { dsh.autostartEnabled = enabled; },
 
   get_updater_config_health: () => ({ configured: true, message: "" }),

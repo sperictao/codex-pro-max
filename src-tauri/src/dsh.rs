@@ -1,46 +1,46 @@
 //! DeepSeek Harness (dsh) 远程访问：Tailscale 一键配置。
 //!
-//! 架构参照教程《用 Tailscale 远程访问 DeepSeek Harness (dsh) 完整教程》：
+//! 远程访问架构：
 //! ```text
 //! 远程设备 (Tailscale 内网)
 //!   ▼
 //! https://<hostname>.ts.net   (tailscale serve, HTTPS 443)
 //!   ▼
-//! 127.0.0.1:3898              (loopback 反代: Host→127.0.0.1, 删 Origin)
-//!   ▼
-//! 127.0.0.1:3899              (dsh web)
+//! 127.0.0.1:3899              (dsh web + auth-capable Connection)
 //! ```
 //!
-//! 关键事实（dsh 安全设计，教程实测）：
-//! - dsh 拒绝 `--host 0.0.0.0`，只监听 loopback → 必须走 Tailscale 内网隧道
-//! - 目录选择器在远程下要设 `SSH_CONNECTION` 强制 browse 模式（否则 502）
-//! - 普通 API（listDirectory 等）需 `--trusted-host <hostname>.ts.net`（否则 403）
-//! - 敏感 API（settings/credentials 等）强制 loopback-only，需 loopback 反代
-//!   改写 Host 并删除 Origin（否则 403）
-//! - 反代必须支持 WebSocket upgrade（/api/events.host），否则对话 Load failed
+//! 安全边界：dsh 显式绑定 loopback；Tailscale Serve 注入调用者身份；
+//! `dsh-client-connection-authz` 在 HTTP/WebSocket 入口消费
+//! `dsh-auth-tailscale` 提供的 authorizer。Launcher 不改写 Host/Origin，也不伪造
+//! loopback 身份。远程特权 API 默认保持拒绝。
 //!
 //! 跨平台：安装/检测走 CLI（npm / tailscale / node），
-//! 开机自启走 launchd(macOS) / 启动文件夹 .vbs(Windows) / systemd --user(Linux)。
+//! 插件从应用内置 tarball 安装，开机自启走 launchd(macOS) /
+//! 启动文件夹 .vbs(Windows) / systemd --user(Linux)。
 
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 use crate::config;
 use crate::i18n::{current, tr, trf};
-use crate::version::{is_newer, parse_version};
+use crate::version::parse_version;
 
-/// dsh web 端口（与教程一致）
+/// Launcher 锁定的 dsh/auth 插件兼容栈。
+const SUPPORTED_DSH_VERSION: &str = "0.1.0-rc.6";
+const SUPPORTED_DSH_PACKAGE: &str = "@deepseek-ai/dsh@0.1.0-rc.6";
+const CONNECTION_PLUGIN_PACKAGE: &str = "@dsh-external/dsh-client-connection-authz";
+const AUTH_PLUGIN_PACKAGE: &str = "@dsh-external/dsh-auth-tailscale";
+const CONNECTION_PLUGIN_TARBALL: &str = "dsh-client-connection-authz-873c465f1403.tgz";
+const AUTH_PLUGIN_TARBALL: &str = "dsh-auth-tailscale-ea7ca9fa3db4.tgz";
+const TAILSCALE_LOGIN_ENV: &str = "DSH_TAILSCALE_ALLOWED_LOGINS";
+const LOCAL_ONLY_LOGIN: &str = "local-only@localhost.invalid";
+
+/// dsh web 端口。
 const WEB_PORT: u16 = 3899;
-/// loopback 反代端口（与教程一致）
-const PROXY_PORT: u16 = 3898;
-/// 反代脚本文件名（位于 ~/.dsh/）
-const PROXY_SCRIPT: &str = "loopback-proxy.js";
-/// 强制 browse 目录选择器的环境变量（教程第五步）
-const SSH_CONNECTION_ENV: &str = "127.0.0.1 60000 127.0.0.1 22";
 /// 自启标签前缀（仅 macOS launchd 使用；Windows/Linux 用固定文件名）
 #[cfg(target_os = "macos")]
 const AUTOSTART_PREFIX: &str = "com.codexpromax.dsh";
@@ -53,8 +53,9 @@ pub struct DshStatus {
     pub node_available: bool,
     pub dsh_installed: bool,
     pub dsh_version: Option<String>,
-    /// npm 最新版本号；仅当比已装版本新时返回（UI 更新按钮），否则 None
-    pub latest_version: Option<String>,
+    pub supported_version: String,
+    pub dsh_compatible: bool,
+    pub plugins_installed: bool,
     pub dsh_running: bool,
     pub tailscale_installed: bool,
     pub tailscale_online: bool,
@@ -62,8 +63,6 @@ pub struct DshStatus {
     pub url: Option<String>,
     pub magic_dns_enabled: bool,
     pub serve_configured: bool,
-    pub proxy_running: bool,
-    pub proxy_configured: bool,
     pub autostart_enabled: bool,
     /// 检测过程中的错误信息（无则 None）
     pub error: Option<String>,
@@ -245,21 +244,9 @@ fn port_listening(port: u16) -> bool {
     .is_ok()
 }
 
-/// 轮询等待端口就绪；超时返回最终状态
-fn wait_port(port: u16, timeout: Duration) -> bool {
-    let start = std::time::Instant::now();
-    while start.elapsed() < timeout {
-        if port_listening(port) {
-            return true;
-        }
-        std::thread::sleep(Duration::from_millis(400));
-    }
-    port_listening(port)
-}
-
 /// 后台启动进程并立即返回（孤儿进程继续运行；日志重定向到文件）。
 /// 返回子进程 PID，供启动等待期间探活（进程已死则提前失败，不干等超时）。
-/// 说明：dsh web / 反代是常驻服务，不能随启动器退出而被杀，
+/// 说明：dsh web 是常驻服务，不能随启动器退出而被杀，
 /// 这里不持有 Child 句柄，与 ProcessManager 的随窗停服务语义刻意不同
 fn spawn_detached(program: &str, args: &[&str], envs: &[(&str, &str)], log: &Path) -> Result<u32, String> {
     let dir = log.parent().unwrap_or_else(|| Path::new("."));
@@ -379,30 +366,128 @@ fn dsh_web_pid() -> Option<u32> {
     }
 }
 
-/// 目标进程环境里是否有 SSH_CONNECTION（决定 dsh 目录选择器 browse 模式）。
-/// unix 用 `ps eww -p` 读进程环境；Windows 无 CLI 等价手段，返回 false
-/// 表示「未知」——调用方会走重启路径，同样保证正确参数
-fn proc_has_ssh_env(pid: u32) -> bool {
-    #[cfg(unix)]
-    {
-        match Command::new("ps").args(["eww", "-p", &pid.to_string()]).output() {
-            Ok(o) if o.status.success() => {
-                String::from_utf8_lossy(&o.stdout).contains("SSH_CONNECTION=")
-            }
-            _ => false,
-        }
-    }
-    #[cfg(windows)]
-    {
-        let _ = pid;
-        false
-    }
-}
-
 // ============ 组件定位 ============
 
 fn dsh_dir() -> Result<PathBuf, String> {
     Ok(config::home_dir()?.join(".dsh"))
+}
+
+#[derive(Debug, Clone)]
+struct DshPluginSpecs {
+    connection: String,
+    auth: String,
+}
+
+fn plugin_file_spec(path: &Path) -> String {
+    let normalized = config::strip_unc(&path.to_string_lossy()).replace('\\', "/");
+    format!("file:{}", normalized)
+}
+
+fn bundled_plugin_tarball(app: &tauri::AppHandle, filename: &str) -> Result<PathBuf, String> {
+    let mut candidates = Vec::new();
+    if let Ok(resources) = app.path().resource_dir() {
+        candidates.push(resources.join("dsh-plugins").join(filename));
+        candidates.push(resources.join(filename));
+    }
+    candidates.push(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join(".artifacts")
+            .join("dsh-plugins")
+            .join(filename),
+    );
+    candidates
+        .into_iter()
+        .find(|path| path.is_file())
+        .ok_or_else(|| {
+            trf(
+                "Bundled dsh plugin is missing: {plugin}",
+                &[("plugin", filename.to_string())],
+            )
+        })
+}
+
+fn bundled_plugin_specs(app: &tauri::AppHandle) -> Result<DshPluginSpecs, String> {
+    Ok(DshPluginSpecs {
+        connection: plugin_file_spec(&bundled_plugin_tarball(app, CONNECTION_PLUGIN_TARBALL)?),
+        auth: plugin_file_spec(&bundled_plugin_tarball(app, AUTH_PLUGIN_TARBALL)?),
+    })
+}
+
+fn web_profile_package_path() -> Result<PathBuf, String> {
+    Ok(dsh_dir()?.join("profiles").join("web").join("package.json"))
+}
+
+fn plugin_profile_is_current(contents: &str, connection_spec: &str, auth_spec: &str) -> bool {
+    let Ok(package) = serde_json::from_str::<serde_json::Value>(contents) else {
+        return false;
+    };
+    let dependencies = package
+        .get("dependencies")
+        .and_then(serde_json::Value::as_object);
+    let bundles = package
+        .pointer("/dsh/profile/bundles")
+        .and_then(serde_json::Value::as_array);
+    let has_dependency = |name: &str, spec: &str| {
+        dependencies
+            .and_then(|deps| deps.get(name))
+            .and_then(serde_json::Value::as_str)
+            == Some(spec)
+    };
+    let has_bundle = |name: &str| {
+        bundles.is_some_and(|items| items.iter().any(|item| item.as_str() == Some(name)))
+    };
+    has_dependency(CONNECTION_PLUGIN_PACKAGE, connection_spec)
+        && has_dependency(AUTH_PLUGIN_PACKAGE, auth_spec)
+        && has_bundle(CONNECTION_PLUGIN_PACKAGE)
+        && has_bundle(AUTH_PLUGIN_PACKAGE)
+}
+
+fn auth_plugins_installed(specs: &DshPluginSpecs) -> bool {
+    let Ok(path) = web_profile_package_path() else {
+        return false;
+    };
+    fs::read_to_string(path)
+        .map(|contents| plugin_profile_is_current(&contents, &specs.connection, &specs.auth))
+        .unwrap_or(false)
+}
+
+fn install_auth_plugins(app: &tauri::AppHandle) -> Result<DshPluginSpecs, String> {
+    let specs = bundled_plugin_specs(app)?;
+    if auth_plugins_installed(&specs) {
+        return Ok(specs);
+    }
+    let dsh = resolve_dsh_bin()?;
+    let dsh = dsh.display().to_string();
+    match run_capture(
+        &dsh,
+        &[
+            "plugin",
+            "--profile",
+            "web",
+            "add",
+            &specs.connection,
+            &specs.auth,
+        ],
+    ) {
+        Ok((_, _, true)) if auth_plugins_installed(&specs) => Ok(specs),
+        Ok((_, err, true)) => Err(trf(
+            "dsh plugin install completed but the web profile is incomplete: {error}",
+            &[("error", err)],
+        )),
+        Ok((_, err, false)) => Err(trf(
+            "Failed to install dsh auth plugins: {error}",
+            &[(
+                "error",
+                if err.is_empty() {
+                    "dsh plugin add failed".to_string()
+                } else {
+                    err
+                },
+            )],
+        )),
+        Err(error) => Err(error),
+    }
 }
 
 /// 定位 node 可执行（绝对路径，供自启脚本嵌入）
@@ -438,6 +523,38 @@ fn dsh_version() -> Option<String> {
     }
     let v = normalize_version(&out);
     if v.is_empty() { None } else { Some(v) }
+}
+
+fn dsh_version_is_compatible(version: Option<&str>) -> bool {
+    version == Some(SUPPORTED_DSH_VERSION)
+}
+
+/// 安装 Launcher 验证过的 dsh 版本，并在 npm 成功后再次校验实际 CLI。
+fn install_supported_dsh() -> Result<String, String> {
+    resolve_node_bin()?;
+    match run_capture(&npm_bin(), &["install", "-g", SUPPORTED_DSH_PACKAGE]) {
+        Ok((_, _, true)) => {}
+        Ok((_, err, false)) => {
+            let error = if err.is_empty() {
+                format!("npm install -g {SUPPORTED_DSH_PACKAGE} failed")
+            } else {
+                err
+            };
+            return Err(trf("Install failed: {error}", &[("error", error)]));
+        }
+        Err(error) => return Err(error),
+    }
+    let version = dsh_version().ok_or_else(|| tr("dsh installed but cannot be located in PATH"))?;
+    if !dsh_version_is_compatible(Some(&version)) {
+        return Err(trf(
+            "Installed dsh version {actual}, but this Launcher requires {expected}",
+            &[
+                ("actual", version),
+                ("expected", SUPPORTED_DSH_VERSION.to_string()),
+            ],
+        ));
+    }
+    Ok(SUPPORTED_DSH_VERSION.to_string())
 }
 
 /// 定位 dsh 可执行：先 probe PATH，再经 `npm prefix -g` 推 npm 全局 bin
@@ -538,18 +655,81 @@ fn resolve_host_and_url() -> (Option<String>, Option<String>) {
     (None, None)
 }
 
-/// 解析 serve 是否已指向本地端口
+fn tailscale_login_from_status_json(raw: &str) -> Result<String, String> {
+    let status: serde_json::Value = serde_json::from_str(raw).map_err(|error| {
+        trf(
+            "Cannot parse Tailscale status: {error}",
+            &[("error", error.to_string())],
+        )
+    })?;
+    let user_id = match status.pointer("/Self/UserID") {
+        Some(serde_json::Value::Number(value)) => value.to_string(),
+        Some(serde_json::Value::String(value)) if !value.trim().is_empty() => {
+            value.trim().to_string()
+        }
+        _ => return Err(tr("Tailscale status does not contain the current user ID")),
+    };
+    let login = status
+        .get("User")
+        .and_then(serde_json::Value::as_object)
+        .and_then(|users| users.get(&user_id))
+        .and_then(|user| user.get("LoginName"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| tr("Tailscale status does not contain the current login name"))?;
+    if !login
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric() || "@._+-".contains(character))
+    {
+        return Err(tr("Tailscale login name contains unsupported characters"));
+    }
+    Ok(login.to_string())
+}
+
+fn resolve_tailscale_login(ts: &str) -> Result<String, String> {
+    match run_capture(ts, &["status", "--json"]) {
+        Ok((out, _, true)) => tailscale_login_from_status_json(&out),
+        Ok((_, err, false)) => Err(trf(
+            "Cannot read the current Tailscale identity: {error}",
+            &[(
+                "error",
+                if err.is_empty() {
+                    "tailscale status --json failed".to_string()
+                } else {
+                    err
+                },
+            )],
+        )),
+        Err(error) => Err(error),
+    }
+}
+
+/// 只认可根路由直接指向 dsh web 端口的 Serve 配置。
+fn serve_status_targets_web(status: &str) -> bool {
+    let loopback = format!("http://127.0.0.1:{WEB_PORT}");
+    let localhost = format!("http://localhost:{WEB_PORT}");
+    status.lines().any(|line| {
+        line.contains("proxy")
+            && line.split_whitespace().any(|token| {
+                let target = token.trim_end_matches('/');
+                target == loopback || target == localhost
+            })
+    })
+}
+
+/// 解析 serve 是否已直接指向 dsh web。
 fn serve_configured(ts: &str) -> bool {
     match run_capture(ts, &["serve", "status"]) {
-        Ok((out, _, ok)) => ok && out.contains("proxy") && out.contains(&PROXY_PORT.to_string()),
+        Ok((out, _, ok)) => ok && serve_status_targets_web(&out),
         Err(_) => false,
     }
 }
 
 /// 解析 tailnet 完全限定主机名（--trusted-host 用）：
 /// 设备名 + MagicDNS 后缀，如 etmacminim4.taildde4.ts.net。
-/// 后缀未知时省略：反代链路会把 Host 改写为 127.0.0.1，trusted-host 只是
-/// 冗余保险，硬猜 `.ts.net` 可能是错的（实际后缀常是 taildde4.ts.net 之类）
+/// 后缀未知时省略：硬猜 `.ts.net` 可能是错的（实际后缀常是
+/// taildde4.ts.net 之类）。
 fn resolve_fqdn() -> Option<String> {
     let (host, _) = resolve_host_and_url();
     let host = host?;
@@ -599,9 +779,8 @@ fn http_ok(line: Option<&str>) -> bool {
     }
 }
 
-/// 构造 JSON-RPC POST 请求（本地验证用）。不带 Origin、Host 为 loopback——
-/// 走反代时反代还会再删一次 Origin，dsh 据此判定为本地同源请求，敏感 API
-/// （settings/credentials 等）的 loopback-only fence 才放行
+/// 构造 JSON-RPC POST 请求（本地验证用）。Host 为 loopback、不带 Origin，
+/// 专门验证「本机仍可访问特权 API」这条不变式。
 fn rpc_request(method: &str) -> String {
     let body = format!(
         r#"{{"type":"client-request","rpcId":"t1","method":"{}","payload":{{}}}}"#,
@@ -615,9 +794,8 @@ fn rpc_request(method: &str) -> String {
     )
 }
 
-/// 极简 RPC POST（本地验证用）：POST JSON-RPC 到本地端口，响应含 `"ok":true`
-/// 即通过。经反代（3898）调用 settings.describe 能端到端验证「删 Origin +
-/// 改 Host 为 loopback」这条敏感 API 链路，单查 GET 转发测不到
+/// 极简 RPC POST（本地验证用）：POST JSON-RPC 到本地端口，响应含
+/// `"ok":true` 即通过。
 fn rpc_ok(port: u16, method: &str) -> bool {
     use std::io::{Read, Write};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
@@ -641,110 +819,10 @@ fn rpc_ok(port: u16, method: &str) -> bool {
     String::from_utf8_lossy(&buf).contains("\"ok\":true")
 }
 
-// ============ 反代脚本（教程第六步，含 WebSocket upgrade） ============
-
-const PROXY_JS: &str = r#"// dsh loopback 反代：让远程请求以 loopback 身份进入 dsh
-// 1. PRIVILEGED_METHODS（settings/credentials 等）强制 loopback-only：
-//    改写 Host 为 127.0.0.1、删除 Origin，使 dsh 判定为本地同源请求
-// 2. 支持 WebSocket upgrade（/api/events.host 实时通道），否则对话报 Load failed
-const http = require('http');
-
-const UPSTREAM = { host: '127.0.0.1', port: 3899 };
-const LISTEN_PORT = 3898;
-
-// 构造转发头：改写 Host 为 loopback，删除浏览器标记头
-function makeHeaders(req) {
-  const headers = { ...req.headers };
-  headers.host = '127.0.0.1';      // 改写 Host 为 loopback
-  delete headers.origin;            // 删除 Origin（敏感 API 要求无 Origin）
-  delete headers['sec-fetch-site'];
-  delete headers['sec-fetch-mode'];
-  delete headers['sec-fetch-dest'];
-  delete headers['sec-ch-ua'];
-  delete headers['sec-ch-ua-mobile'];
-  delete headers['sec-ch-ua-platform'];
-  return headers;
-}
-
-const server = http.createServer((req, res) => {
-  const upstreamReq = http.request({
-    host: UPSTREAM.host,
-    port: UPSTREAM.port,
-    path: req.url,
-    method: req.method,
-    headers: makeHeaders(req),
-  }, (upstreamRes) => {
-    res.writeHead(upstreamRes.statusCode, upstreamRes.headers);
-    upstreamRes.pipe(res);
-  });
-  upstreamReq.on('error', (err) => {
-    res.writeHead(502, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'upstream error', message: err.message }));
-  });
-  req.pipe(upstreamReq);
-});
-
-// WebSocket upgrade 转发（/api/events.host 等实时通道）
-server.on('upgrade', (req, socket, head) => {
-  const upstreamReq = http.request({
-    host: UPSTREAM.host,
-    port: UPSTREAM.port,
-    path: req.url,
-    method: req.method,
-    headers: makeHeaders(req),
-  });
-  upstreamReq.on('upgrade', (upstreamRes, upstreamSocket, upstreamHead) => {
-    socket.write(
-      'HTTP/1.1 101 Switching Protocols\r\n' +
-      `Upgrade: ${upstreamRes.headers.upgrade || 'websocket'}\r\n` +
-      `Connection: ${upstreamRes.headers.connection || 'Upgrade'}\r\n` +
-      `Sec-WebSocket-Accept: ${upstreamRes.headers['sec-websocket-accept'] || ''}\r\n\r\n`
-    );
-    if (upstreamHead && upstreamHead.length) socket.write(upstreamHead);
-    upstreamSocket.pipe(socket);
-    socket.pipe(upstreamSocket);
-  });
-  upstreamReq.on('error', (err) => {
-    socket.destroy();
-  });
-  upstreamReq.end(head || undefined);
-});
-
-server.listen(LISTEN_PORT, '127.0.0.1', () => {
-  console.log(`dsh-loopback-proxy listening on 127.0.0.1:${LISTEN_PORT} -> ${UPSTREAM.host}:${UPSTREAM.port} (HTTP + WebSocket)`);
-});
-"#;
-
-/// 确保 ~/.dsh/loopback-proxy.js 存在且与内嵌版本一致。
-/// 内容不一致时覆盖重写（备份为 .bak）：用户可能曾按教程手工创建过
-/// 纯 HTTP 版（无 WebSocket upgrade，教程第七步的坑），或 dsh 升级后
-/// 内嵌脚本已更新——只在缺失时写入会让旧脚本永远生效，反代在跑但
-/// 远程对话 Load failed，用户无从下手排查
-fn ensure_proxy_script() -> Result<PathBuf, String> {
-    let dir = dsh_dir()?;
-    fs::create_dir_all(&dir)
-        .map_err(|e| trf("Failed to create directory: {error}", &[("error", e.to_string())]))?;
-    let path = dir.join(PROXY_SCRIPT);
-    let up_to_date = fs::read_to_string(&path)
-        .map(|existing| existing == PROXY_JS)
-        .unwrap_or(false);
-    if !up_to_date {
-        if path.exists() {
-            let _ = fs::copy(&path, path.with_extension("js.bak"));
-        }
-        fs::write(&path, PROXY_JS)
-            .map_err(|e| trf("Failed to write {path}: {error}", &[
-                ("path", path.display().to_string()),
-                ("error", e.to_string()),
-            ]))?;
-    }
-    Ok(path)
-}
-
 // ============ 检测 ============
 
 #[tauri::command]
-pub async fn dsh_detect() -> Result<DshStatus, String> {
+pub async fn dsh_detect(app: tauri::AppHandle) -> Result<DshStatus, String> {
     let (hostname, url) = resolve_host_and_url();
     let ts = tailscale_path();
     let (magic, _) = match &ts {
@@ -752,21 +830,14 @@ pub async fn dsh_detect() -> Result<DshStatus, String> {
         None => (false, None),
     };
     let version = dsh_version();
-    // 有可执行版时向 npm 查最新版，仅比已装版新才带上；
-    // 查询失败不再静默吞掉，写入 error 字段由 UI 呈现（此前用户无法区分「已最新」与「检测失败」）
-    let (latest_version, version_error) = match &version {
-        Some(cur) => match dsh_latest_version(cur) {
-            Ok(v) => (v, None),
-            Err(e) => (None, Some(e)),
-        },
-        None => (None, None),
+    let dsh_compatible = dsh_version_is_compatible(version.as_deref());
+    let (plugins_installed, plugin_error) = match bundled_plugin_specs(&app) {
+        Ok(specs) => (auth_plugins_installed(&specs), None),
+        Err(error) => (false, Some(error)),
     };
     let dsh_running = port_listening(WEB_PORT);
-    let proxy_running = port_listening(PROXY_PORT);
     let serve_configured = ts.as_deref().map(serve_configured).unwrap_or(false);
-    // 远程 URL 仅在链路完整可用时展示：Stop 后（或任一组件未运行）隐藏胶囊，
-    // 避免 UI 显示一个点了打不开的死链接
-    let url = if dsh_running && proxy_running && serve_configured {
+    let url = if dsh_running && dsh_compatible && plugins_installed && serve_configured {
         url
     } else {
         None
@@ -775,7 +846,9 @@ pub async fn dsh_detect() -> Result<DshStatus, String> {
         node_available: which("node").is_some(),
         dsh_installed: version.is_some(),
         dsh_version: version,
-        latest_version,
+        supported_version: SUPPORTED_DSH_VERSION.to_string(),
+        dsh_compatible,
+        plugins_installed,
         dsh_running,
         tailscale_installed: ts.is_some(),
         tailscale_online: ts.as_deref().map(tailscale_online).unwrap_or(false),
@@ -783,66 +856,9 @@ pub async fn dsh_detect() -> Result<DshStatus, String> {
         url,
         magic_dns_enabled: magic,
         serve_configured,
-        proxy_running,
-        proxy_configured: dsh_dir()
-            .map(|d| d.join(PROXY_SCRIPT).exists())
-            .unwrap_or(false),
         autostart_enabled: autostart_enabled(),
-        error: version_error,
+        error: plugin_error,
     })
-}
-
-/// npm 最新版本查询结果缓存：避免每次检测都打 npm registry 网络请求。
-/// 成功结果缓存 10 分钟；失败结果缓存 60 秒（下次检测可较快重试）
-struct NpmVersionCache {
-    at: std::time::Instant,
-    ttl: Duration,
-    result: Result<Option<String>, String>,
-}
-
-static NPM_VERSION_CACHE: std::sync::OnceLock<std::sync::Mutex<Option<NpmVersionCache>>> =
-    std::sync::OnceLock::new();
-
-const NPM_CACHE_TTL_OK: Duration = Duration::from_secs(600);
-const NPM_CACHE_TTL_ERR: Duration = Duration::from_secs(60);
-
-/// 查 npm 最新 dsh 版本；返回 Ok(Some(v)) 仅当比已装版本新。
-/// 网络/查询失败返回 Err(原因)，由调用方决定如何呈现。
-/// 结果按 TTL 缓存（成功 10 分钟 / 失败 60 秒），不重复打网络
-fn dsh_latest_version(current: &str) -> Result<Option<String>, String> {
-    let cache = NPM_VERSION_CACHE.get_or_init(|| std::sync::Mutex::new(None));
-    if let Ok(guard) = cache.lock() {
-        if let Some(c) = guard.as_ref() {
-            if c.at.elapsed() < c.ttl {
-                return c.result.clone();
-            }
-        }
-    }
-    let result = query_latest_version(current);
-    if let Ok(mut guard) = cache.lock() {
-        let ttl = if result.is_ok() { NPM_CACHE_TTL_OK } else { NPM_CACHE_TTL_ERR };
-        *guard = Some(NpmVersionCache {
-            at: std::time::Instant::now(),
-            ttl,
-            result: result.clone(),
-        });
-    }
-    result
-}
-
-/// 实际执行 npm view（不带缓存）
-fn query_latest_version(current: &str) -> Result<Option<String>, String> {
-    let (out, err, ok) = run_capture(&npm_bin(), &["view", "@deepseek-ai/dsh", "version"])
-        .map_err(|e| trf("npm view failed: {error}", &[("error", e)]))?;
-    if !ok {
-        let e = if err.is_empty() { "npm view @deepseek-ai/dsh version failed".to_string() } else { err };
-        return Err(trf("npm view failed: {error}", &[("error", e)]));
-    }
-    let latest = out.trim().to_string();
-    if latest.is_empty() {
-        return Err(tr("npm returned an empty version for @deepseek-ai/dsh"));
-    }
-    Ok(is_newer(&latest, current).then_some(latest))
 }
 
 // ============ 一键启动（时间轴事件流） ============
@@ -892,40 +908,43 @@ impl StepCtx<'_> {
     }
 }
 
-/// 后台启动 dsh web 进程（--profile web --port 3899，带 --trusted-host 与
-/// SSH_CONNECTION）。不等待端口就绪，返回子进程 PID 供启动等待探活；
+/// 后台启动 dsh web 进程：显式绑定 loopback，并把 Tailscale 登录名交给
+/// 授权插件。不等待端口就绪，返回子进程 PID 供启动等待探活；
 /// 失败返回 (problem, solution) 供时间轴与更新流程分别展示针对性排障提示。
 /// dsh_setup 与 dsh_update 共用
-fn spawn_dsh_web() -> Result<u32, (String, String)> {
+fn spawn_dsh_web(login: &str, fqdn: Option<&str>) -> Result<u32, (String, String)> {
     let dsh_bin = match resolve_dsh_bin() {
         Ok(b) => b,
-        Err(e) => {
-            return Err((
-                e,
-                tr("Install dsh first, then retry"),
-            ))
-        }
+        Err(e) => return Err((e, tr("Install dsh first, then retry"))),
     };
     let mut args: Vec<String> = vec![
         "--profile".into(),
         "web".into(),
+        "--host".into(),
+        "127.0.0.1".into(),
         "--port".into(),
         WEB_PORT.to_string(),
     ];
-    // --trusted-host 放行非敏感 API（目录浏览等）；未知主机名时省略（反代链路不依赖它）
-    if let Some(fqdn) = resolve_fqdn() {
+    if let Some(fqdn) = fqdn.filter(|value| !value.is_empty()) {
         args.push("--trusted-host".into());
-        args.push(fqdn);
+        args.push(fqdn.to_string());
     }
-    let log = dsh_dir().map(|d| d.join("dsh-web.log")).unwrap_or_else(|_| PathBuf::from("dsh-web.log"));
+    let log = dsh_dir()
+        .map(|d| d.join("dsh-web.log"))
+        .unwrap_or_else(|_| PathBuf::from("dsh-web.log"));
     let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     spawn_detached(
         &dsh_bin.display().to_string(),
         &arg_refs,
-        &[("SSH_CONNECTION", SSH_CONNECTION_ENV)],
+        &[(TAILSCALE_LOGIN_ENV, login)],
         &log,
     )
-    .map_err(|e| (e, tr("Port 3899 may be occupied; stop the process using it and retry")))
+    .map_err(|e| {
+        (
+            e,
+            tr("Port 3899 may be occupied; stop the process using it and retry"),
+        )
+    })
 }
 
 /// 读取日志末尾若干非空行（失败诊断用）；文件缺失/为空返回 None
@@ -974,148 +993,121 @@ fn serve_failure_solution(err: &str) -> String {
 #[tauri::command]
 pub async fn dsh_setup(app: tauri::AppHandle) -> Result<(), String> {
     let steps: [&'static str; 8] = [
-        "node", "install", "start", "tailscale", "magicdns", "proxy", "serve", "verify",
+        "node",
+        "install",
+        "plugins",
+        "tailscale",
+        "magicdns",
+        "start",
+        "serve",
+        "verify",
     ];
     let remaining_after = |cur: usize| -> Vec<(&'static str, usize)> {
         steps
             .iter()
             .enumerate()
-            .filter(|(i, _)| *i > cur)
-            .map(|(i, s)| (*s, i))
+            .filter(|(index, _)| *index > cur)
+            .map(|(index, id)| (*id, index))
             .collect()
     };
 
-    // —— 0. node：检测 Node.js 与 npm ——
     {
-        let ctx = StepCtx { app: &app, index: 0, id: steps[0] };
+        let ctx = StepCtx {
+            app: &app,
+            index: 0,
+            id: steps[0],
+        };
         ctx.running(&tr("Checking Node.js & npm…"));
         let node = match resolve_node_bin() {
-            Ok(n) => n,
-            Err(e) => {
-                return ctx.fail(
-                    &e,
-                    &tr("Install Node.js 18+ from https://nodejs.org, then restart this app and retry"),
-                    &remaining_after(0),
-                )
-            }
+            Ok(node) => node,
+            Err(error) => return ctx.fail(
+                &error,
+                &tr("Install Node.js 18+ from https://nodejs.org, then restart this app and retry"),
+                &remaining_after(0),
+            ),
         };
-        let (npm_v, _, npm_ok) = run_capture(&npm_bin(), &["--version"]).unwrap_or_default();
-        let node_v = cli_command(&node, &["--version"])
+        let (npm_version, _, npm_ok) = run_capture(&npm_bin(), &["--version"]).unwrap_or_default();
+        let node_version = cli_command(&node, &["--version"])
             .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
             .unwrap_or_default();
-        let mut detail = format!("Node {}", node_v.trim());
+        let mut detail = format!("Node {}", node_version.trim());
         if npm_ok {
-            detail.push_str(&format!(" · npm {}", npm_v.trim()));
+            detail.push_str(&format!(" · npm {}", npm_version.trim()));
         }
         ctx.done(&detail);
     }
 
-    // —— 1. install：安装 dsh CLI ——
     {
-        let ctx = StepCtx { app: &app, index: 1, id: steps[1] };
-        match dsh_version() {
-            Some(v) => ctx.done(&trf("Already installed: {version}", &[("version", v)])),
-            None => {
-                ctx.running(&tr("Installing dsh via npm install -g @deepseek-ai/dsh…"));
-                match run_capture(&npm_bin(), &["install", "-g", "@deepseek-ai/dsh"]) {
-                    Ok((_, _, true)) => match dsh_version() {
-                        Some(v) => ctx.done(&trf("Installed {version}", &[("version", v)])),
-                        None => {
-                            return ctx.fail(
-                                &tr("dsh installed but cannot be located in PATH"),
-                                &tr("Restart this app so it can pick up the new PATH, or install Node.js and run npm install -g @deepseek-ai/dsh manually"),
-                                &remaining_after(1),
-                            )
-                        }
-                    },
-                    Ok((_, err, _)) => {
-                        let e = if err.is_empty() { "npm install failed".to_string() } else { err };
-                        return ctx.fail(
-                            &trf("Install failed: {error}", &[("error", e)]),
-                            &tr("Check your network/proxy settings, or run npm install -g @deepseek-ai/dsh in a terminal and retry"),
-                            &remaining_after(1),
-                        )
-                    }
-                    Err(e) => {
-                        return ctx.fail(
-                            &e,
-                            &tr("Make sure Node.js is installed and available in PATH, then retry"),
-                            &remaining_after(1),
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    // —— 2. start：启动 dsh web ——
-    {
-        let ctx = StepCtx { app: &app, index: 2, id: steps[2] };
-        if port_listening(WEB_PORT) {
-            // 端口已被监听：只认 dsh web 进程。SSH_CONNECTION 决定目录选择器
-            // browse 模式——用户按教程手动启动的 dsh（缺该变量）远程点选目录
-            // 必现 502；不是 dsh 的进程占用则明确报端口占用，不再假成功
-            match dsh_web_pid() {
-                Some(pid) if proc_has_ssh_env(pid) => {
-                    ctx.done(&tr("Already running on 127.0.0.1:3899"));
-                }
-                Some(_) => {
-                    ctx.running(&tr("Restarting dsh web with remote-access flags…"));
-                    // Windows 无进程环境读取手段（proc_has_ssh_env 恒 false），
-                    // 与「缺 SSH_CONNECTION」同路径：重启保证参数正确
-                    if let Err(problem) = restart_dsh_web() {
-                        return ctx.fail(
-                            &problem,
-                            &tr("Check the log at ~/.dsh/dsh-web.log"),
-                            &remaining_after(2),
-                        );
-                    }
-                    if !port_listening(WEB_PORT) {
-                        return ctx.fail(
-                            &tr("dsh web failed to restart"),
-                            &tr("Check the log at ~/.dsh/dsh-web.log"),
-                            &remaining_after(2),
-                        );
-                    }
-                    ctx.done(&tr("dsh web is running on 127.0.0.1:3899 (restarted with SSH_CONNECTION + --trusted-host)"));
-                }
-                None => {
+        let ctx = StepCtx {
+            app: &app,
+            index: 1,
+            id: steps[1],
+        };
+        let current = dsh_version();
+        if dsh_version_is_compatible(current.as_deref()) {
+            ctx.done(&trf(
+                "Compatible dsh is installed: {version}",
+                &[("version", SUPPORTED_DSH_VERSION.to_string())],
+            ));
+        } else {
+            ctx.running(&trf(
+                "Installing compatible dsh {version}…",
+                &[("version", SUPPORTED_DSH_VERSION.to_string())],
+            ));
+            match install_supported_dsh() {
+                Ok(version) => ctx.done(&trf("Installed {version}", &[("version", version)])),
+                Err(error) => {
                     return ctx.fail(
-                        &tr("Port 3899 is occupied by another process"),
-                        &tr("Stop the process listening on 127.0.0.1:3899, then retry"),
-                        &remaining_after(2),
+                        &error,
+                        &trf(
+                            "Check your network and npm settings, then run npm install -g {package} and retry",
+                            &[("package", SUPPORTED_DSH_PACKAGE.to_string())],
+                        ),
+                        &remaining_after(1),
                     )
                 }
             }
-        } else {
-            ctx.running(&tr("Starting dsh web (127.0.0.1:3899)…"));
-            // 首启可能较慢（首次初始化 / 杀软扫描新装的 dsh 包），等 60s；
-            // 进程已死则 wait_web_start 提前返回，立即带日志报错
-            let pid = match spawn_dsh_web() {
-                Ok(pid) => pid,
-                Err((problem, solution)) => return ctx.fail(&problem, &solution, &remaining_after(2)),
-            };
-            if !wait_web_start(Some(pid), Duration::from_secs(60)) {
-                // 时间轴直接展示真实失败原因（读 dsh-web.log 尾部；进程崩溃时就是堆栈）
-                let log = dsh_dir().map(|d| d.join("dsh-web.log")).unwrap_or_else(|_| PathBuf::from("dsh-web.log"));
-                let (problem, solution) = start_failure_diagnosis(&log);
-                return ctx.fail(&problem, &solution, &remaining_after(2));
-            }
-            ctx.done(&tr("dsh web is running on 127.0.0.1:3899"));
         }
     }
 
-    // —— 3. tailscale：检测 Tailscale 与登录状态 ——
     {
-        let ctx = StepCtx { app: &app, index: 3, id: steps[3] };
-        ctx.running(&tr("Checking Tailscale…"));
+        let ctx = StepCtx {
+            app: &app,
+            index: 2,
+            id: steps[2],
+        };
+        let already_installed = bundled_plugin_specs(&app)
+            .map(|specs| auth_plugins_installed(&specs))
+            .unwrap_or(false);
+        if already_installed {
+            ctx.done(&tr("Authorization plugins are installed"));
+        } else {
+            ctx.running(&tr("Installing bundled dsh authorization plugins…"));
+            if let Err(error) = install_auth_plugins(&app) {
+                return ctx.fail(
+                    &error,
+                    &tr("Reinstall this Launcher if its bundled dsh plugins are missing, then retry"),
+                    &remaining_after(2),
+                );
+            }
+            ctx.done(&tr("Authorization plugins installed"));
+        }
+    }
+
+    let tailscale = {
+        let ctx = StepCtx {
+            app: &app,
+            index: 3,
+            id: steps[3],
+        };
+        ctx.running(&tr("Checking Tailscale identity…"));
         let ts = match tailscale_path() {
-            Some(t) => t,
+            Some(ts) => ts,
             None => {
                 return ctx.fail(
                     &tr("Tailscale is not installed"),
-                    &tr("Install Tailscale and sign in: macOS `brew install --cask tailscale`, Windows `winget install Tailscale.Tailscale`, Linux `curl -fsSL https://tailscale.com/install.sh | sh`, then run `tailscale up`"),
+                    &tr("Install Tailscale and sign in, then run tailscale up and retry"),
                     &remaining_after(3),
                 )
             }
@@ -1123,240 +1115,227 @@ pub async fn dsh_setup(app: tauri::AppHandle) -> Result<(), String> {
         if !tailscale_online(&ts) {
             return ctx.fail(
                 &tr("Tailscale is not connected"),
-                &tr("Run `tailscale up` and sign in with the same Tailscale account you want to access from"),
+                &tr("Run tailscale up and sign in with the account allowed to access dsh"),
                 &remaining_after(3),
             );
         }
-        let (_, url) = resolve_host_and_url();
-        let detail = match &url {
-            Some(u) => trf("Online · {url}", &[("url", u.clone())]),
-            None => tr("Online"),
+        let login = match resolve_tailscale_login(&ts) {
+            Ok(login) => login,
+            Err(error) => {
+                return ctx.fail(
+                    &error,
+                    &tr("Update Tailscale, sign in again, and verify tailscale status --json"),
+                    &remaining_after(3),
+                )
+            }
         };
-        ctx.done(&detail);
-    }
+        ctx.done(&trf(
+            "Online · authorized identity: {login}",
+            &[("login", login.clone())],
+        ));
+        (ts, login)
+    };
 
-    // —— 4. magicdns：MagicDNS（HTTPS 证书依赖） ——
     {
-        let ctx = StepCtx { app: &app, index: 4, id: steps[4] };
-        let Some(ts) = tailscale_path() else {
-            return ctx.fail(
-                &tr("Tailscale is not installed"),
-                &tr("Install Tailscale first, then retry"),
-                &remaining_after(4),
-            );
+        let ctx = StepCtx {
+            app: &app,
+            index: 4,
+            id: steps[4],
         };
         ctx.running(&tr("Checking MagicDNS…"));
-        let (enabled, _) = magic_dns_info(&ts);
+        let (enabled, _) = magic_dns_info(&tailscale.0);
         if !enabled {
             return ctx.fail(
                 &tr("MagicDNS is not enabled"),
-                &tr("Open https://login.tailscale.com/admin/dns and enable MagicDNS (and HTTPS Certificates), then retry"),
+                &tr("Open https://login.tailscale.com/admin/dns and enable MagicDNS and HTTPS Certificates, then retry"),
                 &remaining_after(4),
             );
         }
         ctx.done(&tr("MagicDNS enabled"));
     }
 
-    // —— 5. proxy：启动 loopback 反代 ——
     {
-        let ctx = StepCtx { app: &app, index: 5, id: steps[5] };
-        let proxy_path = match ensure_proxy_script() {
-            Ok(p) => p,
-            Err(e) => return ctx.fail(&e, &tr("Cannot write ~/.dsh/loopback-proxy.js; check disk permissions"), &remaining_after(5)),
+        let ctx = StepCtx {
+            app: &app,
+            index: 5,
+            id: steps[5],
         };
-        let node = match resolve_node_bin() {
-            Ok(n) => n,
-            Err(e) => return ctx.fail(&e, &tr("Install Node.js 18+ first"), &remaining_after(5)),
-        };
-        let log = dsh_dir().map(|d| d.join("loopback-proxy.log")).unwrap_or_else(|_| PathBuf::from("loopback-proxy.log"));
-        // 反代必须转发 WebSocket upgrade（教程第七步）。端口在听但 WS 不通 =
-        // 内存里跑着旧脚本（ensure_proxy_script 刚刷新了磁盘文件但进程没重启）
-        // 或 3898 被无关进程占用——两种情况都必须重启/报错，不能假成功
-        let ws_url = format!("ws://127.0.0.1:{}/api/events.host", PROXY_PORT);
-        let proxy_ws_ok = |node: &str| ws_probe_ok(node, &ws_url);
-        if port_listening(PROXY_PORT) && proxy_ws_ok(&node) {
-            ctx.done(&tr("Loopback proxy is running on 127.0.0.1:3898"));
-        } else {
-            if port_listening(PROXY_PORT) {
-                ctx.running(&tr("Restarting loopback proxy…"));
-                kill_by_pattern(PROXY_SCRIPT);
-                let deadline = std::time::Instant::now() + Duration::from_secs(5);
-                while port_listening(PROXY_PORT) && std::time::Instant::now() < deadline {
-                    std::thread::sleep(Duration::from_millis(300));
-                }
-                // 杀掉反代后端口仍被监听：占用者不是反代进程（无关进程），
-                // 直接报端口占用，不再白等 spawn 超时
-                if port_listening(PROXY_PORT) {
-                    return ctx.fail(
-                        &tr("Port 3898 is occupied by another process"),
-                        &tr("Stop the process listening on 127.0.0.1:3898, then retry"),
-                        &remaining_after(5),
-                    );
-                }
-            } else {
-                ctx.running(&tr("Starting loopback proxy…"));
-            }
-            let proxy_path_str = proxy_path.display().to_string();
-            if let Err(e) = spawn_detached(&node, &[&proxy_path_str], &[], &log) {
-                return ctx.fail(
-                    &e,
-                    &tr("Port 3898 may be occupied; stop the process using it and retry"),
-                    &remaining_after(5),
-                );
-            }
-            if !wait_port(PROXY_PORT, Duration::from_secs(10)) {
-                return ctx.fail(
-                    &tr("Loopback proxy did not start within 10s"),
-                    &trf("Check the log at ~/.dsh/loopback-proxy.log", &[]),
-                    &remaining_after(5),
-                );
-            }
-            if !proxy_ws_ok(&node) {
-                return ctx.fail(
-                    &tr("Loopback proxy is running but does not forward WebSocket upgrades"),
-                    &tr("Check the log at ~/.dsh/loopback-proxy.log; the proxy must forward WebSocket upgrades for remote chat to work"),
-                    &remaining_after(5),
-                );
-            }
-            ctx.done(&tr("Loopback proxy is running on 127.0.0.1:3898"));
+        let fqdn = resolve_fqdn();
+        if port_listening(WEB_PORT) && dsh_web_pid().is_none() {
+            return ctx.fail(
+                &tr("Port 3899 is occupied by another process"),
+                &tr("Stop the process listening on 127.0.0.1:3899, then retry"),
+                &remaining_after(5),
+            );
         }
+        if port_listening(WEB_PORT) {
+            ctx.running(&tr("Restarting dsh web with authorization plugins…"));
+            if let Err(error) = restart_dsh_web(&tailscale.1, fqdn.as_deref()) {
+                return ctx.fail(
+                    &error,
+                    &tr("Check the log at ~/.dsh/dsh-web.log"),
+                    &remaining_after(5),
+                );
+            }
+        } else {
+            ctx.running(&tr("Starting dsh web on 127.0.0.1:3899…"));
+            let pid = match spawn_dsh_web(&tailscale.1, fqdn.as_deref()) {
+                Ok(pid) => pid,
+                Err((problem, solution)) => {
+                    return ctx.fail(&problem, &solution, &remaining_after(5))
+                }
+            };
+            if !wait_web_start(Some(pid), Duration::from_secs(60)) {
+                let log = dsh_dir()
+                    .map(|dir| dir.join("dsh-web.log"))
+                    .unwrap_or_else(|_| PathBuf::from("dsh-web.log"));
+                let (problem, solution) = start_failure_diagnosis(&log);
+                return ctx.fail(&problem, &solution, &remaining_after(5));
+            }
+        }
+        ctx.done(&tr("dsh web is running on 127.0.0.1:3899"));
     }
 
-    // —— 6. serve：配置 Tailscale HTTPS serve ——
     {
-        let ctx = StepCtx { app: &app, index: 6, id: steps[6] };
-        let Some(ts) = tailscale_path() else {
-            return ctx.fail(
-                &tr("Tailscale is not installed"),
-                &tr("Install Tailscale first, then retry"),
-                &remaining_after(6),
-            );
+        let ctx = StepCtx {
+            app: &app,
+            index: 6,
+            id: steps[6],
         };
-        ctx.running(&tr("Configuring tailscale serve…"));
-        // 总是重跑 serve 命令（幂等）：配置存在 ≠ 监听器在跑——tailscaled
-        // 重启/升级后可能只剩配置没有监听，跳过会假成功（Windows 实机踩坑）。
-        // 重复执行只是重新断言同一配置，无副作用
-        let r = run_capture(&ts, &["serve", "--https=443", "--bg", &PROXY_PORT.to_string()]);
-        match r {
-            Ok((_, _, true)) => {
+        ctx.running(&tr("Configuring Tailscale Serve directly to dsh…"));
+        let result = run_capture(
+            &tailscale.0,
+            &["serve", "--https=443", "--bg", &WEB_PORT.to_string()],
+        );
+        match result {
+            Ok((_, _, true)) if serve_configured(&tailscale.0) => {
                 let (_, url) = resolve_host_and_url();
                 match url {
-                    Some(u) => ctx.done(&trf("HTTPS serve ready: {url}", &[("url", u)])),
+                    Some(url) => ctx.done(&trf("HTTPS serve ready: {url}", &[("url", url)])),
                     None => ctx.done(&tr("HTTPS serve ready")),
                 }
             }
             Ok((_, err, _)) => {
-                let e = if err.is_empty() { "tailscale serve failed".to_string() } else { err };
+                let error = if err.is_empty() {
+                    "tailscale serve failed".to_string()
+                } else {
+                    err
+                };
                 return ctx.fail(
-                    &trf("Serve is not enabled or failed: {error}", &[("error", e.clone())]),
-                    &serve_failure_solution(&e),
+                    &trf(
+                        "Serve is not enabled or failed: {error}",
+                        &[("error", error.clone())],
+                    ),
+                    &serve_failure_solution(&error),
                     &remaining_after(6),
-                )
+                );
             }
-            Err(e) => {
+            Err(error) => {
                 return ctx.fail(
-                    &e,
-                    &tr("Run `tailscale up` first to sign in, then retry"),
+                    &error,
+                    &tr("Run tailscale up first to sign in, then retry"),
                     &remaining_after(6),
                 )
             }
         }
     }
 
-    // —— 7. verify：验证远程访问链路 ——
     {
-        let ctx = StepCtx { app: &app, index: 7, id: steps[7] };
+        let ctx = StepCtx {
+            app: &app,
+            index: 7,
+            id: steps[7],
+        };
         let (_, url) = resolve_host_and_url();
-        let url_text = url.clone().unwrap_or_else(|| "https://<hostname>.ts.net".to_string());
-        ctx.running(&trf("Verifying remote access ({url})…", &[("url", url_text.clone())]));
+        let url_text = url
+            .clone()
+            .unwrap_or_else(|| "https://<hostname>.ts.net".to_string());
+        ctx.running(&trf(
+            "Verifying remote access ({url})…",
+            &[("url", url_text.clone())],
+        ));
         let web_ok = http_ok(http_get(WEB_PORT, "127.0.0.1", "/").as_deref());
-        let proxy_ok = http_ok(http_get(PROXY_PORT, "127.0.0.1", "/").as_deref());
-        let serve_ok = tailscale_path()
-            .map(|ts| serve_configured(&ts))
+        let plugins_ok = bundled_plugin_specs(&app)
+            .map(|specs| auth_plugins_installed(&specs))
             .unwrap_or(false);
-        // 真实 HTTPS 链路检查：curl -k 请求本机自己的 tailnet 域名（走 tailscaled
-        // 的 serve 监听器）。只查 serve status 文本会假成功——配置存在但监听器
-        // 没起来（443 被占用/防火墙拦截）时，远程依然不可达（Windows 实机踩坑）
-        let https_ok = url
-            .as_deref()
-            .map(https_endpoint_ok)
-            .unwrap_or(false);
-        // WebSocket 握手检查：/api/events.host 只接受 WS upgrade（无 SSE 兜底），
-        // 反代若缺 server.on('upgrade') 转发，页面能开但对话报 Load failed
-        // （教程第七步的坑）。HTTPS 可达 ≠ WS 可达，必须单独验
-        let ws_ok = url
-            .as_deref()
-            .map(ws_endpoint_ok)
-            .unwrap_or(false);
-        // 敏感 API 检查：经反代 POST settings.describe，端到端验证「删 Origin +
-        // 改 Host 为 loopback」链路（教程第六步的坑）。GET 转发正常 ≠ 该链路正常
-        let settings_ok = rpc_ok(PROXY_PORT, "settings.describe");
-        if web_ok && proxy_ok && serve_ok && https_ok && ws_ok && settings_ok {
-            ctx.done(&trf("Remote access is ready: {url}", &[("url", url_text.clone())]));
+        let serve_ok = serve_configured(&tailscale.0);
+        let https_ok = url.as_deref().map(https_endpoint_ok).unwrap_or(false);
+        let ws_ok = url.as_deref().map(ws_endpoint_ok).unwrap_or(false);
+        let local_privileged_ok = rpc_ok(WEB_PORT, "settings.describe");
+
+        if web_ok && plugins_ok && serve_ok && https_ok && ws_ok && local_privileged_ok {
+            ctx.done(&trf("Remote access is ready: {url}", &[("url", url_text)]));
         } else {
-            let mut checks: Vec<String> = Vec::new();
+            let mut checks = Vec::new();
             if !web_ok {
-                checks.push(tr("dsh web is not responding (curl http://127.0.0.1:3899/)"));
+                checks.push(tr("dsh web is not responding on 127.0.0.1:3899"));
             }
-            if !proxy_ok {
-                checks.push(tr("loopback proxy is not responding (curl http://127.0.0.1:3898/)"));
+            if !plugins_ok {
+                checks.push(tr("The dsh authorization plugin profile is incomplete"));
             }
             if !serve_ok {
-                checks.push(tr("tailscale serve is not configured (tailscale serve status)"));
+                checks.push(tr("Tailscale Serve is not targeting 127.0.0.1:3899"));
             }
             if !https_ok {
-                checks.push(trf("HTTPS endpoint is not responding ({url}); the serve listener may be blocked by a port conflict or firewall", &[("url", url_text.clone())]));
+                checks.push(trf(
+                    "HTTPS endpoint is not responding: {url}",
+                    &[("url", url_text.clone())],
+                ));
             }
             if !ws_ok {
-                checks.push(trf("WebSocket handshake failed ({url}/api/events.host); the loopback proxy may be an outdated version without WebSocket upgrade forwarding — rerun the one-click setup to refresh it", &[("url", url_text.clone())]));
+                checks.push(trf(
+                    "WebSocket handshake failed: {url}/api/events.host",
+                    &[("url", url_text.clone())],
+                ));
             }
-            if !settings_ok {
-                checks.push(tr("Privileged API check failed (POST /api/settings.describe via the loopback proxy); the proxy must strip Origin and rewrite Host to 127.0.0.1"));
+            if !local_privileged_ok {
+                checks.push(tr("Local privileged API access failed on 127.0.0.1:3899"));
             }
-            let sep = if current() == "zh-CN" { "；" } else { "; " };
+            let separator = if current() == "zh-CN" { "；" } else { "; " };
             return ctx.fail(
                 &tr("Verification failed; some components are not ready"),
-                &checks.join(sep),
+                &checks.join(separator),
                 &remaining_after(7),
             );
         }
     }
 
+    if autostart_enabled() {
+        autostart_impl(true)?;
+    }
     Ok(())
 }
-
 // ============ 一键启动 dsh（纯本地链路） ============
 
-/// 一键启动 dsh web 并返回本地访问地址（不碰 Tailscale/反代/serve）。
-/// 幂等：3899 已在监听则直接返回（本地访问不依赖 SSH_CONNECTION/trusted-host，
-/// 无需像 dsh_setup 那样重启校正参数）；未安装 dsh 则先经 npm 自动安装
+/// 一键启动 dsh web 并返回本地访问地址（不碰 Tailscale Serve）。
+/// 这条路径仍安装完整插件栈，但用一个不可能命中的远程登录名启动；
+/// 真实 loopback 请求由 Connection 内置的本机能力直接放行。
 #[tauri::command]
-pub async fn dsh_start_web() -> Result<String, String> {
+pub async fn dsh_start_web(app: tauri::AppHandle) -> Result<String, String> {
+    let mut stack_changed = false;
+    if !dsh_version_is_compatible(dsh_version().as_deref()) {
+        install_supported_dsh()?;
+        stack_changed = true;
+    }
+    let specs = bundled_plugin_specs(&app)?;
+    if !auth_plugins_installed(&specs) {
+        install_auth_plugins(&app)?;
+        stack_changed = true;
+    }
     if port_listening(WEB_PORT) {
-        // 已在跑：本地访问不依赖 SSH_CONNECTION/trusted-host，直接用；
-        // 但占用者必须确实是 dsh web，否则会把浏览器打开到无关服务上
         if dsh_web_pid().is_none() {
             return Err(tr("Port 3899 is occupied by another process"));
         }
+        if stack_changed {
+            restart_dsh_web(LOCAL_ONLY_LOGIN, None)?;
+        }
         return Ok(format!("http://127.0.0.1:{}", WEB_PORT));
     }
-    if dsh_version().is_none() {
-        resolve_node_bin()?;
-        match run_capture(&npm_bin(), &["install", "-g", "@deepseek-ai/dsh"]) {
-            Ok((_, _, true)) => {}
-            Ok((_, err, _)) => {
-                let e = if err.is_empty() { "npm install failed".to_string() } else { err };
-                return Err(trf("Install failed: {error}", &[("error", e)]));
-            }
-            Err(e) => return Err(e),
-        }
-        if dsh_version().is_none() {
-            return Err(tr("dsh installed but cannot be located in PATH"));
-        }
-    }
-    let pid = spawn_dsh_web().map_err(|(problem, _)| problem)?;
+    let pid = spawn_dsh_web(LOCAL_ONLY_LOGIN, None).map_err(|(problem, _)| problem)?;
     if !wait_web_start(Some(pid), Duration::from_secs(60)) {
-        let log = dsh_dir().map(|d| d.join("dsh-web.log")).unwrap_or_else(|_| PathBuf::from("dsh-web.log"));
+        let log = dsh_dir()
+            .map(|d| d.join("dsh-web.log"))
+            .unwrap_or_else(|_| PathBuf::from("dsh-web.log"));
         return Err(start_failure_diagnosis(&log).0);
     }
     Ok(format!("http://127.0.0.1:{}", WEB_PORT))
@@ -1364,45 +1343,48 @@ pub async fn dsh_start_web() -> Result<String, String> {
 
 // ============ 更新 ============
 
-/// 更新 dsh 到 npm 最新版；若 dsh web 正在运行则重启使其生效。返回更新后的版本号
-#[tauri::command]
-pub async fn dsh_update() -> Result<String, String> {
-    let was_running = port_listening(WEB_PORT);
-    match run_capture(&npm_bin(), &["install", "-g", "@deepseek-ai/dsh"]) {
-        Ok((_, _, true)) => {}
-        Ok((_, err, _)) => {
-            let e = if err.is_empty() { "npm install -g @deepseek-ai/dsh failed".to_string() } else { err };
-            return Err(trf("Update failed: {error}", &[("error", e)]));
-        }
-        Err(e) => {
-            return Err(trf("Update failed: {error}", &[("error", e)]));
-        }
+fn runtime_auth_context() -> (String, Option<String>) {
+    let Some(ts) = tailscale_path() else {
+        return (LOCAL_ONLY_LOGIN.to_string(), None);
+    };
+    match resolve_tailscale_login(&ts) {
+        Ok(login) => (login, resolve_fqdn()),
+        Err(_) => (LOCAL_ONLY_LOGIN.to_string(), None),
     }
-    let new_version = dsh_version()
-        .ok_or_else(|| tr("dsh installed but cannot be located in PATH"))?;
-    if was_running {
-        restart_dsh_web()?;
-    }
-    Ok(new_version)
 }
 
-/// 重启 dsh web 使新版本生效：杀掉旧进程 → 等端口释放 →
-/// 自启机制（launchd KeepAlive / systemd Restart / 启动文件夹）若已自动拉起
-/// 新版本则不再重复启动；否则手动启动
-fn restart_dsh_web() -> Result<(), String> {
+/// 修复 Launcher 锁定的 dsh + 授权插件兼容栈；若 web 正在运行则重启。
+#[tauri::command]
+pub async fn dsh_update(app: tauri::AppHandle) -> Result<String, String> {
+    let was_running = port_listening(WEB_PORT);
+    let version = install_supported_dsh()
+        .map_err(|error| trf("Repair failed: {error}", &[("error", error)]))?;
+    install_auth_plugins(&app)
+        .map_err(|error| trf("Repair failed: {error}", &[("error", error)]))?;
+    if was_running {
+        let (login, fqdn) = runtime_auth_context();
+        restart_dsh_web(&login, fqdn.as_deref())?;
+    }
+    Ok(version)
+}
+
+/// 重启 dsh web，确保新 profile 和授权环境生效。
+fn restart_dsh_web(login: &str, fqdn: Option<&str>) -> Result<(), String> {
+    stop_supervised_services();
     kill_by_pattern("profile web --port 3899");
-    // 等旧进程退出、端口释放（最多 5s）
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     while port_listening(WEB_PORT) && std::time::Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(300));
     }
-    // 自启可能已自动拉起；先等 10s，未恢复再手动启动
-    if !wait_port(WEB_PORT, Duration::from_secs(10)) {
-        let pid = spawn_dsh_web().map_err(|(problem, _)| problem)?;
-        if !wait_web_start(Some(pid), Duration::from_secs(60)) {
-            let log = dsh_dir().map(|d| d.join("dsh-web.log")).unwrap_or_else(|_| PathBuf::from("dsh-web.log"));
-            return Err(start_failure_diagnosis(&log).0);
-        }
+    if port_listening(WEB_PORT) {
+        return Err(tr("dsh web did not release port 3899"));
+    }
+    let pid = spawn_dsh_web(login, fqdn).map_err(|(problem, _)| problem)?;
+    if !wait_web_start(Some(pid), Duration::from_secs(60)) {
+        let log = dsh_dir()
+            .map(|d| d.join("dsh-web.log"))
+            .unwrap_or_else(|_| PathBuf::from("dsh-web.log"));
+        return Err(start_failure_diagnosis(&log).0);
     }
     Ok(())
 }
@@ -1445,15 +1427,14 @@ sock.on('error',function(){finish(1);});
 sock.on('close',function(){finish(1);});
 setTimeout(function(){finish(1);},6000).unref();";
 
-/// 用 node 跑 WS 探测脚本。ws:// 走纯 TCP（本地反代直查），wss:// 走 TLS
-/// （完整 HTTPS 链）。node 不可用时跳过（视为通过）——setup 第 0 步已确认 node
+/// 用 node 跑 WS 探测脚本。ws:// 走纯 TCP，wss:// 走 TLS。
+/// node 不可用时跳过（视为通过）——setup 第 0 步已确认 node。
 fn ws_probe_ok(node: &str, ws_url: &str) -> bool {
     matches!(run_capture(node, &["-e", WS_PROBE_JS, ws_url]), Ok((_, _, true)))
 }
 
-/// 真实 WebSocket 链路检查：经完整 HTTPS 链（tailscale serve → 反代 → dsh）
-/// 对 /api/events.host 做 WS upgrade 握手。dsh 前端与 host 的实时通道
-/// 只接受 WS（无 SSE 兜底），反代缺 upgrade 转发时页面能开但对话 Load failed
+/// 真实 WebSocket 链路检查：经 Tailscale Serve 直接到 dsh，对
+/// /api/events.host 做 WS upgrade 握手。
 fn ws_endpoint_ok(url: &str) -> bool {
     let Some(node) = which("node") else { return true };
     let ws_url = format!("{}/api/events.host", url.replacen("https://", "wss://", 1));
@@ -1489,9 +1470,7 @@ fn stop_supervised_services() {
 
 #[tauri::command]
 pub fn dsh_stop() -> Result<(), String> {
-    // 先停自启监管再杀进程：launchd KeepAlive / systemd Restart=on-failure
-    // 会把被 pkill 杀掉的进程判作「非成功退出」立刻拉活（实测：pkill 反代后
-    // 2 秒 launchd 就用新 PID 重新监听 3898），不先停监管 Stop 形同虚设
+    // 先停自启监管再杀进程，避免 KeepAlive/Restart 立即拉活。
     stop_supervised_services();
     // 兜底：未经自启机制、由一键启动直接拉起的游离进程。
     // 注意：Windows 上 dsh web 的进程命令行是
@@ -1499,9 +1478,9 @@ pub fn dsh_stop() -> Result<(), String> {
     // 不以 "dsh --profile" 开头；"profile web --port 3899" 在 macOS 直启、
     // launchd 与 Windows shim 三条路径都能命中，且不以 `-` 开头（pkill 不会误当选项）
     kill_by_pattern("profile web --port 3899");
-    kill_by_pattern(PROXY_SCRIPT);
-    // 一并关闭 HTTPS serve（教程常用命令里的 `tailscale serve --https=443 off`），
-    // 否则远程 URL 会持续指向已停止的反代（502）。best-effort：tailscale 未装/未登录忽略
+    // 迁移清理：旧 Launcher 可能留下运行中的 loopback 反代。
+    kill_by_pattern("loopback-proxy.js");
+    // 一并关闭 HTTPS Serve，避免远程 URL 指向已停止的 dsh。
     if let Some(ts) = tailscale_path() {
         let _ = run_capture(&ts, &["serve", "--https=443", "off"]);
     }
@@ -1523,9 +1502,10 @@ fn port_guard_js(port: u16) -> String {
     )
 }
 
-/// 生成 dsh web 启动脚本（自启用）：带端口守卫 + SSH_CONNECTION + --trusted-host
+/// 生成 dsh web 启动脚本（自启用）：带端口守卫、loopback 绑定、
+/// Tailscale 授权身份与 --trusted-host。
 #[cfg_attr(windows, allow(dead_code))]
-fn render_start_web(node: &str, dsh: &str, host: &str) -> String {
+fn render_start_web(node: &str, dsh: &str, host: &str, login: &str) -> String {
     let trusted = if host.is_empty() {
         String::new()
     } else {
@@ -1539,25 +1519,15 @@ fn render_start_web(node: &str, dsh: &str, host: &str) -> String {
         .map(|p| p.display().to_string())
         .unwrap_or_default();
     format!(
-        "#!/bin/sh\n# generated by Codex Pro Max; do not edit\nif {node} -e {guard}; then exit 0; fi\nexport PATH={node_dir}:$PATH\nexport SSH_CONNECTION={ssh}\nexec {dsh} --profile web --port {port}{trusted}\n",
+        "#!/bin/sh\n# generated by Codex Pro Max; do not edit\nif {node} -e {guard}; then exit 0; fi\nexport PATH={node_dir}:$PATH\nexport {login_env}={login}\nexec {dsh} --profile web --host 127.0.0.1 --port {port}{trusted}\n",
         node = sh_quote(node),
         guard = sh_quote(&port_guard_js(WEB_PORT)),
         node_dir = sh_quote(&node_dir),
-        ssh = sh_quote(SSH_CONNECTION_ENV),
+        login_env = TAILSCALE_LOGIN_ENV,
+        login = sh_quote(login),
         dsh = sh_quote(dsh),
         port = WEB_PORT,
         trusted = trusted,
-    )
-}
-
-/// 生成 loopback 反代启动脚本（自启用）：带端口守卫
-#[cfg_attr(windows, allow(dead_code))]
-fn render_start_proxy(node: &str, proxy: &str) -> String {
-    format!(
-        "#!/bin/sh\n# generated by Codex Pro Max; do not edit\nif {node} -e {guard}; then exit 0; fi\nexec {node} {proxy}\n",
-        node = sh_quote(node),
-        guard = sh_quote(&port_guard_js(PROXY_PORT)),
-        proxy = sh_quote(proxy),
     )
 }
 
@@ -1571,7 +1541,11 @@ fn autostart_enabled() -> bool {
     #[cfg(target_os = "macos")]
     {
         config::home_dir()
-            .map(|h| h.join("Library/LaunchAgents").join(format!("{}.web.plist", AUTOSTART_PREFIX)).exists())
+            .map(|h| {
+                h.join("Library/LaunchAgents")
+                    .join(format!("{}.web.plist", AUTOSTART_PREFIX))
+                    .exists()
+            })
             .unwrap_or(false)
     }
     #[cfg(windows)]
@@ -1586,15 +1560,25 @@ fn autostart_enabled() -> bool {
         // systemd unit 与 XDG autostart .desktop 任一存在即视为已开启
         config::home_dir()
             .map(|h| {
-                h.join(".config/systemd/user").join("dsh-remote-web.service").exists()
-                    || h.join(".config/autostart").join("dsh-remote-web.desktop").exists()
+                h.join(".config/systemd/user")
+                    .join("dsh-remote-web.service")
+                    .exists()
+                    || h.join(".config/autostart")
+                        .join("dsh-remote-web.desktop")
+                        .exists()
             })
             .unwrap_or(false)
     }
 }
 
 #[tauri::command]
-pub fn dsh_set_autostart(enabled: bool) -> Result<(), String> {
+pub fn dsh_set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    if enabled {
+        if !dsh_version_is_compatible(dsh_version().as_deref()) {
+            install_supported_dsh()?;
+        }
+        install_auth_plugins(&app)?;
+    }
     autostart_impl(enabled)
 }
 
@@ -1604,27 +1588,51 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
     let agents_dir = home.join("Library/LaunchAgents");
     let dsh = dsh_dir()?;
     let web_plist = agents_dir.join(format!("{}.web.plist", AUTOSTART_PREFIX));
-    let proxy_plist = agents_dir.join(format!("{}.proxy.plist", AUTOSTART_PREFIX));
+    let legacy_proxy_plist = agents_dir.join(format!("{}.proxy.plist", AUTOSTART_PREFIX));
     let web_script = dsh.join("start-web.sh");
-    let proxy_script = dsh.join("start-proxy.sh");
+    let legacy_proxy_script = dsh.join("start-proxy.sh");
+
+    let unload = |label: &str, plist: &Path| {
+        let _ = Command::new("launchctl")
+            .args(["unload", "-w"])
+            .arg(plist)
+            .output();
+        let _ = Command::new("launchctl").arg("remove").arg(label).output();
+    };
+    unload(&format!("{}.proxy", AUTOSTART_PREFIX), &legacy_proxy_plist);
+    let _ = fs::remove_file(&legacy_proxy_plist);
+    let _ = fs::remove_file(&legacy_proxy_script);
+    kill_by_pattern("loopback-proxy.js");
 
     if enabled {
-        // plist 引用 ~/.dsh/loopback-proxy.js，先确保脚本存在且为最新，
-        // 否则 KeepAlive 会每 10 秒空转重启一个不存在的脚本
-        ensure_proxy_script()?;
         let node = resolve_node_bin()?;
         let dsh_bin = resolve_dsh_bin()?;
+        let ts = tailscale_path().ok_or_else(|| tr("Tailscale is not installed"))?;
+        let login = resolve_tailscale_login(&ts)?;
         let fqdn = resolve_fqdn().unwrap_or_default();
-        fs::create_dir_all(&agents_dir)
-            .map_err(|e| trf("Failed to create directory: {error}", &[("error", e.to_string())]))?;
-        fs::write(&web_script, render_start_web(&node, &dsh_bin.display().to_string(), &fqdn))
-            .map_err(|e| trf("Failed to write {path}: {error}", &[("path", web_script.display().to_string()), ("error", e.to_string())]))?;
-        fs::write(&proxy_script, render_start_proxy(&node, &dsh.join(PROXY_SCRIPT).display().to_string()))
-            .map_err(|e| trf("Failed to write {path}: {error}", &[("path", proxy_script.display().to_string()), ("error", e.to_string())]))?;
+        fs::create_dir_all(&agents_dir).map_err(|error| {
+            trf(
+                "Failed to create directory: {error}",
+                &[("error", error.to_string())],
+            )
+        })?;
+        fs::write(
+            &web_script,
+            render_start_web(&node, &dsh_bin.display().to_string(), &fqdn, &login),
+        )
+        .map_err(|error| {
+            trf(
+                "Failed to write {path}: {error}",
+                &[
+                    ("path", web_script.display().to_string()),
+                    ("error", error.to_string()),
+                ],
+            )
+        })?;
 
-        let plist = |label: &str, script: &Path, log_file: &Path| -> String {
-            format!(
-                r#"<?xml version="1.0" encoding="UTF-8"?>
+        let web_label = format!("{}.web", AUTOSTART_PREFIX);
+        let plist = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -1651,44 +1659,38 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
 </dict>
 </plist>
 "#,
-                label = label,
-                script = xml_escape(&script.display().to_string()),
-                home = xml_escape(&home.display().to_string()),
-                log = xml_escape(&log_file.display().to_string()),
+            label = web_label,
+            script = xml_escape(&web_script.display().to_string()),
+            home = xml_escape(&home.display().to_string()),
+            log = xml_escape(&dsh.join("launchd-web.log").display().to_string()),
+        );
+        fs::write(&web_plist, plist).map_err(|error| {
+            trf(
+                "Failed to write {path}: {error}",
+                &[
+                    ("path", web_plist.display().to_string()),
+                    ("error", error.to_string()),
+                ],
             )
-        };
-        fs::write(&web_plist, plist(&format!("{}.web", AUTOSTART_PREFIX), &web_script, &dsh.join("launchd-web.log")))
-            .map_err(|e| trf("Failed to write {path}: {error}", &[("path", web_plist.display().to_string()), ("error", e.to_string())]))?;
-        fs::write(&proxy_plist, plist(&format!("{}.proxy", AUTOSTART_PREFIX), &proxy_script, &dsh.join("launchd-proxy.log")))
-            .map_err(|e| trf("Failed to write {path}: {error}", &[("path", proxy_plist.display().to_string()), ("error", e.to_string())]))?;
-
-        let load = |plist: &Path| {
-            Command::new("launchctl")
-                .args(["load", "-w"])
-                .arg(plist)
-                .output()
-        };
-        if let Err(e) = load(&web_plist) {
-            return Err(trf("Cannot register launchd agent: {error}", &[("error", e.to_string())]));
-        }
-        if let Err(e) = load(&proxy_plist) {
-            return Err(trf("Cannot register launchd agent: {error}", &[("error", e.to_string())]));
-        }
-    } else {
-        let unload = |label: &str, plist: &Path| {
-            // 先 unload（忽略不存在错误），再删文件
-            let _ = Command::new("launchctl").args(["unload", "-w"]).arg(plist).output();
-            let _ = fs::remove_file(plist);
-            let _ = Command::new("launchctl").arg("remove").arg(label).output();
-        };
+        })?;
         unload(&format!("{}.web", AUTOSTART_PREFIX), &web_plist);
-        unload(&format!("{}.proxy", AUTOSTART_PREFIX), &proxy_plist);
+        Command::new("launchctl")
+            .args(["load", "-w"])
+            .arg(&web_plist)
+            .output()
+            .map_err(|error| {
+                trf(
+                    "Cannot register launchd agent: {error}",
+                    &[("error", error.to_string())],
+                )
+            })?;
+    } else {
+        unload(&format!("{}.web", AUTOSTART_PREFIX), &web_plist);
+        let _ = fs::remove_file(&web_plist);
         let _ = fs::remove_file(&web_script);
-        let _ = fs::remove_file(&proxy_script);
     }
     Ok(())
 }
-
 #[cfg(target_os = "windows")]
 fn windows_startup_dir() -> Option<PathBuf> {
     let appdata = std::env::var("APPDATA").ok()?;
@@ -1705,142 +1707,202 @@ fn windows_startup_dir() -> Option<PathBuf> {
 #[cfg(target_os = "windows")]
 fn autostart_impl(enabled: bool) -> Result<(), String> {
     let dsh = dsh_dir()?;
-    fs::create_dir_all(&dsh)
-        .map_err(|e| trf("Failed to create directory: {error}", &[("error", e.to_string())]))?;
+    fs::create_dir_all(&dsh).map_err(|error| {
+        trf(
+            "Failed to create directory: {error}",
+            &[("error", error.to_string())],
+        )
+    })?;
     let web_cmd = dsh.join("start-web.cmd");
-    let proxy_cmd = dsh.join("start-proxy.cmd");
-    // 启动文件夹：登录时静默运行 .vbs（WScript 以 0 窗口模式拉起两个 .cmd）。
-    // 不用 schtasks——其 /TR 引号规则极易踩坑且需要交互权限；启动文件夹
-    // 是纯文件操作、无管理员要求，配合 .cmd 内的端口守卫天然幂等
+    let legacy_proxy_cmd = dsh.join("start-proxy.cmd");
     let startup = windows_startup_dir()
         .ok_or_else(|| tr("Cannot locate the Windows Startup folder (APPDATA is missing)"))?;
     let vbs = startup.join("dsh-remote-autostart.vbs");
 
+    let _ = fs::remove_file(&legacy_proxy_cmd);
+    kill_by_pattern("loopback-proxy.js");
+
     if enabled {
-        // .cmd 引用 ~/.dsh/loopback-proxy.js，先确保脚本存在且为最新
-        ensure_proxy_script()?;
         let node = resolve_node_bin()?;
         let dsh_bin = resolve_dsh_bin()?;
+        let ts = tailscale_path().ok_or_else(|| tr("Tailscale is not installed"))?;
+        let login = resolve_tailscale_login(&ts)?;
         let fqdn = resolve_fqdn().unwrap_or_default();
-        let trusted = if fqdn.is_empty() { String::new() } else { format!(" --trusted-host {}", fqdn) };
-        // dsh.cmd 内部会回退到裸 `node`（依赖 PATH）：登录会话 PATH 未必含
-        // node 目录，与 sh 脚本同理把 node 所在目录补进 PATH
-        let node_dir = Path::new(&node).parent().map(|p| p.display().to_string()).unwrap_or_default();
-        // dsh 路径可能含空格（自定义 npm prefix）——cmd 对以引号开头的命令行
-        // 会剥掉首尾引号导致路径拆碎，call 前缀是 .cmd 内调用的标准解法
+        let trusted = if fqdn.is_empty() {
+            String::new()
+        } else {
+            format!(" --trusted-host {}", fqdn)
+        };
+        let node_dir = Path::new(&node)
+            .parent()
+            .map(|path| path.display().to_string())
+            .unwrap_or_default();
         let web = format!(
-            "@echo off\r\nrem generated by Codex Pro Max; do not edit\r\nset \"PATH={node_dir};%PATH%\"\r\n\"{node}\" -e \"{guard}\" >nul 2>&1\r\nif %errorlevel%==0 exit /b 0\r\nset SSH_CONNECTION={ssh}\r\ncall \"{dsh}\" --profile web --port {port}{trusted}\r\n",
-            node_dir = node_dir, node = node, guard = port_guard_js(WEB_PORT), ssh = SSH_CONNECTION_ENV,
-            dsh = dsh_bin.display().to_string(), port = WEB_PORT, trusted = trusted,
+            "@echo off\r\nrem generated by Codex Pro Max; do not edit\r\nset \"PATH={node_dir};%PATH%\"\r\n\"{node}\" -e \"{guard}\" >nul 2>&1\r\nif %errorlevel%==0 exit /b 0\r\nset \"{login_env}={login}\"\r\ncall \"{dsh}\" --profile web --host 127.0.0.1 --port {port}{trusted}\r\n",
+            node_dir = node_dir,
+            node = node,
+            guard = port_guard_js(WEB_PORT),
+            login_env = TAILSCALE_LOGIN_ENV,
+            login = login,
+            dsh = dsh_bin.display(),
+            port = WEB_PORT,
+            trusted = trusted,
         );
-        let proxy = format!(
-            "@echo off\r\nrem generated by Codex Pro Max; do not edit\r\n\"{node}\" -e \"{guard}\" >nul 2>&1\r\nif %errorlevel%==0 exit /b 0\r\n\"{node}\" \"{proxy}\"\r\n",
-            node = node, guard = port_guard_js(PROXY_PORT), proxy = dsh.join(PROXY_SCRIPT).display().to_string(),
-        );
-        fs::write(&web_cmd, web).map_err(|e| trf("Failed to write {path}: {error}", &[("path", web_cmd.display().to_string()), ("error", e.to_string())]))?;
-        fs::write(&proxy_cmd, proxy).map_err(|e| trf("Failed to write {path}: {error}", &[("path", proxy_cmd.display().to_string()), ("error", e.to_string())]))?;
-
-        // .vbs：WScript.Shell.Run 的第二个参数 0 = 隐藏窗口，第三个 False = 不等待
+        fs::write(&web_cmd, web).map_err(|error| {
+            trf(
+                "Failed to write {path}: {error}",
+                &[
+                    ("path", web_cmd.display().to_string()),
+                    ("error", error.to_string()),
+                ],
+            )
+        })?;
         let vbs_body = format!(
-            "' generated by Codex Pro Max; do not edit\r\nSet sh = CreateObject(\"WScript.Shell\")\r\nsh.Run \"\"\"{web}\"\"\", 0, False\r\nsh.Run \"\"\"{proxy}\"\"\", 0, False\r\n",
-            web = web_cmd.display().to_string(),
-            proxy = proxy_cmd.display().to_string(),
+            "' generated by Codex Pro Max; do not edit\r\nSet sh = CreateObject(\"WScript.Shell\")\r\nsh.Run \"\"\"{web}\"\"\", 0, False\r\n",
+            web = web_cmd.display(),
         );
-        fs::create_dir_all(&startup)
-            .map_err(|e| trf("Failed to create directory: {error}", &[("error", e.to_string())]))?;
-        fs::write(&vbs, vbs_body).map_err(|e| trf("Failed to write {path}: {error}", &[("path", vbs.display().to_string()), ("error", e.to_string())]))?;
+        fs::create_dir_all(&startup).map_err(|error| {
+            trf(
+                "Failed to create directory: {error}",
+                &[("error", error.to_string())],
+            )
+        })?;
+        fs::write(&vbs, vbs_body).map_err(|error| {
+            trf(
+                "Failed to write {path}: {error}",
+                &[
+                    ("path", vbs.display().to_string()),
+                    ("error", error.to_string()),
+                ],
+            )
+        })?;
     } else {
         let _ = fs::remove_file(&vbs);
         let _ = fs::remove_file(&web_cmd);
-        let _ = fs::remove_file(&proxy_cmd);
     }
     Ok(())
 }
-
 #[cfg(target_os = "linux")]
 fn autostart_impl(enabled: bool) -> Result<(), String> {
     let home = config::home_dir()?;
     let units_dir = home.join(".config/systemd/user");
-    let dsh = dsh_dir()?;
-    // 与 macOS 共用同一份自守卫启动脚本（端口占用即 exit 0，不双开）
-    let web_script = dsh.join("start-web.sh");
-    let proxy_script = dsh.join("start-proxy.sh");
-    let web_unit = units_dir.join("dsh-remote-web.service");
-    let proxy_unit = units_dir.join("dsh-remote-proxy.service");
-    // XDG autostart 兜底（非 systemd 发行版：Alpine/OpenRC、Void/runit、Devuan 等）
     let autostart_dir = home.join(".config/autostart");
+    let dsh = dsh_dir()?;
+    let web_script = dsh.join("start-web.sh");
+    let legacy_proxy_script = dsh.join("start-proxy.sh");
+    let web_unit = units_dir.join("dsh-remote-web.service");
+    let legacy_proxy_unit = units_dir.join("dsh-remote-proxy.service");
     let web_desktop = autostart_dir.join("dsh-remote-web.desktop");
-    let proxy_desktop = autostart_dir.join("dsh-remote-proxy.desktop");
+    let legacy_proxy_desktop = autostart_dir.join("dsh-remote-proxy.desktop");
+
+    let _ = Command::new("systemctl")
+        .args(["--user", "disable", "--now", "dsh-remote-proxy.service"])
+        .output();
+    let _ = fs::remove_file(&legacy_proxy_unit);
+    let _ = fs::remove_file(&legacy_proxy_desktop);
+    let _ = fs::remove_file(&legacy_proxy_script);
+    kill_by_pattern("loopback-proxy.js");
 
     if enabled {
-        // unit/.desktop 引用 ~/.dsh/loopback-proxy.js，先确保脚本存在且为最新
-        ensure_proxy_script()?;
         let node = resolve_node_bin()?;
         let dsh_bin = resolve_dsh_bin()?;
+        let ts = tailscale_path().ok_or_else(|| tr("Tailscale is not installed"))?;
+        let login = resolve_tailscale_login(&ts)?;
         let fqdn = resolve_fqdn().unwrap_or_default();
-        fs::create_dir_all(&units_dir)
-            .map_err(|e| trf("Failed to create directory: {error}", &[("error", e.to_string())]))?;
-        fs::write(&web_script, render_start_web(&node, &dsh_bin.display().to_string(), &fqdn))
-            .map_err(|e| trf("Failed to write {path}: {error}", &[("path", web_script.display().to_string()), ("error", e.to_string())]))?;
-        fs::write(&proxy_script, render_start_proxy(&node, &dsh.join(PROXY_SCRIPT).display().to_string()))
-            .map_err(|e| trf("Failed to write {path}: {error}", &[("path", proxy_script.display().to_string()), ("error", e.to_string())]))?;
+        fs::write(
+            &web_script,
+            render_start_web(&node, &dsh_bin.display().to_string(), &fqdn, &login),
+        )
+        .map_err(|error| {
+            trf(
+                "Failed to write {path}: {error}",
+                &[
+                    ("path", web_script.display().to_string()),
+                    ("error", error.to_string()),
+                ],
+            )
+        })?;
 
         if systemd_user_available() {
-            // systemd --user：脚本自带端口守卫，unit 不需要 ExecStartPre/Environment
-            // （嵌套引号在 systemd 解析规则下会被破坏）
-            let unit = |desc: &str, script: &Path| -> String {
-                format!(
-                    "[Unit]\nDescription={desc}\nAfter=network.target\n\n[Service]\nType=simple\nExecStart=/bin/sh {script}\nRestart=on-failure\n\n[Install]\nWantedBy=default.target\n",
-                    desc = desc,
-                    script = sh_quote(&script.display().to_string()),
+            fs::create_dir_all(&units_dir).map_err(|error| {
+                trf(
+                    "Failed to create directory: {error}",
+                    &[("error", error.to_string())],
                 )
-            };
-            fs::write(&web_unit, unit("DeepSeek Harness web (remote access)", &web_script))
-                .map_err(|e| trf("Failed to write {path}: {error}", &[("path", web_unit.display().to_string()), ("error", e.to_string())]))?;
-            fs::write(&proxy_unit, unit("DeepSeek Harness loopback proxy (remote access)", &proxy_script))
-                .map_err(|e| trf("Failed to write {path}: {error}", &[("path", proxy_unit.display().to_string()), ("error", e.to_string())]))?;
-
-            let sysctl = |args: &[&str]| {
-                Command::new("systemctl").args(["--user"]).args(args).output()
-            };
-            let _ = sysctl(&["daemon-reload"]);
-            if let Err(e) = sysctl(&["enable", "dsh-remote-web.service"]) {
-                return Err(trf("Cannot enable systemd unit: {error}", &[("error", e.to_string())]));
+            })?;
+            let unit = format!(
+                "[Unit]\nDescription=DeepSeek Harness web (Tailscale authorization)\nAfter=network.target\n\n[Service]\nType=simple\nExecStart=/bin/sh {script}\nRestart=on-failure\n\n[Install]\nWantedBy=default.target\n",
+                script = sh_quote(&web_script.display().to_string()),
+            );
+            fs::write(&web_unit, unit).map_err(|error| {
+                trf(
+                    "Failed to write {path}: {error}",
+                    &[
+                        ("path", web_unit.display().to_string()),
+                        ("error", error.to_string()),
+                    ],
+                )
+            })?;
+            let _ = Command::new("systemctl")
+                .args(["--user", "daemon-reload"])
+                .output();
+            let output = Command::new("systemctl")
+                .args(["--user", "enable", "dsh-remote-web.service"])
+                .output()
+                .map_err(|error| {
+                    trf(
+                        "Cannot enable systemd unit: {error}",
+                        &[("error", error.to_string())],
+                    )
+                })?;
+            if !output.status.success() {
+                return Err(trf(
+                    "Cannot enable systemd unit: {error}",
+                    &[(
+                        "error",
+                        String::from_utf8_lossy(&output.stderr).trim().to_string(),
+                    )],
+                ));
             }
-            if let Err(e) = sysctl(&["enable", "dsh-remote-proxy.service"]) {
-                return Err(trf("Cannot enable systemd unit: {error}", &[("error", e.to_string())]));
-            }
-            // 清理可能残留的 XDG 兜底文件，避免双机制同时生效
             let _ = fs::remove_file(&web_desktop);
-            let _ = fs::remove_file(&proxy_desktop);
         } else {
-            // XDG autostart：桌面环境登录时按 spec 执行（GLib 解析 Exec 的引号）
-            fs::create_dir_all(&autostart_dir)
-                .map_err(|e| trf("Failed to create directory: {error}", &[("error", e.to_string())]))?;
-            fs::write(&web_desktop, render_desktop_entry("DeepSeek Harness web (remote access)", &web_script))
-                .map_err(|e| trf("Failed to write {path}: {error}", &[("path", web_desktop.display().to_string()), ("error", e.to_string())]))?;
-            fs::write(&proxy_desktop, render_desktop_entry("DeepSeek Harness loopback proxy (remote access)", &proxy_script))
-                .map_err(|e| trf("Failed to write {path}: {error}", &[("path", proxy_desktop.display().to_string()), ("error", e.to_string())]))?;
-            // 清理残留的 systemd unit 文件
+            fs::create_dir_all(&autostart_dir).map_err(|error| {
+                trf(
+                    "Failed to create directory: {error}",
+                    &[("error", error.to_string())],
+                )
+            })?;
+            fs::write(
+                &web_desktop,
+                render_desktop_entry(
+                    "DeepSeek Harness web (Tailscale authorization)",
+                    &web_script,
+                ),
+            )
+            .map_err(|error| {
+                trf(
+                    "Failed to write {path}: {error}",
+                    &[
+                        ("path", web_desktop.display().to_string()),
+                        ("error", error.to_string()),
+                    ],
+                )
+            })?;
             let _ = fs::remove_file(&web_unit);
-            let _ = fs::remove_file(&proxy_unit);
         }
     } else {
         let _ = Command::new("systemctl")
-            .args(["--user", "disable", "dsh-remote-web.service", "dsh-remote-proxy.service"])
+            .args(["--user", "disable", "dsh-remote-web.service"])
             .output();
-        let _ = Command::new("systemctl").args(["--user", "daemon-reload"]).output();
+        let _ = Command::new("systemctl")
+            .args(["--user", "daemon-reload"])
+            .output();
         let _ = fs::remove_file(&web_unit);
-        let _ = fs::remove_file(&proxy_unit);
         let _ = fs::remove_file(&web_desktop);
-        let _ = fs::remove_file(&proxy_desktop);
         let _ = fs::remove_file(&web_script);
-        let _ = fs::remove_file(&proxy_script);
     }
     Ok(())
 }
-
-/// systemd --user 会话是否可用（非 systemd 发行版返回 false）
 #[cfg(target_os = "linux")]
 fn systemd_user_available() -> bool {
     match Command::new("systemctl")
@@ -1871,16 +1933,12 @@ fn render_desktop_entry(name: &str, script: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        normalize_version, port_guard_js, render_desktop_entry, render_start_proxy, render_start_web,
-        rpc_request, serve_failure_solution, sh_quote, win_cmd_line, win_quote,
+        normalize_version, plugin_profile_is_current, port_guard_js, render_desktop_entry,
+        render_start_web, rpc_request, serve_failure_solution, serve_status_targets_web, sh_quote,
+        tailscale_login_from_status_json, win_cmd_line, win_quote,
     };
     use crate::i18n::set_current;
-    #[cfg(unix)]
-    use super::{ensure_proxy_script, PROXY_JS};
     use std::path::Path;
-    /// 并行测试会共享进程级 HOME，串行化 HOME 重定向类测试
-    #[cfg(unix)]
-    static HOME_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn sh_quote_handles_spaces_and_quotes() {
@@ -1891,17 +1949,107 @@ mod tests {
 
     #[test]
     fn start_scripts_embed_guard_and_exec() {
-        let web = render_start_web("/usr/local/bin/node", "/home/u/.npm-global/bin/dsh", "etmacmini.ts.net");
+        let web = render_start_web(
+            "/usr/local/bin/node",
+            "/home/u/.npm-global/bin/dsh",
+            "etmacmini.ts.net",
+            "owner@example.com",
+        );
         assert!(web.contains("net.connect(3899"));
-        assert!(web.contains("SSH_CONNECTION"));
+        assert!(web.contains("export DSH_TAILSCALE_ALLOWED_LOGINS='owner@example.com'"));
         assert!(web.contains("--trusted-host 'etmacmini.ts.net'"));
-        assert!(web.contains("exec '/home/u/.npm-global/bin/dsh' --profile web --port 3899"));
+        assert!(web.contains(
+            "exec '/home/u/.npm-global/bin/dsh' --profile web --host 127.0.0.1 --port 3899"
+        ));
         // npm shim 的 #!/usr/bin/env node 依赖 PATH：launchd/systemd 裸 PATH
         // 下必须显式补 node 所在目录，否则开机自启以 127 秒退
         assert!(web.contains("export PATH='/usr/local/bin':$PATH"));
-        let proxy = render_start_proxy("/usr/local/bin/node", "/home/u/.dsh/loopback-proxy.js");
-        assert!(proxy.contains("net.connect(3898"));
-        assert!(proxy.contains("exec '/usr/local/bin/node' '/home/u/.dsh/loopback-proxy.js'"));
+        assert!(!web.contains("SSH_CONNECTION"));
+        assert!(!web.contains("3898"));
+    }
+
+    #[test]
+    fn auth_plugin_profile_requires_pinned_specs_and_bundle_entries() {
+        let current = r#"{
+          "dependencies": {
+            "@dsh-external/dsh-client-connection-authz": "file:/opt/dsh-plugins/connection.tgz",
+            "@dsh-external/dsh-auth-tailscale": "file:/opt/dsh-plugins/tailscale.tgz"
+          },
+          "dsh": { "profile": { "bundles": [
+            "@deepseek-ai/dsh-base",
+            "@deepseek-ai/dsh-web-app",
+            "@dsh-external/dsh-auth-tailscale",
+            "@dsh-external/dsh-client-connection-authz"
+          ] } }
+        }"#;
+        assert!(plugin_profile_is_current(
+            current,
+            "file:/opt/dsh-plugins/connection.tgz",
+            "file:/opt/dsh-plugins/tailscale.tgz",
+        ));
+
+        let stale = current.replace("connection.tgz", "connection-old.tgz");
+        assert!(!plugin_profile_is_current(
+            &stale,
+            "file:/opt/dsh-plugins/connection.tgz",
+            "file:/opt/dsh-plugins/tailscale.tgz",
+        ));
+        let missing_bundle = current.replace(
+            ",\n            \"@dsh-external/dsh-client-connection-authz\"",
+            "",
+        );
+        assert!(!plugin_profile_is_current(
+            &missing_bundle,
+            "file:/opt/dsh-plugins/connection.tgz",
+            "file:/opt/dsh-plugins/tailscale.tgz",
+        ));
+    }
+
+    #[test]
+    fn tailscale_login_maps_self_user_id_exactly() {
+        let status = r#"{
+          "Self": { "UserID": 42 },
+          "User": {
+            "7": { "LoginName": "other@example.com" },
+            "42": { "LoginName": "owner@example.com" }
+          }
+        }"#;
+        assert_eq!(
+            tailscale_login_from_status_json(status).unwrap(),
+            "owner@example.com"
+        );
+
+        let malformed = r#"{"Self":{"UserID":42},"User":{"42":{"LoginName":"bad,login"}}}"#;
+        assert!(tailscale_login_from_status_json(malformed).is_err());
+        let cmd_expansion =
+            r#"{"Self":{"UserID":42},"User":{"42":{"LoginName":"bad%PATH%@example.com"}}}"#;
+        assert!(tailscale_login_from_status_json(cmd_expansion).is_err());
+        assert!(tailscale_login_from_status_json("{}").is_err());
+    }
+
+    #[test]
+    fn serve_status_matches_only_the_dsh_web_target() {
+        let ready = "https://node.example.ts.net (tailnet only)\n|-- / proxy http://127.0.0.1:3899";
+        assert!(serve_status_targets_web(ready));
+        assert!(!serve_status_targets_web(
+            "https://node.example.ts.net\n|-- / proxy http://127.0.0.1:13899",
+        ));
+        assert!(!serve_status_targets_web("No serve config"));
+    }
+
+    #[test]
+    fn auth_start_script_binds_loopback_and_exports_allowlist() {
+        let web = render_start_web(
+            "/usr/local/bin/node",
+            "/home/u/.npm-global/bin/dsh",
+            "node.tailnet.ts.net",
+            "owner@example.com",
+        );
+        assert!(web.contains("export DSH_TAILSCALE_ALLOWED_LOGINS='owner@example.com'"));
+        assert!(web.contains("--host 127.0.0.1 --port 3899"));
+        assert!(web.contains("--trusted-host 'node.tailnet.ts.net'"));
+        assert!(!web.contains("SSH_CONNECTION"));
+        assert!(!web.contains("3898"));
     }
 
     #[test]
@@ -1917,7 +2065,10 @@ mod tests {
             "[Desktop Entry]\nType=Application\nName=DeepSeek Harness web (remote access)\nComment=DeepSeek Harness remote access via Tailscale\nExec=/bin/sh '/home/u/.dsh/start-web.sh'\nTerminal=false\nX-GNOME-Autostart-enabled=true\nNoDisplay=true\n"
         );
         // 带空格路径也能被单引号包住
-        assert!(render_desktop_entry("x", Path::new("/home/u a/.dsh/start-proxy.sh")).contains("Exec=/bin/sh '/home/u a/.dsh/start-proxy.sh'"));
+        assert!(
+            render_desktop_entry("x", Path::new("/home/u a/.dsh/start-web.sh"))
+                .contains("Exec=/bin/sh '/home/u a/.dsh/start-web.sh'")
+        );
     }
 
     #[test]
@@ -1941,8 +2092,8 @@ mod tests {
             "\"npm install -g @deepseek-ai/dsh\""
         );
         assert_eq!(
-            win_cmd_line(r"C:\Users\a b\.dsh\loopback-proxy.js", &[]),
-            "\"\"C:\\Users\\a b\\.dsh\\loopback-proxy.js\"\""
+            win_cmd_line(r"C:\Users\a b\dsh-plugins\auth.tgz", &[]),
+            "\"\"C:\\Users\\a b\\dsh-plugins\\auth.tgz\"\""
         );
     }
 
@@ -1955,72 +2106,9 @@ mod tests {
         // 带前缀/尾缀杂质也能提取
         assert_eq!(normalize_version("dsh 0.1.0-rc.6"), "0.1.0-rc.6");
         assert_eq!(normalize_version("0.1.0-rc.6 (build abc)"), "0.1.0-rc.6");
-        // 无法解析时回退原串（比较侧 is_newer 会安全降级为无更新）
+        // 无法解析时回退原串（兼容性检查会明确判定不匹配）
         assert_eq!(normalize_version("garbage"), "garbage");
         assert_eq!(normalize_version(""), "");
-    }
-
-    /// 临时 HOME 目录：确保代理脚本测试不碰真实 ~/.dsh
-    #[cfg(unix)]
-    struct TempHome(String);
-    #[cfg(unix)]
-    impl TempHome {
-        fn new() -> (Self, std::path::PathBuf) {
-            let dir = std::env::temp_dir().join(format!("dsh-test-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&dir);
-            std::fs::create_dir_all(&dir).unwrap();
-            let old = std::env::var("HOME").unwrap_or_default();
-            std::env::set_var("HOME", &dir);
-            (TempHome(old), dir)
-        }
-    }
-    #[cfg(unix)]
-    impl Drop for TempHome {
-        fn drop(&mut self) {
-            std::env::set_var("HOME", &self.0);
-        }
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn ensure_proxy_script_writes_when_missing() {
-        let _guard = HOME_LOCK.lock().unwrap();
-        let (_home, dir) = TempHome::new();
-        let path = ensure_proxy_script().unwrap();
-        assert!(path.exists());
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), PROXY_JS);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn ensure_proxy_script_overwrites_outdated_version() {
-        let _guard = HOME_LOCK.lock().unwrap();
-        let (_home, dir) = TempHome::new();
-        let path = ensure_proxy_script().unwrap();
-        // 模拟用户按教程手工创建的旧版纯 HTTP 脚本（无 WebSocket upgrade）
-        std::fs::write(&path, "// old http-only proxy\nconst http = require('http');\n").unwrap();
-        let updated = ensure_proxy_script().unwrap();
-        assert_eq!(std::fs::read_to_string(&updated).unwrap(), PROXY_JS);
-        // 旧版有备份可回溯
-        let bak = std::fs::read_to_string(updated.with_extension("js.bak")).unwrap();
-        assert!(bak.contains("old http-only proxy"));
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn ensure_proxy_script_keeps_up_to_date_file() {
-        let _guard = HOME_LOCK.lock().unwrap();
-        let (_home, dir) = TempHome::new();
-        let path = ensure_proxy_script().unwrap();
-        // 已是最新内容时不重写、不生成备份
-        let mtime1 = std::fs::metadata(&path).unwrap().modified().unwrap();
-        ensure_proxy_script().unwrap();
-        let mtime2 = std::fs::metadata(&path).unwrap().modified().unwrap();
-        assert_eq!(mtime1, mtime2);
-        assert!(!path.with_extension("js.bak").exists());
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -2029,7 +2117,10 @@ mod tests {
         // 直接执行会拆碎；.cmd 内必须用 call 前缀。Windows autostart_impl 里
         // 的 web 脚本模板以 `call "{dsh}"` 起行——用等价的最小复现断言该形态
         let dsh_path = r"C:\Users\a b\.npm-global\dsh.cmd";
-        let line = format!("call \"{}\" --profile web --port 3899", dsh_path);
+        let line = format!(
+            "call \"{}\" --profile web --host 127.0.0.1 --port 3899",
+            dsh_path
+        );
         assert!(line.starts_with("call \""));
     }
 
@@ -2061,13 +2152,14 @@ mod tests {
     #[test]
     fn rpc_request_is_loopback_json_post() {
         // 敏感 API 校验请求：Host 为 loopback、无 Origin、JSON body 与
-        // Content-Length 一致（经反代时反代还会再删一次 Origin）
+        // Content-Length 一致。
         let req = rpc_request("settings.describe");
         assert!(req.starts_with("POST /api/settings.describe HTTP/1.1\r\n"));
         assert!(req.contains("Host: 127.0.0.1"));
         assert!(req.contains("Content-Type: application/json"));
         assert!(!req.contains("Origin:"));
-        let body = r#"{"type":"client-request","rpcId":"t1","method":"settings.describe","payload":{}}"#;
+        let body =
+            r#"{"type":"client-request","rpcId":"t1","method":"settings.describe","payload":{}}"#;
         assert!(req.contains(body));
         assert!(req.contains(&format!("Content-Length: {}\r\n", body.len())));
     }

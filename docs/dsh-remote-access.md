@@ -1,74 +1,95 @@
-# dsh 远程访问被代理工具拦截：排障指南
+# dsh 远程访问与授权插件
 
-一键开启远程访问后，`https://<hostname>.ts.net` 打不开，最常见的原因不是链路配置，而是**访问端设备的代理工具（Shadowrocket / Clash / Surge 等）把 tailnet 流量抢走了**。
+Codex Pro Max 不再使用 3898 回环反代，也不会改写 `Host` / `Origin` 或伪造
+`SSH_CONNECTION`。当前链路是：
 
-> The most common reason `https://<hostname>.ts.net` won't open after one-click setup is a proxy tool (Shadowrocket / Clash / Surge …) on the *client* device hijacking tailnet traffic — not a setup failure.
-
----
-
-## 根因 | Root cause
-
-链路本身是好的：
-
-```
-远程设备浏览器 → https://<hostname>.ts.net (Tailscale serve, 443)
-              → 127.0.0.1:3898 (loopback 反代) → 127.0.0.1:3899 (dsh web)
+```text
+远程浏览器
+  → https://<hostname>.ts.net  (Tailscale Serve，TLS + 身份头)
+  → 127.0.0.1:3899            (dsh web，显式 loopback 绑定)
+  → dsh-client-connection-authz
+  → dsh-auth-tailscale
 ```
 
-但代理工具会在两处破坏它：
+## 固定兼容栈
 
-1. **域名被代理规则命中**：默认规则把 `*.ts.net` 当普通公网域名，转发到上游代理节点。上游节点不在你的 tailnet 里，解析不了 MagicDNS（`100.x.x.x`）→ 超时 / 连接失败。
-2. **iOS 单 VPN 限制**：Shadowrocket 和 Tailscale 都是 Packet Tunnel VPN，同一时刻只能开一个。开着 Shadowrocket 时 Tailscale 隧道是断的，而 `ts.net` 的流量又被 Shadowrocket 接管 → 必然打不开。
+Launcher 把以下三部分当成一个不可拆分的兼容单元：
 
-## 自查 | Quick check
+- DeepSeek Harness `0.1.0-rc.6`；
+- [dsh-client-connection-authz](https://github.com/sperictao/dsh-client-connection-authz)；
+- [dsh-auth-tailscale](https://github.com/sperictao/dsh-auth-tailscale)。
 
-在**访问端设备**上确认：
+两个插件以固定 commit 的 Git submodule 进入源码树，构建时生成本地 `.tgz` 并作为
+Tauri resource 打进安装包。运行时通过
+`dsh plugin --profile web add file:<bundled-plugin>.tgz` 安装，所以不需要 Git、
+GitHub 登录或运行时网络下载插件。
+
+Connection 替代包会精确禁用内置
+`@deepseek-ai/dsh-client-connection`，插入保留官方 HTTP、RPC、WebSocket 和浏览器
+行为的完整替代实现，并要求注入 `connectionRequestAuthorizer`。Tailscale 插件提供
+这个接口；缺插件、身份解析失败或授权配置为空时都会 fail closed。
+
+## 身份与权限边界
+
+一键远程访问会从 `tailscale status --json` 中把 `Self.UserID` 映射到对应的
+`User[*].LoginName`，再作为精确 allowlist 传给插件。Serve 会清除客户端伪造的同名
+身份头，再把真实 Tailscale 身份注入本地后端。
+
+- dsh 只监听 `127.0.0.1:3899`，不能从 LAN 或公网绕过 Serve 直连。
+- 普通远程 HTTP、RPC 与 WebSocket 必须通过 Tailscale 身份授权。
+- 本机请求仍需同时满足 loopback TCP peer 与 loopback Host，才能走真实本地旁路。
+- Launcher 不配置 admin App Capability，因此远程 settings、credentials、宿主文件等
+  特权接口保持拒绝；本机特权接口仍可用。
+- 只使用私有 Tailscale Serve，不使用 Funnel，也不把 dsh 绑定到 `0.0.0.0`。
+
+开启或关闭自启时，Launcher 会卸载并删除旧版自己生成的 proxy plist/unit/cmd/desktop
+和 `start-proxy.*`，并停止遗留的 `loopback-proxy.js` 进程；不会删除用户目录中的
+`~/.dsh/loopback-proxy.js` 或其它用户文件。
+
+## 状态检查
+
+一键配置时间轴应依次通过：
+
+1. Node.js 与 npm；
+2. 锁定版本的 dsh；
+3. 两个授权插件；
+4. Tailscale 在线与当前登录身份；
+5. MagicDNS / HTTPS Certificates；
+6. dsh 监听 `127.0.0.1:3899`；
+7. Tailscale Serve 直接指向 3899；
+8. 本地 HTTP、远程 HTTPS/WSS 和本地特权 API 验证。
+
+手动排查可使用：
 
 ```bash
-ping <hostname>.ts.net
-# 应解析到 100.x.x.x（tailnet 内网地址）。
-# 若解析到公网 IP 或解析失败 → 代理/DNS 在拦截，按下面配置。
+dsh --version
+tailscale status --json
+tailscale serve status
 ```
 
-iOS 用户先确认：Tailscale 已连接且 Shadowrocket 已断开（状态栏 VPN 图标属于 Tailscale）。
+`tailscale serve status` 的根路由应显示
+`proxy http://127.0.0.1:3899`。设置页出现“修复 dsh 兼容栈”时，说明核心版本或
+profile 中的插件 tarball 与 Launcher 锁定值不一致；点击修复会重新安装整个兼容单元。
 
-## 各工具配置 | Per-tool fix
+## 访问端代理工具拦截
 
-### Shadowrocket (iOS)
+如果 Launcher 已验证通过，但另一台设备打不开 `https://<hostname>.ts.net`，最常见
+原因是 Shadowrocket、Clash、Surge 或系统代理抢走了 tailnet 流量。访问端应让以下
+规则直连：
 
-1. 配置 → 规则 → 添加规则：
-   - 类型 `DOMAIN-SUFFIX`，值 `ts.net`，策略 `DIRECT`
-   - 类型 `IP-CIDR`，值 `100.64.0.0/10`，策略 `DIRECT`
-2. 若仍打不开：断开 Shadowrocket，只保留 Tailscale 连接（iOS 单 VPN 限制，二者不能同时全局接管）。
+```text
+DOMAIN-SUFFIX,ts.net,DIRECT
+IP-CIDR,100.64.0.0/10,DIRECT
+```
 
-### Clash / ClashX / Clash Verge / Mihomo
-
-在配置 `rules:` **最前面**加：
+Clash / Mihomo 可放在 `rules:` 最前面：
 
 ```yaml
 rules:
   - DOMAIN-SUFFIX,ts.net,DIRECT
   - IP-CIDR,100.64.0.0/10,DIRECT,no-resolve
-  # …原有规则
 ```
 
-改完重载配置 / 重启内核。
-
-### Surge
-
-```ini
-[Rule]
-DOMAIN-SUFFIX,ts.net,DIRECT
-IP-CIDR,100.64.0.0/10,DIRECT,no-resolve
-```
-
-### 系统代理（浏览器走系统代理设置）
-
-macOS：系统设置 → 网络 → 代理 → “忽略这些主机与域的代理设置”加入 `*.ts.net`。
-Windows：设置 → 网络 → 代理 → 例外列表加入 `*.ts.net`。
-
-多数 GUI 代理工具（ClashX、Clash Verge 等）改完规则后会自动维护这份系统级 bypass，无需手动。
-
-## 为什么不能用公网方案绕过
-
-dsh 按安全设计只监听 loopback、拒绝 `--host 0.0.0.0`，敏感 API（settings/credentials）强制 loopback-only。改成公网监听或 `tailscale funnel` 会把管理面暴露到整个互联网——**不要**为了解决代理拦截而牺牲这个边界。正确做法永远是上面这种：让 tailnet 流量在客户端走 DIRECT。
+Surge 使用同名 `[Rule]` 项。macOS / Windows 系统代理可把 `*.ts.net` 加入 bypass。
+iOS 通常只能同时运行一个 Packet Tunnel VPN；若 Shadowrocket 与 Tailscale 冲突，
+断开 Shadowrocket，只保留 Tailscale。

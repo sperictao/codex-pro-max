@@ -10,47 +10,48 @@ import { BTN, BTN_PRIMARY, TOGGLE } from "@/shared/lib/ui";
 import type { DshStatus, DshStepEvent } from "@/shared/types";
 
 // 时间轴步骤顺序（与 Rust dsh_setup 的 index 一一对应）
-const STEP_IDS = ["node", "install", "start", "tailscale", "magicdns", "proxy", "serve", "verify"] as const;
+const STEP_IDS = ["node", "install", "plugins", "tailscale", "magicdns", "start", "serve", "verify"] as const;
 
 // 步骤标题（key 即 i18n key）
 const STEP_TITLES: Record<string, string> = {
   node: "Check Node.js & npm",
   install: "Install DeepSeek Harness (dsh)",
-  start: "Start dsh Web",
+  plugins: "Install authorization plugins",
   tailscale: "Check Tailscale",
   magicdns: "Enable MagicDNS",
-  proxy: "Start loopback proxy",
+  start: "Start dsh Web",
   serve: "Configure Tailscale serve",
   verify: "Verify remote access",
 };
 
-function statusTextKey(s: DshStatus): string {
+export function statusTextKey(s: DshStatus): string {
   if (!s.nodeAvailable) return "Node.js not detected";
   if (!s.dshInstalled) return "DeepSeek Harness not installed";
-  if (!s.dshRunning) return "dsh web not running";
+  if (!s.dshCompatible) return "dsh version is not supported by the auth plugins";
+  if (!s.pluginsInstalled) return "dsh auth plugins not installed";
   if (!s.tailscaleInstalled || !s.tailscaleOnline) return "Tailscale not ready";
   if (!s.magicDnsEnabled) return "MagicDNS not enabled";
-  if (!s.proxyRunning) return "Loopback proxy not running";
+  if (!s.dshRunning) return "dsh web not running";
   if (!s.serveConfigured) return "Tailscale serve not configured";
   return "Remote access ready";
 }
 
 // 由检测结果推导「就绪时间轴」：已满足的步骤标 done，其余 pending
-function timelineFromStatus(s: DshStatus): DshStepEvent[] {
+export function timelineFromStatus(s: DshStatus): DshStepEvent[] {
   const allReady =
-    s.nodeAvailable && s.dshInstalled && s.dshRunning && s.tailscaleOnline &&
-    s.magicDnsEnabled && s.proxyRunning && s.serveConfigured;
+    s.nodeAvailable && s.dshInstalled && s.dshCompatible && s.pluginsInstalled &&
+    s.dshRunning && s.tailscaleOnline && s.magicDnsEnabled && s.serveConfigured;
   const done = (ok: boolean): DshStepEvent["state"] => (ok ? "done" : "pending");
   const step = (index: number, id: string, ok: boolean): DshStepEvent => ({
     index, id, state: done(ok), detail: null, problem: null, solution: null,
   });
   return [
     step(0, "node", s.nodeAvailable),
-    step(1, "install", s.dshInstalled),
-    step(2, "start", s.dshRunning),
+    step(1, "install", s.dshInstalled && s.dshCompatible),
+    step(2, "plugins", s.pluginsInstalled),
     step(3, "tailscale", s.tailscaleInstalled && s.tailscaleOnline),
     step(4, "magicdns", s.magicDnsEnabled),
-    step(5, "proxy", s.proxyRunning),
+    step(5, "start", s.dshRunning),
     step(6, "serve", s.serveConfigured),
     step(7, "verify", allReady),
   ];
@@ -190,14 +191,14 @@ export function DshCard() {
     }
   };
 
-  const update = async () => {
+  const repair = async () => {
     if (busy) return;
     setBusy(true);
     try {
       const version = await cmd.dshUpdate();
-      toast(t("dsh updated to {{version}}", { version }), "success");
+      toast(t("dsh integration repaired for {{version}}", { version }), "success");
     } catch (e) {
-      toast(t("dsh update failed: {{error}}", { error: String(e) }), "error");
+      toast(t("dsh integration repair failed: {{error}}", { error: String(e) }), "error");
     } finally {
       setBusy(false);
       // 更新流程不走 dsh-step 事件流：回到状态驱动时间轴
@@ -236,13 +237,13 @@ export function DshCard() {
               {status.dshVersion}
             </span>
           )}
-          {status?.latestVersion && (
+          {status && (!status.dshCompatible || !status.pluginsInstalled) && (
             <button
               className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-full bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground whitespace-nowrap transition-colors outline-none hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
               disabled={busy}
-              onClick={() => void update()}
+              onClick={() => void repair()}
             >
-              {t("Update to {{version}}", { version: status.latestVersion })}
+              {t("Repair dsh stack ({{version}})", { version: status.supportedVersion })}
             </button>
           )}
         </div>
@@ -252,11 +253,11 @@ export function DshCard() {
         <div className="truncate text-sm">{statusText}</div>
         {status?.error && !busy && (
           <div className="mt-1 text-xs text-destructive">
-            {t("Version check failed: {{error}}", { error: status.error })}
+            {t("dsh integration check failed: {{error}}", { error: status.error })}
           </div>
         )}
         <div className="mt-1 text-xs opacity-60">
-          {t("Remote access to the dsh Web UI over Tailscale HTTPS: https://<hostname>.ts.net → loopback proxy :3898 → dsh web :3899. Timeline nodes show the problem and its solution if a step fails.")}
+          {t("Remote access to the dsh Web UI over Tailscale HTTPS: https://<hostname>.ts.net → dsh web :3899. Tailscale identity is authorized by bundled dsh plugins; remote privileged APIs stay denied.")}
         </div>
         {status?.url && !busy && (
           <div className="mt-1 text-xs opacity-60">
@@ -282,7 +283,7 @@ export function DshCard() {
         <button className={BTN_PRIMARY} disabled={busy} onClick={() => void start()}>
           {busy ? t("Working…") : t("One-click remote access")}
         </button>
-        <button className={BTN} disabled={busy || !status || (!status.dshRunning && !status.proxyRunning)} onClick={() => void stop()}>
+        <button className={BTN} disabled={busy || !status || (!status.dshRunning && !status.serveConfigured)} onClick={() => void stop()}>
           {t("Stop")}
         </button>
         <div className="ml-auto flex items-center gap-2">
@@ -327,7 +328,7 @@ export function DshCard() {
         <div className="mb-2 text-sm font-medium">{t("Boot Auto-start")}</div>
         <label className="flex flex-1 cursor-pointer items-center justify-between gap-4 rounded-lg border border-border p-3" id="dsh-autostart-row">
           <span className="flex flex-col gap-0.5">
-            <span className="text-sm">{t("Auto-start dsh web and the loopback proxy in the background at login")}</span>
+            <span className="text-sm">{t("Auto-start the authorized dsh web service in the background at login")}</span>
             <span className="text-xs opacity-60">
               {t("Keeps remote access available without opening this app. Tailscale serve is managed by the Tailscale app itself.")}
             </span>

@@ -4,8 +4,8 @@
   "version": "1.3.4",
   "identifier": "com.codex.pro.max",
   "build": {
-    "beforeDevCommand": "pnpm run ensure:taskboard && pnpm run dev",
-    "beforeBuildCommand": "pnpm run build:taskboard && pnpm run build",
+    "beforeDevCommand": "pnpm run build:dsh-plugins && pnpm run ensure:taskboard && pnpm run dev",
+    "beforeBuildCommand": "pnpm run build:taskboard && pnpm run build:dsh-plugins && pnpm run build",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../dist"
   },
@@ -47,7 +47,9 @@
       "../vendor/dashi-taskboard/inject": "vendor/dashi-taskboard/inject",
       "../vendor/dashi-taskboard/skills": "vendor/dashi-taskboard/skills",
       "../vendor/dashi-taskboard/dist/web": "vendor/dashi-taskboard/dist/web",
-      "../vendor/dashi-taskboard/package.json": "vendor/dashi-taskboard/package.json"
+      "../vendor/dashi-taskboard/package.json": "vendor/dashi-taskboard/package.json",
+      "../.artifacts/dsh-plugins/dsh-client-connection-authz-873c465f1403.tgz": "dsh-plugins/dsh-client-connection-authz-873c465f1403.tgz",
+      "../.artifacts/dsh-plugins/dsh-auth-tailscale-ea7ca9fa3db4.tgz": "dsh-plugins/dsh-auth-tailscale-ea7ca9fa3db4.tgz"
     },
     "macOS": {
       "hardenedRuntime": true,
