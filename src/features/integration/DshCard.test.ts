@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DshStatus } from "@/shared/types";
-import { statusTextKey, timelineFromStatus } from "./DshCard";
+import { localTimelineFromStatus, statusTextKey, timelineFromStatus } from "./DshCard";
 
 const ready: DshStatus = {
   nodeAvailable: true,
@@ -48,5 +48,20 @@ describe("dsh auth plugin readiness", () => {
   it("reports an incompatible dsh core before plugin state", () => {
     expect(statusTextKey({ ...ready, dshCompatible: false, pluginsInstalled: false }))
       .toBe("dsh version is not supported by the auth plugins");
+  });
+});
+
+describe("local one-click timeline", () => {
+  it("uses 4 local-only steps and marks all done when dsh web is running", () => {
+    const steps = localTimelineFromStatus(ready);
+    expect(steps.map((s) => s.id)).toEqual(["node", "install", "start", "ready"]);
+    expect(steps.map((s) => s.index)).toEqual([0, 1, 2, 3]);
+    expect(steps.every((s) => s.state === "done")).toBe(true);
+  });
+
+  it("marks start/ready pending when dsh web is not running", () => {
+    const steps = localTimelineFromStatus({ ...ready, dshRunning: false });
+    expect(steps[2].state).toBe("pending");
+    expect(steps[3].state).toBe("pending");
   });
 });

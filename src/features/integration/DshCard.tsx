@@ -12,6 +12,9 @@ import type { DshStatus, DshStepEvent } from "@/shared/types";
 // 时间轴步骤顺序（与 Rust dsh_setup 的 index 一一对应）
 const STEP_IDS = ["node", "install", "plugins", "tailscale", "magicdns", "start", "serve", "verify"] as const;
 
+// 本地一键启动的时间轴步骤（与 Rust dsh_start_web 的 LOCAL_STEPS 一一对应）
+const LOCAL_STEP_IDS = ["node", "install", "start", "ready"] as const;
+
 // 步骤标题（key 即 i18n key）
 const STEP_TITLES: Record<string, string> = {
   node: "Check Node.js & npm",
@@ -22,6 +25,7 @@ const STEP_TITLES: Record<string, string> = {
   start: "Start dsh Web",
   serve: "Configure Tailscale serve",
   verify: "Verify remote access",
+  ready: "Local access ready",
 };
 
 export function statusTextKey(s: DshStatus): string {
@@ -55,6 +59,20 @@ export function timelineFromStatus(s: DshStatus): DshStepEvent[] {
     step(5, "start", s.dshRunning),
     step(6, "serve", s.serveConfigured),
     step(7, "verify", allReady),
+  ];
+}
+
+// 本地模式就绪时间轴：node / install / start / ready 四项，与远程 8 步不同
+export function localTimelineFromStatus(s: DshStatus): DshStepEvent[] {
+  const done = (ok: boolean): DshStepEvent["state"] => (ok ? "done" : "pending");
+  const step = (index: number, id: string, ok: boolean): DshStepEvent => ({
+    index, id, state: done(ok), detail: null, problem: null, solution: null,
+  });
+  return [
+    step(0, "node", s.nodeAvailable),
+    step(1, "install", s.dshInstalled && s.dshCompatible),
+    step(2, "start", s.dshRunning),
+    step(3, "ready", s.dshRunning),
   ];
 }
 
@@ -102,16 +120,22 @@ export function DshCard() {
   const [busy, setBusy] = useState(false);
   // 是否跑过一键安装流程：跑过则时间轴以事件流为准，否则用检测结果渲染就绪视图
   const [hasRunSetup, setHasRunSetup] = useState(false);
+  // 当前时间轴模式：local（本地一键启动 4 步）或 remote（远程一键配置 8 步）
+  const [timelineMode, setTimelineMode] = useState<"local" | "remote">("remote");
 
   const refresh = useCallback(async () => {
     try {
       const s = await cmd.dshDetect();
       setStatus(s);
-      if (!hasRunSetup) setDshTimeline(timelineFromStatus(s));
+      if (!hasRunSetup) {
+        setDshTimeline(
+          timelineMode === "local" ? localTimelineFromStatus(s) : timelineFromStatus(s),
+        );
+      }
     } catch (e) {
       toast(t("dsh detection failed: {{error}}", { error: String(e) }), "error");
     }
-  }, [hasRunSetup, setDshTimeline, t, toast]);
+  }, [hasRunSetup, setDshTimeline, t, toast, timelineMode]);
 
   useEffect(() => {
     void refresh();
@@ -123,6 +147,7 @@ export function DshCard() {
     if (busy) return;
     setBusy(true);
     setHasRunSetup(true);
+    setTimelineMode("remote");
     // 初始化为全 pending，随后由后端 dsh-step 事件逐步推进
     setDshTimeline(STEP_IDS.map((id, index) => ({
       index, id, state: "pending" as const, detail: null, problem: null, solution: null,
@@ -149,21 +174,32 @@ export function DshCard() {
   };
 
   // 一键启动 dsh（纯本地）：后端幂等保证 3899 就绪并返回本地地址，这里只管打开浏览器；
-  // 已在跑时等同于「打开 dsh Web」。结束后刷新状态，时间轴经 timelineFromStatus 反映就绪
+  // 已在跑时等同于「打开 dsh Web」。结束后刷新状态，时间轴经 localTimelineFromStatus
+  // 反映本地就绪（4 步，不含远程的 tailscale/plugins/serve 等）
   const startLocal = async () => {
     if (busy) return;
     setBusy(true);
+    setHasRunSetup(true);
+    setTimelineMode("local");
+    // 初始化为全 pending，随后由后端 dsh-step 事件按 LOCAL_STEPS 推进
+    setDshTimeline(LOCAL_STEP_IDS.map((id, index) => ({
+      index, id, state: "pending" as const, detail: null, problem: null, solution: null,
+    })));
+    let succeeded = false;
     try {
       const url = await cmd.dshStartWeb();
       await openUrl(url);
+      succeeded = true;
     } catch (e) {
       toast(t("dsh start failed: {{error}}", { error: String(e) }), "error");
     } finally {
       setBusy(false);
+      // 成功后回到本地就绪视图；失败时保留事件时间轴（问题+解决方案持续可见）
+      if (succeeded) setHasRunSetup(false);
       try {
         const s = await cmd.dshDetect();
         setStatus(s);
-        if (!hasRunSetup) setDshTimeline(timelineFromStatus(s));
+        if (succeeded) setDshTimeline(localTimelineFromStatus(s));
       } catch (e) {
         toast(t("dsh detection failed: {{error}}", { error: String(e) }), "error");
       }
@@ -201,6 +237,7 @@ export function DshCard() {
       setBusy(false);
       // 停止后回到状态驱动时间轴，避免事件时间轴残留「已就绪」的历史状态
       setHasRunSetup(false);
+      setTimelineMode("remote");
       try {
         const s = await cmd.dshDetect();
         setStatus(s);
@@ -211,26 +248,31 @@ export function DshCard() {
     }
   };
 
-  // 关闭远程访问（关掉 HTTPS Serve，dsh web 保持本地运行）
-  const stopRemote = async () => {
+  // 远程访问开关：打开走一键安装全链路（dsh web + Tailscale Serve），
+  // 关闭全停。开关状态由检测的 url（stack_ready && serveConfigured）驱动
+  const toggleRemote = async () => {
     if (busy) return;
-    setBusy(true);
-    try {
-      await cmd.dshStop();
-      toast(t("dsh remote access services stopped"), "info");
-    } catch (e) {
-      toast(t("Stop failed: {{error}}", { error: String(e) }), "error");
-    } finally {
-      setBusy(false);
-      // 停止后回到状态驱动时间轴，避免事件时间轴残留「已就绪」的历史状态
-      setHasRunSetup(false);
+    if (status?.url != null) {
+      setBusy(true);
       try {
-        const s = await cmd.dshDetect();
-        setStatus(s);
-        setDshTimeline(timelineFromStatus(s));
+        await cmd.dshStop();
+        toast(t("dsh remote access disabled"), "info");
       } catch (e) {
-        toast(t("dsh detection failed: {{error}}", { error: String(e) }), "error");
+        toast(t("Stop failed: {{error}}", { error: String(e) }), "error");
+      } finally {
+        setBusy(false);
+        setHasRunSetup(false);
+        setTimelineMode("remote");
+        try {
+          const s = await cmd.dshDetect();
+          setStatus(s);
+          setDshTimeline(timelineFromStatus(s));
+        } catch (e) {
+          toast(t("dsh detection failed: {{error}}", { error: String(e) }), "error");
+        }
       }
+    } else {
+      await start();
     }
   };
 
@@ -246,6 +288,7 @@ export function DshCard() {
       setBusy(false);
       // 更新流程不走 dsh-step 事件流：回到状态驱动时间轴
       setHasRunSetup(false);
+      setTimelineMode("remote");
       try {
         const s = await cmd.dshDetect();
         setStatus(s);
@@ -322,31 +365,40 @@ export function DshCard() {
       <div className="flex flex-wrap items-center gap-2">
         {status?.dshRunning ? (
           <button className={BTN} disabled={busy} onClick={() => void stopLocal()}>
-            {t("Stop dsh web")}
+            {t("One-click stop dsh web")}
           </button>
         ) : (
           <button className={BTN_PRIMARY} disabled={busy} onClick={() => void startLocal()}>
             {t("One-click start dsh web")}
           </button>
         )}
-        {status?.url ? (
-          <button className={BTN} disabled={busy} onClick={() => void stopRemote()}>
-            {t("Stop remote access")}
-          </button>
-        ) : (
-          <button className={BTN_PRIMARY} disabled={busy} onClick={() => void start()}>
-            {busy ? t("Working…") : t("One-click remote access")}
-          </button>
-        )}
         <div className="ml-auto flex min-w-0 flex-col items-end gap-1.5">
-          {status?.localUrl && !busy && (
-            <AddressRow url={status.localUrl} onCopy={copyUrl} onOpen={open} />
-          )}
           {status?.url && !busy && (
             <AddressRow url={status.url} onCopy={copyUrl} onOpen={open} />
           )}
         </div>
       </div>
+
+      <label
+        className="flex flex-1 cursor-pointer items-center justify-between gap-4 rounded-lg border border-border p-3"
+        id="dsh-remote-access-row"
+      >
+        <span className="flex flex-col gap-0.5">
+          <span className="text-sm">{t("Remote access")}</span>
+          <span className="text-sm">{t("One-click remote access")}</span>
+          <span className="text-xs opacity-60">
+            {t("Enable or disable remote access to the dsh Web UI over Tailscale HTTPS in one click.")}
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          className={TOGGLE}
+          id="toggle-dsh-remote-access"
+          checked={status?.url != null}
+          disabled={busy}
+          onChange={() => void toggleRemote()}
+        />
+      </label>
 
       <div className="border-t border-border pt-3">
         <div className="mb-2 text-sm font-medium">{t("Setup Progress")}</div>

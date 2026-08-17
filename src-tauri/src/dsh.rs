@@ -325,6 +325,37 @@ fn wait_web_start(pid: Option<u32>, timeout: Duration) -> bool {
     port_listening(WEB_PORT)
 }
 
+/// dsh web 进程命令行特征。ps/pgrep 按连续子串匹配：spawn_dsh_web 实际拉起的是
+/// `dsh --profile web --host 127.0.0.1 --port 3899`，`--host 127.0.0.1` 插在
+/// `profile web` 与 `--port 3899` 之间，连写 `"profile web --port 3899"` 永远
+/// 命不中（v1.5.0 回归：一键启动后点停止无效）。用 ERE 让两侧顺序都可命中，
+/// 并保留旧形态以覆盖更早版本遗留进程。
+fn dsh_web_cmd_pattern() -> &'static str {
+    "profile web.*--port 3899|--port 3899.*profile web"
+}
+
+/// 把最小 ERE 子集（`|` 分支、`.*` 任意段）翻译成 PowerShell -like 通配串，
+/// 供 Windows 的进程匹配使用（dsh_web_pid / kill_by_pattern 一致性）。
+/// 纯字面量（如 loopback-proxy.js）不含 `.*`，原样包上前后 `*`。
+#[cfg_attr(not(windows), allow(dead_code))]
+fn ere_to_ps_wildcards(pattern: &str) -> Vec<String> {
+    pattern
+        .split('|')
+        .map(|alt| format!("*{}*", alt.replace(".*", "*")))
+        .collect()
+}
+
+/// PowerShell `$_.CommandLine -like '...'` 子句串（多个特征用 -or 连接）。
+/// kill_by_pattern 与 dsh_web_pid 的 Windows 分支共用同一套进程匹配条件
+#[cfg(windows)]
+fn ps_commandline_clauses(pattern: &str) -> String {
+    ere_to_ps_wildcards(pattern)
+        .iter()
+        .map(|w| format!("$_.CommandLine -like '{}'", w.replace('\'', "''")))
+        .collect::<Vec<_>>()
+        .join(" -or ")
+}
+
 /// 按命令行特征杀进程（unix: pkill；windows: powershell）
 fn kill_by_pattern(pattern: &str) {
     #[cfg(unix)]
@@ -337,8 +368,8 @@ fn kill_by_pattern(pattern: &str) {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         let script = format!(
-            "Get-CimInstance Win32_Process | Where-Object {{ $_.CommandLine -like '*{p}*' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}",
-            p = pattern.replace('\'', "''")
+            "Get-CimInstance Win32_Process | Where-Object {{ {} }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}",
+            ps_commandline_clauses(pattern)
         );
         let _ = Command::new("powershell")
             .args(["-NoProfile", "-Command", &script])
@@ -347,7 +378,7 @@ fn kill_by_pattern(pattern: &str) {
     }
 }
 
-/// 按命令行特征找 dsh web 进程 PID（"profile web --port 3899"）。
+/// 按命令行特征找 dsh web 进程 PID（dsh_web_cmd_pattern() 的 ERE）。
 /// Windows 上 dsh web 是 `node ...\dsh\dist\index.js --profile web --port 3899`
 /// （npm 包布局），同一特征三平台都能命中；找不到返回 None
 fn dsh_web_pid() -> Option<u32> {
@@ -355,7 +386,7 @@ fn dsh_web_pid() -> Option<u32> {
     {
         let out = Command::new("pgrep")
             .arg("-f")
-            .arg("profile web --port 3899")
+            .arg(dsh_web_cmd_pattern())
             .output()
             .ok()?;
         if !out.status.success() {
@@ -367,9 +398,12 @@ fn dsh_web_pid() -> Option<u32> {
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
-        let script = "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*profile web --port 3899*' } | Select-Object -First 1 -ExpandProperty ProcessId";
+        let script = format!(
+            "Get-CimInstance Win32_Process | Where-Object {{ {} }} | Select-Object -First 1 -ExpandProperty ProcessId",
+            ps_commandline_clauses(dsh_web_cmd_pattern())
+        );
         let out = Command::new("powershell")
-            .args(["-NoProfile", "-Command", script])
+            .args(["-NoProfile", "-Command", &script])
             .creation_flags(CREATE_NO_WINDOW)
             .output()
             .ok()?;
@@ -969,12 +1003,21 @@ impl StepCtx<'_> {
     }
     /// 失败：发出 failed 节点 + 把后续步骤标记 skipped，再返回 Err（时间轴即展示面）
     fn fail(&self, problem: &str, solution: &str, remaining: &[(&'static str, usize)]) -> Result<(), String> {
+        self.emit_fail(problem, solution, remaining);
+        Err(problem.to_string())
+    }
+    /// 同 fail，但返回 `Result<String, String>`：供返回 `String` 的命令
+    /// （如 dsh_start_web 返回本地 URL）直接 `return ctx.fail_err(...)`
+    fn fail_err(&self, problem: &str, solution: &str, remaining: &[(&'static str, usize)]) -> Result<String, String> {
+        self.emit_fail(problem, solution, remaining);
+        Err(problem.to_string())
+    }
+    fn emit_fail(&self, problem: &str, solution: &str, remaining: &[(&'static str, usize)]) {
         log::error!("[dsh 一键配置] 步骤 {} 失败: {}", self.id, problem);
         emit_step(self.app, self.index, self.id, "failed", None, Some(problem.to_string()), Some(solution.to_string()));
         for (id, idx) in remaining {
             emit_step(self.app, *idx, id, "skipped", None, None, None);
         }
-        Err(problem.to_string())
     }
 }
 
@@ -1384,39 +1427,134 @@ pub async fn dsh_setup(app: tauri::AppHandle) -> Result<(), String> {
 }
 // ============ 一键启动 dsh（纯本地链路） ============
 
+/// 本地一键启动的步骤集（与远程 dsh_setup 的 8 步不同，只含 node/install/start/ready）
+const LOCAL_STEPS: [&str; 4] = ["node", "install", "start", "ready"];
+
 /// 一键启动 dsh web 并返回本地访问地址（不碰 Tailscale Serve）。
 /// 纯本地路径不安装授权插件（那是远程访问才需要的）；用不可能命中的
 /// 远程登录名启动，真实 loopback 请求由 Connection 内置的本机能力直接放行。
+/// 与 dsh_setup 一样按 LOCAL_STEPS 逐步发出 dsh-step 事件，前端时间轴
+/// 据此显示本地模式安装进度
 #[tauri::command]
-pub async fn dsh_start_web() -> Result<String, String> {
-    let mut stack_changed = false;
-    if !dsh_version_is_compatible(dsh_version().as_deref()) {
-        install_supported_dsh()?;
-        stack_changed = true;
+pub async fn dsh_start_web(app: tauri::AppHandle) -> Result<String, String> {
+    let steps = LOCAL_STEPS;
+    let remaining_after = |cur: usize| -> Vec<(&'static str, usize)> {
+        steps
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index > cur)
+            .map(|(index, id)| (*id, index))
+            .collect()
+    };
+
+    {
+        let ctx = StepCtx {
+            app: &app,
+            index: 0,
+            id: steps[0],
+        };
+        ctx.running(&tr("Checking Node.js & npm…"));
+        match resolve_node_bin() {
+            Ok(_) => ctx.done(&tr("Node.js is available")),
+            Err(error) => {
+                return ctx.fail_err(
+                    &error,
+                    &tr("Install Node.js 18+ from https://nodejs.org, then restart this app and retry"),
+                    &remaining_after(0),
+                )
+            }
+        }
     }
+
+    {
+        let ctx = StepCtx {
+            app: &app,
+            index: 1,
+            id: steps[1],
+        };
+        let current = dsh_version();
+        if dsh_version_is_compatible(current.as_deref()) {
+            ctx.done(&trf(
+                "Compatible dsh is installed: {version}",
+                &[("version", SUPPORTED_DSH_VERSION.to_string())],
+            ));
+        } else {
+            ctx.running(&trf(
+                "Installing compatible dsh {version}…",
+                &[("version", SUPPORTED_DSH_VERSION.to_string())],
+            ));
+            match install_supported_dsh() {
+                Ok(version) => ctx.done(&trf("Installed {version}", &[("version", version)])),
+                Err(error) => {
+                    return ctx.fail_err(&error, &tr("Check your network and npm settings, then retry"), &remaining_after(1))
+                }
+            }
+        }
+    }
+
     if port_listening(WEB_PORT) {
         if dsh_web_pid().is_none() {
+            let ctx = StepCtx {
+                app: &app,
+                index: 2,
+                id: steps[2],
+            };
             let err = tr("Port 3899 is occupied by another process");
-            log::error!("[dsh 一键启动] {}", err);
-            return Err(err);
+            return ctx.fail_err(&err, &tr("Stop the process listening on 127.0.0.1:3899"), &remaining_after(2));
         }
-        if stack_changed {
-            restart_dsh_web(LOCAL_ONLY_LOGIN, None)?;
+        // 已在跑：本地访问不依赖 trusted-host，直接用。若刚才装了新 dsh 则重启生效
+        {
+            let ctx = StepCtx {
+                app: &app,
+                index: 2,
+                id: steps[2],
+            };
+            ctx.running(&tr("Restarting dsh web…"));
+            if let Err(error) = restart_dsh_web(LOCAL_ONLY_LOGIN, None) {
+                return ctx.fail_err(&error, &tr("Check the log at ~/.dsh/dsh-web.log"), &remaining_after(2));
+            }
+            ctx.done(&tr("dsh web is running on 127.0.0.1:3899"));
         }
+        emit_step(
+            &app,
+            3,
+            steps[3],
+            "done",
+            Some(tr("Local access is ready").into()),
+            None,
+            None,
+        );
         return Ok(format!("http://127.0.0.1:{}", WEB_PORT));
     }
-    let pid = spawn_dsh_web(LOCAL_ONLY_LOGIN, None).map_err(|(problem, _)| {
-        log::error!("[dsh 一键启动] 启动 dsh web 失败: {}", problem);
-        problem
-    })?;
+
+    let start_idx = 2;
+    let ctx = StepCtx {
+        app: &app,
+        index: start_idx,
+        id: steps[start_idx],
+    };
+    ctx.running(&tr("Starting dsh web on 127.0.0.1:3899…"));
+    let pid = match spawn_dsh_web(LOCAL_ONLY_LOGIN, None) {
+        Ok(pid) => pid,
+        Err((problem, solution)) => {
+            return ctx.fail_err(&problem, &solution, &remaining_after(start_idx));
+        }
+    };
     if !wait_web_start(Some(pid), Duration::from_secs(60)) {
         let log = dsh_dir()
             .map(|d| d.join("dsh-web.log"))
             .unwrap_or_else(|_| PathBuf::from("dsh-web.log"));
-        let problem = start_failure_diagnosis(&log).0;
-        log::error!("[dsh 一键启动] 等待 dsh web 就绪超时: {}", problem);
-        return Err(problem);
+        let (problem, solution) = start_failure_diagnosis(&log);
+        return ctx.fail_err(&problem, &solution, &remaining_after(start_idx));
     }
+    ctx.done(&tr("dsh web is running on 127.0.0.1:3899"));
+
+    let ctx = StepCtx {
+        app: &app,
+        index: 3,
+        id: steps[3],
+    };
+    ctx.done(&tr("Local access is ready"));
     Ok(format!("http://127.0.0.1:{}", WEB_PORT))
 }
 
@@ -1456,7 +1594,7 @@ pub async fn dsh_update(app: tauri::AppHandle) -> Result<String, String> {
 /// 重启 dsh web，确保新 profile 和授权环境生效。
 fn restart_dsh_web(login: &str, fqdn: Option<&str>) -> Result<(), String> {
     stop_supervised_services();
-    kill_by_pattern("profile web --port 3899");
+    kill_by_pattern(dsh_web_cmd_pattern());
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     while port_listening(WEB_PORT) && std::time::Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(300));
@@ -1567,9 +1705,10 @@ pub fn dsh_stop() -> Result<(), String> {
     // 兜底：未经自启机制、由一键启动直接拉起的游离进程。
     // 注意：Windows 上 dsh web 的进程命令行是
     // `node ...\dsh\dist\index.js --profile web --port 3899`（npm 包布局），
-    // 不以 "dsh --profile" 开头；"profile web --port 3899" 在 macOS 直启、
-    // launchd 与 Windows shim 三条路径都能命中，且不以 `-` 开头（pkill 不会误当选项）
-    kill_by_pattern("profile web --port 3899");
+    // 不以 "dsh --profile" 开头；dsh_web_cmd_pattern() 的 ERE 在 macOS 直启
+    // （--host 127.0.0.1 插在 profile web 与 --port 3899 之间）、launchd 与
+    // Windows shim 三条路径都能命中，且不以 `-` 开头（pkill 不会误当选项）
+    kill_by_pattern(dsh_web_cmd_pattern());
     // 迁移清理：旧 Launcher 可能留下运行中的 loopback 反代。
     kill_by_pattern("loopback-proxy.js");
     // 一并关闭 HTTPS Serve，避免远程 URL 指向已停止的 dsh。
@@ -2048,12 +2187,48 @@ fn render_desktop_entry(name: &str, script: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        normalize_version, plugin_profile_is_current, port_guard_js, render_desktop_entry,
-        render_start_web, rpc_request, serve_failure_solution, serve_status_targets_web, sh_quote,
-        tailscale_login_from_status_json, win_cmd_line, win_quote,
+        dsh_web_cmd_pattern, ere_to_ps_wildcards, normalize_version, plugin_profile_is_current,
+        port_guard_js, render_desktop_entry, render_start_web, rpc_request, serve_failure_solution,
+        serve_status_targets_web, sh_quote, tailscale_login_from_status_json, win_cmd_line, win_quote,
     };
     use crate::i18n::set_current;
     use std::path::Path;
+
+    #[test]
+    fn dsh_web_pattern_matches_all_command_shapes() {
+        // 回归（v1.5.0）：一键启动后点停止无效。dsh_stop / dsh_web_pid 按
+        // 命令行特征匹配进程，而 spawn_dsh_web 实际拉起的是
+        // `dsh --profile web --host 127.0.0.1 --port 3899`——`--host 127.0.0.1`
+        // 插在 profile web 与 --port 3899 之间，旧连写模式永远命不中。
+        // 断言 dsh_web_cmd_pattern() 能覆盖三条真实路径的命令形态
+        let pattern = dsh_web_cmd_pattern();
+        assert!(
+            pattern.contains("profile web.*--port 3899"),
+            "直启命令 `dsh --profile web --host 127.0.0.1 --port 3899` 必须能命中"
+        );
+        assert!(
+            pattern.contains("--port 3899.*profile web"),
+            "历史 npm 包布局 `...index.js --profile web --port 3899` 必须能命中"
+        );
+    }
+
+    #[test]
+    fn ps_wildcards_translate_ere_for_windows() {
+        // Windows 的进程匹配走 PowerShell -like 通配，把 ERE 的两个分支翻成
+        // 两个通配串，避免 -like 把 `|`/`.*` 当字面量导致同样命不中
+        let wildcards = ere_to_ps_wildcards(dsh_web_cmd_pattern());
+        assert_eq!(
+            wildcards,
+            vec![
+                "*profile web*--port 3899*",
+                "*--port 3899*profile web*",
+            ]
+        );
+        assert_eq!(
+            ere_to_ps_wildcards("loopback-proxy.js"),
+            vec!["*loopback-proxy.js*"]
+        );
+    }
 
     #[test]
     fn sh_quote_handles_spaces_and_quotes() {
