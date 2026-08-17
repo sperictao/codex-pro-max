@@ -4,6 +4,7 @@
 import { create } from "zustand";
 import { getStoredFamily, getStoredTheme, resolveDataTheme, type ThemeMode } from "./theme";
 import { currentLanguage, i18n } from "./i18n";
+import { log } from "./logger";
 import * as cmd from "./commands";
 import { currentConfigDraft } from "./config";
 import type {
@@ -183,13 +184,13 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       servicesReceived: { ...s.servicesReceived, [key]: true },
     }));
   },
-  // 轮询错误忽略（与旧 refreshStatus 一致）
+  // 轮询错误忽略（与旧 refreshStatus 一致），但落一条前端日志便于排查
   refreshStatus: async () => {
     try {
       const list = await cmd.getStatus();
       for (const info of list) get().updateService(info);
-    } catch {
-      /* 忽略 */
+    } catch (e) {
+      log.warn("轮询服务状态失败", e);
     }
   },
 
@@ -333,8 +334,8 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       }
       lastGuardJson = json;
       set({ guardView: view });
-    } catch {
-      /* 轮询错误忽略 */
+    } catch (e) {
+      log.warn("轮询看守视图失败", e);
     }
   },
   setGuardFiles: (files) => set({ guardFiles: files }),

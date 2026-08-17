@@ -59,13 +59,18 @@ fn cli_command(program: &str, args: &[&str]) -> Command {
 fn run_fastctx(args: &[&str]) -> Result<String, String> {
     let output = cli_command("fastctx", args)
         .output()
-        .map_err(|e| trf("Cannot execute fastctx: {error} (please run npm install --global fastctx first)", &[("error", e.to_string())]))?;
+        .map_err(|e| {
+            crate::logging::error("执行 fastctx", &e.to_string());
+            trf("Cannot execute fastctx: {error} (please run npm install --global fastctx first)", &[("error", e.to_string())])
+        })?;
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     if output.status.success() {
         Ok(stdout)
     } else {
-        Err(if stderr.is_empty() { stdout } else { stderr })
+        let err = if stderr.is_empty() { stdout } else { stderr };
+        crate::logging::warn("执行 fastctx", &err);
+        Err(err)
     }
 }
 
@@ -73,7 +78,10 @@ fn run_fastctx(args: &[&str]) -> Result<String, String> {
 fn integrated_in(content: &str) -> Result<bool, String> {
     let doc = content
         .parse::<toml_edit::DocumentMut>()
-        .map_err(|e| trf("Failed to parse config.toml: {error}", &[("error", e.to_string())]))?;
+        .map_err(|e| {
+            crate::logging::warn("解析 config.toml", &e.to_string());
+            trf("Failed to parse config.toml: {error}", &[("error", e.to_string())])
+        })?;
     Ok(doc
         .get("mcp_servers")
         .and_then(|t| t.get("fastctx"))
@@ -132,13 +140,18 @@ fn latest_version(current: &str) -> Result<Option<String>, String> {
 pub fn fastctx_install() -> Result<(), String> {
     let output = cli_command("npm", &["install", "--global", "fastctx"])
         .output()
-        .map_err(|e| trf("Cannot execute npm: {error} (please install Node.js first)", &[("error", e.to_string())]))?;
+        .map_err(|e| {
+            crate::logging::error("执行 npm 安装 fastctx", &e.to_string());
+            trf("Cannot execute npm: {error} (please install Node.js first)", &[("error", e.to_string())])
+        })?;
     if output.status.success() {
         Ok(())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        Err(if stderr.is_empty() { stdout } else { stderr })
+        let err = if stderr.is_empty() { stdout } else { stderr };
+        crate::logging::error("npm 安装 fastctx 失败", &err);
+        Err(err)
     }
 }
 
@@ -180,7 +193,10 @@ pub fn fastctx_open_console() -> Result<(), String> {
             .args(["/c", "start", "", "cmd", "/k", "fastctx"])
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()
-            .map_err(|e| trf("Cannot open console: {error}", &[("error", e.to_string())]))?;
+            .map_err(|e| {
+                crate::logging::error("打开 fastctx 控制台", &e.to_string());
+                trf("Cannot open console: {error}", &[("error", e.to_string())])
+            })?;
     }
     #[cfg(target_os = "macos")]
     {
@@ -192,7 +208,10 @@ pub fn fastctx_open_console() -> Result<(), String> {
                 r#"tell application "Terminal" to do script "fastctx""#,
             ])
             .spawn()
-            .map_err(|e| trf("Cannot open console: {error}", &[("error", e.to_string())]))?;
+            .map_err(|e| {
+                crate::logging::error("打开 fastctx 控制台", &e.to_string());
+                trf("Cannot open console: {error}", &[("error", e.to_string())])
+            })?;
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
@@ -201,7 +220,10 @@ pub fn fastctx_open_console() -> Result<(), String> {
         Command::new("x-terminal-emulator")
             .args(["-e", "fastctx"])
             .spawn()
-            .map_err(|e| trf("Cannot open console (please run fastctx in a terminal yourself): {error}", &[("error", e.to_string())]))?;
+            .map_err(|e| {
+                crate::logging::error("打开 fastctx 控制台", &e.to_string());
+                trf("Cannot open console (please run fastctx in a terminal yourself): {error}", &[("error", e.to_string())])
+            })?;
     }
     Ok(())
 }

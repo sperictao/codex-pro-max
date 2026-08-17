@@ -60,6 +60,8 @@ pub struct DshStatus {
     pub tailscale_installed: bool,
     pub tailscale_online: bool,
     pub hostname: Option<String>,
+    /// 本机回环地址（dsh web 正在运行且授权栈就绪时可用）
+    pub local_url: Option<String>,
     pub url: Option<String>,
     pub magic_dns_enabled: bool,
     pub serve_configured: bool,
@@ -251,22 +253,34 @@ fn port_listening(port: u16) -> bool {
 fn spawn_detached(program: &str, args: &[&str], envs: &[(&str, &str)], log: &Path) -> Result<u32, String> {
     let dir = log.parent().unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(dir)
-        .map_err(|e| trf("Failed to create directory: {error}", &[("error", e.to_string())]))?;
+        .map_err(|e| {
+            log::error!("[dsh 启动] 创建日志目录失败: {}", e);
+            trf("Failed to create directory: {error}", &[("error", e.to_string())])
+        })?;
     let file = fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(log)
-        .map_err(|e| trf("Cannot open log file: {error}", &[("error", e.to_string())]))?;
+        .map_err(|e| {
+            log::error!("[dsh 启动] 打开日志文件失败: {}", e);
+            trf("Cannot open log file: {error}", &[("error", e.to_string())])
+        })?;
     let mut cmd = cli_command(program, args);
     cmd.env("PATH", probe_path())
-        .stdout(std::process::Stdio::from(file.try_clone().map_err(|e| e.to_string())?))
+        .stdout(std::process::Stdio::from(file.try_clone().map_err(|e| {
+            log::error!("[dsh 启动] 复制日志文件句柄失败: {}", e);
+            e.to_string()
+        })?))
         .stderr(std::process::Stdio::from(file));
     for (k, v) in envs {
         cmd.env(k, v);
     }
     let child = cmd
         .spawn()
-        .map_err(|e| trf("Cannot start process: {error}", &[("error", e.to_string())]))?;
+        .map_err(|e| {
+            log::error!("[dsh 启动] 启动子进程失败: {}", e);
+            trf("Cannot start process: {error}", &[("error", e.to_string())])
+        })?;
     Ok(child.id())
 }
 
@@ -400,6 +414,7 @@ fn bundled_plugin_tarball(app: &tauri::AppHandle, filename: &str) -> Result<Path
         .into_iter()
         .find(|path| path.is_file())
         .ok_or_else(|| {
+            log::error!("[dsh 插件] 内置插件 tarball 缺失: {}", filename);
             trf(
                 "Bundled dsh plugin is missing: {plugin}",
                 &[("plugin", filename.to_string())],
@@ -471,28 +486,43 @@ fn install_auth_plugins(app: &tauri::AppHandle) -> Result<DshPluginSpecs, String
         ],
     ) {
         Ok((_, _, true)) if auth_plugins_installed(&specs) => Ok(specs),
-        Ok((_, err, true)) => Err(trf(
-            "dsh plugin install completed but the web profile is incomplete: {error}",
-            &[("error", err)],
-        )),
-        Ok((_, err, false)) => Err(trf(
-            "Failed to install dsh auth plugins: {error}",
-            &[(
-                "error",
-                if err.is_empty() {
-                    "dsh plugin add failed".to_string()
-                } else {
-                    err
-                },
-            )],
-        )),
-        Err(error) => Err(error),
+        Ok((_, err, true)) => {
+            let e = trf(
+                "dsh plugin install completed but the web profile is incomplete: {error}",
+                &[("error", err)],
+            );
+            log::error!("[dsh 插件] profile 不完整: {}", e);
+            Err(e)
+        }
+        Ok((_, err, false)) => {
+            let e = trf(
+                "Failed to install dsh auth plugins: {error}",
+                &[(
+                    "error",
+                    if err.is_empty() {
+                        "dsh plugin add failed".to_string()
+                    } else {
+                        err
+                    },
+                )],
+            );
+            log::error!("[dsh 插件] 安装失败: {}", e);
+            Err(e)
+        }
+        Err(error) => {
+            log::error!("[dsh 插件] 执行 dsh plugin add 失败: {}", error);
+            Err(error)
+        }
     }
 }
 
 /// 定位 node 可执行（绝对路径，供自启脚本嵌入）
 fn resolve_node_bin() -> Result<String, String> {
-    which("node").ok_or_else(|| tr("Node.js is not available; please install Node.js 18+ and restart this app"))
+    which("node").ok_or_else(|| {
+        let err = tr("Node.js is not available; please install Node.js 18+ and restart this app");
+        log::error!("[dsh] 定位 node 失败: {}", err);
+        err
+    })
 }
 
 /// 定位 npm（probe PATH 内；失败返回裸 "npm" 让错误自然暴露）
@@ -540,19 +570,29 @@ fn install_supported_dsh() -> Result<String, String> {
             } else {
                 err
             };
+            log::error!("[dsh 安装] npm install -g 失败: {}", error);
             return Err(trf("Install failed: {error}", &[("error", error)]));
         }
-        Err(error) => return Err(error),
+        Err(error) => {
+            log::error!("[dsh 安装] 执行 npm install 失败: {}", error);
+            return Err(error);
+        }
     }
-    let version = dsh_version().ok_or_else(|| tr("dsh installed but cannot be located in PATH"))?;
+    let version = dsh_version().ok_or_else(|| {
+        let err = tr("dsh installed but cannot be located in PATH");
+        log::error!("[dsh 安装] 安装后无法在 PATH 定位 dsh");
+        err
+    })?;
     if !dsh_version_is_compatible(Some(&version)) {
-        return Err(trf(
+        let err = trf(
             "Installed dsh version {actual}, but this Launcher requires {expected}",
             &[
                 ("actual", version),
                 ("expected", SUPPORTED_DSH_VERSION.to_string()),
             ],
-        ));
+        );
+        log::error!("[dsh 安装] 版本不兼容: {}", err);
+        return Err(err);
     }
     Ok(SUPPORTED_DSH_VERSION.to_string())
 }
@@ -580,7 +620,11 @@ fn resolve_dsh_bin() -> Result<PathBuf, String> {
             }
         }
     }
-    Err(tr("Cannot locate the dsh CLI; install it with npm install -g @deepseek-ai/dsh"))
+    Err({
+        let err = tr("Cannot locate the dsh CLI; install it with npm install -g @deepseek-ai/dsh");
+        log::error!("[dsh] 定位 dsh CLI 失败: {}", err);
+        err
+    })
 }
 
 /// 定位 tailscale CLI（Windows 默认装在 Program Files，不在 PATH）
@@ -656,18 +700,24 @@ fn resolve_host_and_url() -> (Option<String>, Option<String>) {
 }
 
 fn tailscale_login_from_status_json(raw: &str) -> Result<String, String> {
-    let status: serde_json::Value = serde_json::from_str(raw).map_err(|error| {
-        trf(
+    let status: serde_json::Value = serde_json::from_str(raw).map_err(|e| {
+        let err = trf(
             "Cannot parse Tailscale status: {error}",
-            &[("error", error.to_string())],
-        )
+            &[("error", e.to_string())],
+        );
+        log::error!("[dsh tailscale] 解析 status 失败: {}", err);
+        err
     })?;
     let user_id = match status.pointer("/Self/UserID") {
         Some(serde_json::Value::Number(value)) => value.to_string(),
         Some(serde_json::Value::String(value)) if !value.trim().is_empty() => {
             value.trim().to_string()
         }
-        _ => return Err(tr("Tailscale status does not contain the current user ID")),
+        _ => {
+            let err = tr("Tailscale status does not contain the current user ID");
+            log::error!("[dsh tailscale] {}", err);
+            return Err(err);
+        }
     };
     let login = status
         .get("User")
@@ -677,12 +727,18 @@ fn tailscale_login_from_status_json(raw: &str) -> Result<String, String> {
         .and_then(serde_json::Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| tr("Tailscale status does not contain the current login name"))?;
+        .ok_or_else(|| {
+            let err = tr("Tailscale status does not contain the current login name");
+            log::error!("[dsh tailscale] {}", err);
+            err
+        })?;
     if !login
         .chars()
         .all(|character| character.is_ascii_alphanumeric() || "@._+-".contains(character))
     {
-        return Err(tr("Tailscale login name contains unsupported characters"));
+        let err = tr("Tailscale login name contains unsupported characters");
+        log::error!("[dsh tailscale] {}", err);
+        return Err(err);
     }
     Ok(login.to_string())
 }
@@ -690,18 +746,25 @@ fn tailscale_login_from_status_json(raw: &str) -> Result<String, String> {
 fn resolve_tailscale_login(ts: &str) -> Result<String, String> {
     match run_capture(ts, &["status", "--json"]) {
         Ok((out, _, true)) => tailscale_login_from_status_json(&out),
-        Ok((_, err, false)) => Err(trf(
-            "Cannot read the current Tailscale identity: {error}",
-            &[(
-                "error",
-                if err.is_empty() {
-                    "tailscale status --json failed".to_string()
-                } else {
-                    err
-                },
-            )],
-        )),
-        Err(error) => Err(error),
+        Ok((_, err, false)) => {
+            let e = trf(
+                "Cannot read the current Tailscale identity: {error}",
+                &[(
+                    "error",
+                    if err.is_empty() {
+                        "tailscale status --json failed".to_string()
+                    } else {
+                        err
+                    },
+                )],
+            );
+            log::error!("[dsh tailscale] 读取身份失败: {}", e);
+            Err(e)
+        }
+        Err(error) => {
+            log::error!("[dsh tailscale] 执行 tailscale status 失败: {}", error);
+            Err(error)
+        }
     }
 }
 
@@ -833,11 +896,16 @@ pub async fn dsh_detect(app: tauri::AppHandle) -> Result<DshStatus, String> {
     let dsh_compatible = dsh_version_is_compatible(version.as_deref());
     let (plugins_installed, plugin_error) = match bundled_plugin_specs(&app) {
         Ok(specs) => (auth_plugins_installed(&specs), None),
-        Err(error) => (false, Some(error)),
+        Err(error) => {
+            log::warn!("[dsh 检测] 定位内置插件失败: {}", error);
+            (false, Some(error))
+        }
     };
     let dsh_running = port_listening(WEB_PORT);
     let serve_configured = ts.as_deref().map(serve_configured).unwrap_or(false);
-    let url = if dsh_running && dsh_compatible && plugins_installed && serve_configured {
+    let stack_ready = dsh_running && dsh_compatible && plugins_installed;
+    let local_url = stack_ready.then(|| format!("http://127.0.0.1:{WEB_PORT}"));
+    let url = if stack_ready && serve_configured {
         url
     } else {
         None
@@ -853,6 +921,7 @@ pub async fn dsh_detect(app: tauri::AppHandle) -> Result<DshStatus, String> {
         tailscale_installed: ts.is_some(),
         tailscale_online: ts.as_deref().map(tailscale_online).unwrap_or(false),
         hostname,
+        local_url,
         url,
         magic_dns_enabled: magic,
         serve_configured,
@@ -900,6 +969,7 @@ impl StepCtx<'_> {
     }
     /// 失败：发出 failed 节点 + 把后续步骤标记 skipped，再返回 Err（时间轴即展示面）
     fn fail(&self, problem: &str, solution: &str, remaining: &[(&'static str, usize)]) -> Result<(), String> {
+        log::error!("[dsh 一键配置] 步骤 {} 失败: {}", self.id, problem);
         emit_step(self.app, self.index, self.id, "failed", None, Some(problem.to_string()), Some(solution.to_string()));
         for (id, idx) in remaining {
             emit_step(self.app, *idx, id, "skipped", None, None, None);
@@ -915,7 +985,10 @@ impl StepCtx<'_> {
 fn spawn_dsh_web(login: &str, fqdn: Option<&str>) -> Result<u32, (String, String)> {
     let dsh_bin = match resolve_dsh_bin() {
         Ok(b) => b,
-        Err(e) => return Err((e, tr("Install dsh first, then retry"))),
+        Err(e) => {
+            log::error!("[dsh 启动] 定位 dsh CLI 失败: {}", e);
+            return Err((e, tr("Install dsh first, then retry")));
+        }
     };
     let mut args: Vec<String> = vec![
         "--profile".into(),
@@ -940,6 +1013,7 @@ fn spawn_dsh_web(login: &str, fqdn: Option<&str>) -> Result<u32, (String, String
         &log,
     )
     .map_err(|e| {
+        log::error!("[dsh 启动] 拉起 dsh web 进程失败: {}", e);
         (
             e,
             tr("Port 3899 may be occupied; stop the process using it and retry"),
@@ -1301,42 +1375,47 @@ pub async fn dsh_setup(app: tauri::AppHandle) -> Result<(), String> {
     }
 
     if autostart_enabled() {
-        autostart_impl(true)?;
+        autostart_impl(true).map_err(|e| {
+            log::error!("[dsh 一键配置] 使能自启失败: {}", e);
+            e
+        })?;
     }
     Ok(())
 }
 // ============ 一键启动 dsh（纯本地链路） ============
 
 /// 一键启动 dsh web 并返回本地访问地址（不碰 Tailscale Serve）。
-/// 这条路径仍安装完整插件栈，但用一个不可能命中的远程登录名启动；
-/// 真实 loopback 请求由 Connection 内置的本机能力直接放行。
+/// 纯本地路径不安装授权插件（那是远程访问才需要的）；用不可能命中的
+/// 远程登录名启动，真实 loopback 请求由 Connection 内置的本机能力直接放行。
 #[tauri::command]
-pub async fn dsh_start_web(app: tauri::AppHandle) -> Result<String, String> {
+pub async fn dsh_start_web() -> Result<String, String> {
     let mut stack_changed = false;
     if !dsh_version_is_compatible(dsh_version().as_deref()) {
         install_supported_dsh()?;
         stack_changed = true;
     }
-    let specs = bundled_plugin_specs(&app)?;
-    if !auth_plugins_installed(&specs) {
-        install_auth_plugins(&app)?;
-        stack_changed = true;
-    }
     if port_listening(WEB_PORT) {
         if dsh_web_pid().is_none() {
-            return Err(tr("Port 3899 is occupied by another process"));
+            let err = tr("Port 3899 is occupied by another process");
+            log::error!("[dsh 一键启动] {}", err);
+            return Err(err);
         }
         if stack_changed {
             restart_dsh_web(LOCAL_ONLY_LOGIN, None)?;
         }
         return Ok(format!("http://127.0.0.1:{}", WEB_PORT));
     }
-    let pid = spawn_dsh_web(LOCAL_ONLY_LOGIN, None).map_err(|(problem, _)| problem)?;
+    let pid = spawn_dsh_web(LOCAL_ONLY_LOGIN, None).map_err(|(problem, _)| {
+        log::error!("[dsh 一键启动] 启动 dsh web 失败: {}", problem);
+        problem
+    })?;
     if !wait_web_start(Some(pid), Duration::from_secs(60)) {
         let log = dsh_dir()
             .map(|d| d.join("dsh-web.log"))
             .unwrap_or_else(|_| PathBuf::from("dsh-web.log"));
-        return Err(start_failure_diagnosis(&log).0);
+        let problem = start_failure_diagnosis(&log).0;
+        log::error!("[dsh 一键启动] 等待 dsh web 就绪超时: {}", problem);
+        return Err(problem);
     }
     Ok(format!("http://127.0.0.1:{}", WEB_PORT))
 }
@@ -1358,9 +1437,15 @@ fn runtime_auth_context() -> (String, Option<String>) {
 pub async fn dsh_update(app: tauri::AppHandle) -> Result<String, String> {
     let was_running = port_listening(WEB_PORT);
     let version = install_supported_dsh()
-        .map_err(|error| trf("Repair failed: {error}", &[("error", error)]))?;
+        .map_err(|error| {
+            log::error!("[dsh 修复] 安装 dsh 失败: {}", error);
+            trf("Repair failed: {error}", &[("error", error)])
+        })?;
     install_auth_plugins(&app)
-        .map_err(|error| trf("Repair failed: {error}", &[("error", error)]))?;
+        .map_err(|error| {
+            log::error!("[dsh 修复] 安装授权插件失败: {}", error);
+            trf("Repair failed: {error}", &[("error", error)])
+        })?;
     if was_running {
         let (login, fqdn) = runtime_auth_context();
         restart_dsh_web(&login, fqdn.as_deref())?;
@@ -1377,14 +1462,21 @@ fn restart_dsh_web(login: &str, fqdn: Option<&str>) -> Result<(), String> {
         std::thread::sleep(Duration::from_millis(300));
     }
     if port_listening(WEB_PORT) {
-        return Err(tr("dsh web did not release port 3899"));
+        let err = tr("dsh web did not release port 3899");
+        log::error!("[dsh 重启] {}", err);
+        return Err(err);
     }
-    let pid = spawn_dsh_web(login, fqdn).map_err(|(problem, _)| problem)?;
+    let pid = spawn_dsh_web(login, fqdn).map_err(|(problem, _)| {
+        log::error!("[dsh 重启] 启动 dsh web 失败: {}", problem);
+        problem
+    })?;
     if !wait_web_start(Some(pid), Duration::from_secs(60)) {
         let log = dsh_dir()
             .map(|d| d.join("dsh-web.log"))
             .unwrap_or_else(|_| PathBuf::from("dsh-web.log"));
-        return Err(start_failure_diagnosis(&log).0);
+        let problem = start_failure_diagnosis(&log).0;
+        log::error!("[dsh 重启] 等待 dsh web 就绪超时: {}", problem);
+        return Err(problem);
     }
     Ok(())
 }
@@ -1579,7 +1671,10 @@ pub fn dsh_set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<(), Str
         }
         install_auth_plugins(&app)?;
     }
-    autostart_impl(enabled)
+    autostart_impl(enabled).map_err(|e| {
+        log::error!("[dsh 自启] {} 失败: {}", if enabled { "开启" } else { "关闭" }, e);
+        e
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -1611,6 +1706,7 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
         let login = resolve_tailscale_login(&ts)?;
         let fqdn = resolve_fqdn().unwrap_or_default();
         fs::create_dir_all(&agents_dir).map_err(|error| {
+            log::error!("[dsh 自启(mac)] 创建 LaunchAgents 目录失败: {}", error);
             trf(
                 "Failed to create directory: {error}",
                 &[("error", error.to_string())],
@@ -1621,6 +1717,7 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
             render_start_web(&node, &dsh_bin.display().to_string(), &fqdn, &login),
         )
         .map_err(|error| {
+            log::error!("[dsh 自启(mac)] 写启动脚本失败: {}", error);
             trf(
                 "Failed to write {path}: {error}",
                 &[
@@ -1665,6 +1762,7 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
             log = xml_escape(&dsh.join("launchd-web.log").display().to_string()),
         );
         fs::write(&web_plist, plist).map_err(|error| {
+            log::error!("[dsh 自启(mac)] 写 plist 失败: {}", error);
             trf(
                 "Failed to write {path}: {error}",
                 &[
@@ -1679,6 +1777,7 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
             .arg(&web_plist)
             .output()
             .map_err(|error| {
+                log::error!("[dsh 自启(mac)] 注册 launchd agent 失败: {}", error);
                 trf(
                     "Cannot register launchd agent: {error}",
                     &[("error", error.to_string())],
@@ -1708,6 +1807,7 @@ fn windows_startup_dir() -> Option<PathBuf> {
 fn autostart_impl(enabled: bool) -> Result<(), String> {
     let dsh = dsh_dir()?;
     fs::create_dir_all(&dsh).map_err(|error| {
+        log::error!("[dsh 自启(win)] 创建 ~/.dsh 目录失败: {}", error);
         trf(
             "Failed to create directory: {error}",
             &[("error", error.to_string())],
@@ -1716,7 +1816,11 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
     let web_cmd = dsh.join("start-web.cmd");
     let legacy_proxy_cmd = dsh.join("start-proxy.cmd");
     let startup = windows_startup_dir()
-        .ok_or_else(|| tr("Cannot locate the Windows Startup folder (APPDATA is missing)"))?;
+        .ok_or_else(|| {
+            let err = tr("Cannot locate the Windows Startup folder (APPDATA is missing)");
+            log::error!("[dsh 自启(win)] {}", err);
+            err
+        })?;
     let vbs = startup.join("dsh-remote-autostart.vbs");
 
     let _ = fs::remove_file(&legacy_proxy_cmd);
@@ -1749,6 +1853,7 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
             trusted = trusted,
         );
         fs::write(&web_cmd, web).map_err(|error| {
+            log::error!("[dsh 自启(win)] 写 start-web.cmd 失败: {}", error);
             trf(
                 "Failed to write {path}: {error}",
                 &[
@@ -1762,12 +1867,14 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
             web = web_cmd.display(),
         );
         fs::create_dir_all(&startup).map_err(|error| {
+            log::error!("[dsh 自启(win)] 创建启动文件夹失败: {}", error);
             trf(
                 "Failed to create directory: {error}",
                 &[("error", error.to_string())],
             )
         })?;
         fs::write(&vbs, vbs_body).map_err(|error| {
+            log::error!("[dsh 自启(win)] 写自启 vbs 失败: {}", error);
             trf(
                 "Failed to write {path}: {error}",
                 &[
@@ -1814,6 +1921,7 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
             render_start_web(&node, &dsh_bin.display().to_string(), &fqdn, &login),
         )
         .map_err(|error| {
+            log::error!("[dsh 自启(linux)] 写启动脚本失败: {}", error);
             trf(
                 "Failed to write {path}: {error}",
                 &[
@@ -1825,6 +1933,7 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
 
         if systemd_user_available() {
             fs::create_dir_all(&units_dir).map_err(|error| {
+                log::error!("[dsh 自启(linux)] 创建 systemd 目录失败: {}", error);
                 trf(
                     "Failed to create directory: {error}",
                     &[("error", error.to_string())],
@@ -1835,6 +1944,7 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
                 script = sh_quote(&web_script.display().to_string()),
             );
             fs::write(&web_unit, unit).map_err(|error| {
+                log::error!("[dsh 自启(linux)] 写 systemd unit 失败: {}", error);
                 trf(
                     "Failed to write {path}: {error}",
                     &[
@@ -1850,23 +1960,27 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
                 .args(["--user", "enable", "dsh-remote-web.service"])
                 .output()
                 .map_err(|error| {
+                    log::error!("[dsh 自启(linux)] 执行 systemctl enable 失败: {}", error);
                     trf(
                         "Cannot enable systemd unit: {error}",
                         &[("error", error.to_string())],
                     )
                 })?;
             if !output.status.success() {
-                return Err(trf(
+                let err = trf(
                     "Cannot enable systemd unit: {error}",
                     &[(
                         "error",
                         String::from_utf8_lossy(&output.stderr).trim().to_string(),
                     )],
-                ));
+                );
+                log::error!("[dsh 自启(linux)] 启用 systemd 服务失败: {}", err);
+                return Err(err);
             }
             let _ = fs::remove_file(&web_desktop);
         } else {
             fs::create_dir_all(&autostart_dir).map_err(|error| {
+                log::error!("[dsh 自启(linux)] 创建 autostart 目录失败: {}", error);
                 trf(
                     "Failed to create directory: {error}",
                     &[("error", error.to_string())],
@@ -1880,6 +1994,7 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
                 ),
             )
             .map_err(|error| {
+                log::error!("[dsh 自启(linux)] 写 .desktop 失败: {}", error);
                 trf(
                     "Failed to write {path}: {error}",
                     &[

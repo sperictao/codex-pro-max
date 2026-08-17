@@ -13,6 +13,7 @@ const ready: DshStatus = {
   tailscaleInstalled: true,
   tailscaleOnline: true,
   hostname: "node",
+  localUrl: "http://127.0.0.1:3899",
   url: "https://node.tailnet.ts.net",
   magicDnsEnabled: true,
   serveConfigured: true,
@@ -35,8 +36,12 @@ describe("dsh auth plugin readiness", () => {
     expect(timelineFromStatus(ready).every((step) => step.state === "done")).toBe(true);
   });
 
-  it("reports missing auth plugins before checking the web process", () => {
+  it("reports missing auth plugins only once dsh web is running", () => {
+    // 插件只服务于远程访问链路：dsh 尚未运行时优先报告未运行
     expect(statusTextKey({ ...ready, pluginsInstalled: false, dshRunning: false }))
+      .toBe("dsh web not running");
+    // 本地模式已运行时，未装插件意味着远程还没准备好
+    expect(statusTextKey({ ...ready, pluginsInstalled: false, dshRunning: true }))
       .toBe("dsh auth plugins not installed");
   });
 

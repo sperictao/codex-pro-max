@@ -158,13 +158,19 @@ pub fn home_dir() -> Result<PathBuf, String> {
     {
         std::env::var("HOME")
             .map(PathBuf::from)
-            .map_err(|_| crate::i18n::tr("Cannot get HOME environment variable"))
+            .map_err(|e| {
+                crate::logging::fail("读取 HOME 环境变量", &e.to_string());
+                crate::i18n::tr("Cannot get HOME environment variable")
+            })
     }
     #[cfg(windows)]
     {
         std::env::var("USERPROFILE")
             .map(PathBuf::from)
-            .map_err(|_| crate::i18n::tr("Cannot get USERPROFILE environment variable"))
+            .map_err(|e| {
+                crate::logging::fail("读取 USERPROFILE 环境变量", &e.to_string());
+                crate::i18n::tr("Cannot get USERPROFILE environment variable")
+            })
     }
 }
 
@@ -206,9 +212,15 @@ pub fn load_config() -> Result<LauncherConfig, String> {
         return Ok(LauncherConfig::default());
     }
     let content = std::fs::read_to_string(&path)
-        .map_err(|e| crate::i18n::trf("Failed to read config file: {error}", &[("error", e.to_string())]))?;
+        .map_err(|e| {
+            crate::logging::warn("读取配置文件", &e.to_string());
+            crate::i18n::trf("Failed to read config file: {error}", &[("error", e.to_string())])
+        })?;
     let mut config: LauncherConfig = serde_json::from_str(&content)
-        .map_err(|e| crate::i18n::trf("Failed to parse config file: {error}", &[("error", e.to_string())]))?;
+        .map_err(|e| {
+            crate::logging::warn("解析配置文件", &e.to_string());
+            crate::i18n::trf("Failed to parse config file: {error}", &[("error", e.to_string())])
+        })?;
     // 兼容旧配置里已存的 \\?\ 前缀路径
     config.taskboard_path = strip_unc(&config.taskboard_path);
     Ok(config)
@@ -234,12 +246,21 @@ pub fn save_config(config: &LauncherConfig) -> Result<(), String> {
     let path = config_file_path()?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
-            .map_err(|e| crate::i18n::trf("Failed to create config directory: {error}", &[("error", e.to_string())]))?;
+            .map_err(|e| {
+                crate::logging::error("创建配置目录", &e.to_string());
+                crate::i18n::trf("Failed to create config directory: {error}", &[("error", e.to_string())])
+            })?;
     }
     let content = serde_json::to_string_pretty(config)
-        .map_err(|e| crate::i18n::trf("Failed to serialize config: {error}", &[("error", e.to_string())]))?;
+        .map_err(|e| {
+            crate::logging::error("序列化配置", &e.to_string());
+            crate::i18n::trf("Failed to serialize config: {error}", &[("error", e.to_string())])
+        })?;
     std::fs::write(&path, content)
-        .map_err(|e| crate::i18n::trf("Failed to write config file: {error}", &[("error", e.to_string())]))
+        .map_err(|e| {
+            crate::logging::error("写入配置文件", &e.to_string());
+            crate::i18n::trf("Failed to write config file: {error}", &[("error", e.to_string())])
+        })
 }
 
 #[cfg(test)]

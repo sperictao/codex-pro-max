@@ -40,12 +40,19 @@ fn err(msg: String) -> CheckResult {
 pub(crate) fn check(param: &GuardParam, expected: &serde_json::Value) -> CheckResult {
     let file = match codex_file(&param.file) {
         Ok(f) => f,
-        Err(e) => return err(e),
+        Err(e) => {
+            log::warn!("[看守检测] 定位文件 {} 失败: {}", param.file, e);
+            return err(e);
+        }
     };
     let content = match std::fs::read_to_string(&file) {
         Ok(c) => Some(c),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-        Err(e) => return err(trf("Read failed: {error}", &[("error", e.to_string())])),
+        Err(e) => {
+            let msg = trf("Read failed: {error}", &[("error", e.to_string())]);
+            log::warn!("[看守检测] 读取 {} 失败: {}", param.file, msg);
+            return err(msg);
+        }
     };
 
     match param.apply_mode.as_str() {
@@ -56,7 +63,11 @@ pub(crate) fn check(param: &GuardParam, expected: &serde_json::Value) -> CheckRe
             };
             let doc = match content.parse::<DocumentMut>() {
                 Ok(d) => d,
-                Err(e) => return err(trf("TOML parse failed; guarding paused for this group: {error}", &[("error", e.to_string())])),
+                Err(e) => {
+                    let msg = trf("TOML parse failed; guarding paused for this group: {error}", &[("error", e.to_string())]);
+                    log::warn!("[看守检测] 解析 {} 失败: {}", param.file, msg);
+                    return err(msg);
+                }
             };
             match get_toml_path(&doc, &param.path) {
                 None => ok("missing", Some(tr("(not set)"))),
@@ -73,7 +84,11 @@ pub(crate) fn check(param: &GuardParam, expected: &serde_json::Value) -> CheckRe
             };
             let doc = match content.parse::<DocumentMut>() {
                 Ok(d) => d,
-                Err(e) => return err(trf("TOML parse failed; guarding paused for this group: {error}", &[("error", e.to_string())])),
+                Err(e) => {
+                    let msg = trf("TOML parse failed; guarding paused for this group: {error}", &[("error", e.to_string())]);
+                    log::warn!("[看守检测] 解析 {} 失败: {}", param.file, msg);
+                    return err(msg);
+                }
             };
             if get_toml_path(&doc, &param.path).is_some() {
                 ok("drift", Some(tr("present")))
@@ -113,7 +128,11 @@ pub(crate) fn apply(param: &GuardParam, expected: &serde_json::Value) -> Result<
             let content = std::fs::read_to_string(&file).unwrap_or_default();
             let mut doc = content
                 .parse::<DocumentMut>()
-                .map_err(|e| trf("TOML parse failed; nothing written: {error}", &[("error", e.to_string())]))?;
+                .map_err(|e| {
+                    let err = trf("TOML parse failed; nothing written: {error}", &[("error", e.to_string())]);
+                    log::error!("[看守写入] 解析 {} 失败: {}", param.file, err);
+                    err
+                })?;
             set_toml_path(&mut doc, &param.path, json_to_toml(expected)?)?;
             write_with_backup(&param.file, &file, &doc.to_string())
         }
@@ -121,11 +140,19 @@ pub(crate) fn apply(param: &GuardParam, expected: &serde_json::Value) -> Result<
             let content = match std::fs::read_to_string(&file) {
                 Ok(c) => c,
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-                Err(e) => return Err(trf("Read failed: {error}", &[("error", e.to_string())])),
+                Err(e) => {
+                    let err = trf("Read failed: {error}", &[("error", e.to_string())]);
+                    log::error!("[看守写入] 读取 {} 失败: {}", param.file, err);
+                    return Err(err);
+                }
             };
             let mut doc = content
                 .parse::<DocumentMut>()
-                .map_err(|e| trf("TOML parse failed; nothing written: {error}", &[("error", e.to_string())]))?;
+                .map_err(|e| {
+                    let err = trf("TOML parse failed; nothing written: {error}", &[("error", e.to_string())]);
+                    log::error!("[看守写入] 解析 {} 失败: {}", param.file, err);
+                    err
+                })?;
             remove_toml_path(&mut doc, &param.path);
             write_with_backup(&param.file, &file, &doc.to_string())
         }
@@ -144,7 +171,11 @@ pub(crate) fn apply(param: &GuardParam, expected: &serde_json::Value) -> Result<
             );
             write_with_backup(&param.file, &file, &new_content)
         }
-        other => Err(trf("Unknown apply_mode: {mode}", &[("mode", other.to_string())])),
+        other => {
+            let err = trf("Unknown apply_mode: {mode}", &[("mode", other.to_string())]);
+            log::error!("[看守写入] 参数 {} 未知 apply_mode: {}", param.id, err);
+            Err(err)
+        }
     }
 }
 

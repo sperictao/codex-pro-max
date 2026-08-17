@@ -17,7 +17,9 @@ pub(crate) fn set_toml_path(doc: &mut DocumentMut, path: &str, val: Item) -> Res
     let mut item = doc.as_item_mut();
     for seg in &segs[..segs.len() - 1] {
         if item.as_table_like().is_none() {
-            return Err(trf("Intermediate path node {node} is not a table", &[("node", seg.to_string())]));
+            let err = trf("Intermediate path node {node} is not a table", &[("node", seg.to_string())]);
+            crate::logging::error("看守 TOML 写入", &err);
+            return Err(err);
         }
         if item.get(seg).is_none() {
             item.as_table_like_mut()
@@ -26,12 +28,18 @@ pub(crate) fn set_toml_path(doc: &mut DocumentMut, path: &str, val: Item) -> Res
         }
         item = item.get_mut(seg).unwrap();
         if item.as_table_like().is_none() {
-            return Err(trf("Intermediate path node {node} is not a table", &[("node", seg.to_string())]));
+            let err = trf("Intermediate path node {node} is not a table", &[("node", seg.to_string())]);
+            crate::logging::error("看守 TOML 写入", &err);
+            return Err(err);
         }
     }
     let last = segs[segs.len() - 1];
     item.as_table_like_mut()
-        .ok_or_else(|| tr("Path endpoint is not a table"))?
+        .ok_or_else(|| {
+            let err = tr("Path endpoint is not a table");
+            crate::logging::error("看守 TOML 写入", &err);
+            err
+        })?
         .insert(last, val);
     Ok(())
 }
@@ -56,9 +64,17 @@ pub(crate) fn json_to_toml(v: &serde_json::Value) -> Result<Item, String> {
         serde_json::Value::Number(n) => n
             .as_i64()
             .map(toml_edit::value)
-            .ok_or_else(|| tr("Integer parameters do not support decimals")),
+            .ok_or_else(|| {
+                let err = tr("Integer parameters do not support decimals");
+                crate::logging::error("看守 TOML 转换", &err);
+                err
+            }),
         serde_json::Value::String(s) => Ok(toml_edit::value(s.as_str())),
-        _ => Err(tr("Unsupported value type")),
+        _ => {
+            let err = tr("Unsupported value type");
+            crate::logging::error("看守 TOML 转换", &err);
+            Err(err)
+        }
     }
 }
 

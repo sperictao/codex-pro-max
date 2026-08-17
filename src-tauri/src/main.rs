@@ -11,6 +11,7 @@ mod codex_guard;
 mod dsh;
 mod fastctx;
 mod i18n;
+mod logging;
 mod process_manager;
 mod updater;
 mod version;
@@ -53,7 +54,10 @@ fn autostart_set(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     } else {
         app.autolaunch().disable()
     };
-    r.map_err(|e| e.to_string())
+    r.map_err(|e| {
+        log::error!("[autostart_set] 更新自启注册失败: {}", e);
+        e.to_string()
+    })
 }
 
 /// 日志目录路径（设置页「打开日志目录」按钮用）
@@ -62,7 +66,10 @@ fn get_log_dir(app: tauri::AppHandle) -> Result<String, String> {
     app.path()
         .app_log_dir()
         .map(|p| p.to_string_lossy().to_string())
-        .map_err(|e| e.to_string())
+        .map_err(|e| {
+            log::error!("[get_log_dir] 定位日志目录失败: {}", e);
+            e.to_string()
+        })
 }
 
 /// 获取内置 taskboard 路径
@@ -114,8 +121,14 @@ fn get_resolved_language() -> String {
 fn set_language(app: tauri::AppHandle, setting: String) -> Result<(), String> {
     i18n::set_current(i18n::resolve_language(&setting));
     if let Some(tray) = app.tray_by_id("main") {
-        let menu = build_tray_menu(&app).map_err(|e| e.to_string())?;
-        tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
+        let menu = build_tray_menu(&app).map_err(|e| {
+            log::error!("[set_language] 重建托盘菜单失败: {}", e);
+            e.to_string()
+        })?;
+        tray.set_menu(Some(menu)).map_err(|e| {
+            log::error!("[set_language] 设置托盘菜单失败: {}", e);
+            e.to_string()
+        })?;
     }
     Ok(())
 }
@@ -159,15 +172,21 @@ async fn check_node_version(node_path: String) -> Result<String, String> {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
     let output = cmd.output()
-        .map_err(|e| i18n::trf("Cannot execute {path}: {error}", &[
-            ("path", node.clone()),
-            ("error", e.to_string()),
-        ]))?;
+        .map_err(|e| {
+            let err = i18n::trf("Cannot execute {path}: {error}", &[
+                ("path", node.clone()),
+                ("error", e.to_string()),
+            ]);
+            log::error!("[check_node_version] {}", err);
+            err
+        })?;
     if output.status.success() {
         let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
         Ok(version)
     } else {
-        Err(i18n::tr("Node.js is not available"))
+        let err = i18n::tr("Node.js is not available");
+        log::error!("[check_node_version] {}", err);
+        Err(err)
     }
 }
 
@@ -374,10 +393,14 @@ async fn run_start_all(
 ) -> Result<(), String> {
     // 验证路径
     if config.taskboard_path.is_empty() {
-        return Err(i18n::tr("Please set the dashi-taskboard project path first"));
+        let err = i18n::tr("Please set the dashi-taskboard project path first");
+        log::error!("[start_all] {}", err);
+        return Err(err);
     }
     if !std::path::Path::new(&config.taskboard_path).exists() {
-        return Err(i18n::trf("Path does not exist: {path}", &[("path", config.taskboard_path.clone())]));
+        let err = i18n::trf("Path does not exist: {path}", &[("path", config.taskboard_path.clone())]);
+        log::error!("[start_all] {}", err);
+        return Err(err);
     }
 
     // token 与 secret 全流程一致：server 与注入器共用同一对凭据
@@ -575,7 +598,11 @@ async fn open_taskboard(config: LauncherConfig) -> Result<(), String> {
         std::process::Command::new("open")
             .arg(&url)
             .spawn()
-            .map_err(|e| i18n::trf("Cannot open browser: {error}", &[("error", e.to_string())]))?;
+            .map_err(|e| {
+                let err = i18n::trf("Cannot open browser: {error}", &[("error", e.to_string())]);
+                log::error!("[open_taskboard] {}", err);
+                err
+            })?;
     }
     #[cfg(windows)]
     {
@@ -584,7 +611,11 @@ async fn open_taskboard(config: LauncherConfig) -> Result<(), String> {
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         let mut cmd = std::process::Command::new("cmd");
         cmd.args(["/c", "start", "", &url]).creation_flags(CREATE_NO_WINDOW);
-        cmd.spawn().map_err(|e| i18n::trf("Cannot open browser: {error}", &[("error", e.to_string())]))?;
+        cmd.spawn().map_err(|e| {
+            let err = i18n::trf("Cannot open browser: {error}", &[("error", e.to_string())]);
+            log::error!("[open_taskboard] {}", err);
+            err
+        })?;
     }
     Ok(())
 }
@@ -663,28 +694,42 @@ async fn install_skill(taskboard_path: String) -> Result<String, String> {
 
     // 检查源路径
     if !skill_source.exists() {
-        return Err(i18n::trf("Skill source path does not exist: {path}", &[
+        let err = i18n::trf("Skill source path does not exist: {path}", &[
             ("path", skill_source.display().to_string()),
-        ]));
+        ]);
+        log::error!("[install_skill] {}", err);
+        return Err(err);
     }
 
     // 创建目标目录
     let skills_dir = std::path::Path::new(&home).join(".codex/skills");
     std::fs::create_dir_all(&skills_dir)
-        .map_err(|e| i18n::trf("Failed to create skills directory: {error}", &[("error", e.to_string())]))?;
+        .map_err(|e| {
+            let err = i18n::trf("Failed to create skills directory: {error}", &[("error", e.to_string())]);
+            log::error!("[install_skill] {}", err);
+            err
+        })?;
 
     // 如果已存在则先删除
     if skill_target.exists() {
         std::fs::remove_file(&skill_target)
             .or_else(|_| std::fs::remove_dir_all(&skill_target))
-            .map_err(|e| i18n::trf("Failed to remove old link: {error}", &[("error", e.to_string())]))?;
+            .map_err(|e| {
+                let err = i18n::trf("Failed to remove old link: {error}", &[("error", e.to_string())]);
+                log::error!("[install_skill] {}", err);
+                err
+            })?;
     }
 
     // 创建符号链接（跨平台）
     #[cfg(unix)]
     {
         std::os::unix::fs::symlink(&skill_source, &skill_target)
-            .map_err(|e| i18n::trf("Failed to create symlink: {error}", &[("error", e.to_string())]))?;
+            .map_err(|e| {
+                let err = i18n::trf("Failed to create symlink: {error}", &[("error", e.to_string())]);
+                log::error!("[install_skill] {}", err);
+                err
+            })?;
     }
     #[cfg(windows)]
     {
@@ -694,7 +739,11 @@ async fn install_skill(taskboard_path: String) -> Result<String, String> {
         } else {
             std::os::windows::fs::symlink_file(&skill_source, &skill_target)
         };
-        result.map_err(|e| i18n::trf("Failed to create symlink: {error} (administrator privileges or Developer Mode may be required)", &[("error", e.to_string())]))?;
+        result.map_err(|e| {
+            let err = i18n::trf("Failed to create symlink: {error} (administrator privileges or Developer Mode may be required)", &[("error", e.to_string())]);
+            log::error!("[install_skill] {}", err);
+            err
+        })?;
     }
 
     Ok(i18n::trf("Skill installed to {path}", &[("path", skill_target.display().to_string())]))
@@ -733,7 +782,11 @@ async fn run_taskctl(
     }
 
     let output = cmd.output()
-        .map_err(|e| i18n::trf("Failed to execute taskctl: {error}", &[("error", e.to_string())]))?;
+        .map_err(|e| {
+            let err = i18n::trf("Failed to execute taskctl: {error}", &[("error", e.to_string())]);
+            log::error!("[run_taskctl] {}", err);
+            err
+        })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -741,7 +794,9 @@ async fn run_taskctl(
     if output.status.success() {
         Ok(stdout)
     } else {
-        Err(if stderr.is_empty() { stdout } else { stderr })
+        let err = if stderr.is_empty() { stdout } else { stderr };
+        log::error!("[run_taskctl] 命令失败: {}", err);
+        Err(err)
     }
 }
 

@@ -112,6 +112,7 @@ export interface DshStatus {
   tailscaleInstalled: boolean;
   tailscaleOnline: boolean;
   hostname: string | null;
+  localUrl: string | null;
   url: string | null;
   magicDnsEnabled: boolean;
   serveConfigured: boolean;

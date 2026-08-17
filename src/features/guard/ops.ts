@@ -5,6 +5,7 @@ import { ask } from "@tauri-apps/plugin-dialog";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
 import { useAppStore } from "@/shared/store";
 import * as cmd from "@/shared/commands";
+import { log } from "@/shared/logger";
 import { i18n } from "@/shared/i18n";
 import type { CustomParamPayload, GuardParamView, GuardView } from "@/shared/types";
 
@@ -198,7 +199,7 @@ export async function refreshFiles(): Promise<void> {
       }
     }
   } catch (e) {
-    console.error("加载文件列表失败", e);
+    log.error("加载看守文件列表", e);
   }
 }
 

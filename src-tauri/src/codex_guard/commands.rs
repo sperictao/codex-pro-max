@@ -17,7 +17,10 @@ fn find_param(schema: &[GuardParam], id: &str) -> Result<GuardParam, String> {
         .iter()
         .find(|p| p.id == id)
         .cloned()
-        .ok_or_else(|| trf("Parameter not found in schema: {id}", &[("id", id.to_string())]))
+        .ok_or_else(|| {
+            crate::logging::error("看守: 查找参数", id);
+            trf("Parameter not found in schema: {id}", &[("id", id.to_string())])
+        })
 }
 
 #[tauri::command]
@@ -40,15 +43,23 @@ pub fn guard_set_value(id: String, value: serde_json::Value) -> Result<(), Strin
         "bool" => value.is_boolean(),
         "int" => value.as_i64().is_some(),
         "string" | "text" => value.is_string(),
-        other => return Err(trf("Parameter type {type} is not editable", &[("type", other.to_string())])),
+        other => {
+            let err = trf("Parameter type {type} is not editable", &[("type", other.to_string())]);
+            crate::logging::warn("看守: 修改参数", &err);
+            return Err(err);
+        }
     };
     if !type_ok {
-        return Err(tr("Value type mismatch"));
+        let err = tr("Value type mismatch");
+        crate::logging::warn("看守: 修改参数", &err);
+        return Err(err);
     }
     let mut cfg = config::load_config()?;
     let st = cfg.codex_guard.params.entry(id).or_default();
     if st.locked {
-        return Err(tr("Parameter is locked; unlock it before modifying"));
+        let err = tr("Parameter is locked; unlock it before modifying");
+        crate::logging::warn("看守: 修改参数", &err);
+        return Err(err);
     }
     st.value = Some(value);
     config::save_config(&cfg)
@@ -76,7 +87,9 @@ pub fn guard_set_applied(id: String, applied: bool) -> Result<(), String> {
     let mut cfg = config::load_config()?;
     let st = cfg.codex_guard.params.entry(id).or_default();
     if st.locked {
-        return Err(tr("Unlock the parameter before disabling it"));
+        let err = tr("Unlock the parameter before disabling it");
+        crate::logging::warn("看守: 停用参数", &err);
+        return Err(err);
     }
     st.applied = false;
     config::save_config(&cfg)
@@ -90,7 +103,9 @@ pub fn guard_set_locked(id: String, locked: bool) -> Result<(), String> {
     {
         let st = cfg.codex_guard.params.entry(id.clone()).or_default();
         if locked && !st.applied {
-            return Err(tr("Apply the parameter before locking it"));
+            let err = tr("Apply the parameter before locking it");
+            crate::logging::warn("看守: 锁定参数", &err);
+            return Err(err);
         }
         st.locked = locked;
     }
@@ -117,7 +132,11 @@ pub fn guard_add_custom_param(
 ) -> Result<(), String> {
     let files = load_files()?;
     let f = find_file(&files, &file_id)
-        .ok_or_else(|| trf("Target file not found: {id}", &[("id", file_id.clone())]))?;
+        .ok_or_else(|| {
+            let err = trf("Target file not found: {id}", &[("id", file_id.clone())]);
+            crate::logging::error("看守: 添加自定义参数", &err);
+            err
+        })?;
 
     param.id = normalize_custom_id(&param.id);
     param.custom = true;
@@ -141,7 +160,9 @@ pub fn guard_remove_custom_param(id: String) -> Result<(), String> {
     let before = disk.len();
     disk.retain(|p| p.id != normalized);
     if disk.len() == before {
-        return Err(trf("Custom parameter not found: {id}", &[("id", normalized.clone())]));
+        let err = trf("Custom parameter not found: {id}", &[("id", normalized.clone())]);
+        crate::logging::error("看守: 删除自定义参数", &err);
+        return Err(err);
     }
     save_disk_schema(&disk)?;
 
@@ -178,17 +199,23 @@ pub fn guard_add_file(name: String, file: String, format: String) -> Result<Guar
         .trim_matches('-')
         .to_string();
     if slug.is_empty() {
-        return Err(tr("File name must contain at least one letter or digit"));
+        let err = tr("File name must contain at least one letter or digit");
+        crate::logging::warn("看守: 添加文件", &err);
+        return Err(err);
     }
     let id = normalize_custom_id(&slug);
 
     // id 与路径冲突检查（同路径会让参数在两个分组里重复显示）
     if files.iter().any(|f| f.id == id) {
-        return Err(trf("A file with the same name already exists: {name}", &[("name", name.clone())]));
+        let err = trf("A file with the same name already exists: {name}", &[("name", name.clone())]);
+        crate::logging::warn("看守: 添加文件", &err);
+        return Err(err);
     }
     let trimmed_file = file.trim().to_string();
     if files.iter().any(|f| f.file == trimmed_file) {
-        return Err(trf("Path already in guard list: {path}", &[("path", trimmed_file.clone())]));
+        let err = trf("Path already in guard list: {path}", &[("path", trimmed_file.clone())]);
+        crate::logging::warn("看守: 添加文件", &err);
+        return Err(err);
     }
 
     let gf = GuardFile {
@@ -213,13 +240,19 @@ pub fn guard_update_file(id: String, name: String, file: String) -> Result<Guard
     let idx = files
         .iter()
         .position(|f| f.id == id)
-        .ok_or_else(|| trf("File not found: {id}", &[("id", id.clone())]))?;
+        .ok_or_else(|| {
+            let err = trf("File not found: {id}", &[("id", id.clone())]);
+            crate::logging::error("看守: 更新文件", &err);
+            err
+        })?;
 
     let old_file = files[idx].file.clone();
     let new_file = file.trim().to_string();
 
     if old_file != new_file && files.iter().any(|f| f.id != id && f.file == new_file) {
-        return Err(trf("Path already in guard list: {path}", &[("path", new_file.clone())]));
+        let err = trf("Path already in guard list: {path}", &[("path", new_file.clone())]);
+        crate::logging::warn("看守: 更新文件", &err);
+        return Err(err);
     }
 
     let f = &mut files[idx];
@@ -257,10 +290,16 @@ pub fn guard_remove_file(id: String) -> Result<(), String> {
     let idx = files
         .iter()
         .position(|f| f.id == id)
-        .ok_or_else(|| trf("File not found: {id}", &[("id", id.clone())]))?;
+        .ok_or_else(|| {
+            let err = trf("File not found: {id}", &[("id", id.clone())]);
+            crate::logging::error("看守: 删除文件", &err);
+            err
+        })?;
 
     if files[idx].builtin {
-        return Err(tr("Built-in files cannot be removed"));
+        let err = tr("Built-in files cannot be removed");
+        crate::logging::warn("看守: 删除文件", &err);
+        return Err(err);
     }
 
     let target_file = files[idx].file.clone();
@@ -317,7 +356,11 @@ pub fn guard_relativize_picked_path(abs_path: String) -> Result<String, String> 
     let home = codex_home()?;
     let rel = std::path::Path::new(&abs_path)
         .strip_prefix(&home)
-        .map_err(|_| tr("Selected file must be inside ~/.codex"))?;
+        .map_err(|_| {
+            let err = tr("Selected file must be inside ~/.codex");
+            crate::logging::warn("看守: 换算选中路径", &err);
+            err
+        })?;
     let rel = rel.to_string_lossy().replace('\\', "/");
     validate_file_path(&rel)?;
     Ok(rel)

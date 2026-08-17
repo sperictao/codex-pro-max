@@ -5,6 +5,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { useAppStore, type View } from "./shared/store";
 import { onDshStep, onStatusUpdate, onUpdaterDownloadProgress } from "./shared/events";
 import * as cmd from "./shared/commands";
+import { log } from "./shared/logger";
 import { currentConfigDraft } from "./shared/config";
 import { i18n } from "./shared/i18n";
 import { Toaster } from "./shared/components/Toaster";
@@ -53,8 +54,8 @@ export function App() {
     void (async () => {
       try {
         if (!(await isPermissionGranted())) await requestPermission();
-      } catch {
-        /* 拒绝则通知静默失败，不打扰 */
+      } catch (e) {
+        log.warn("请求通知权限失败（静默）", e);
       }
     })();
 
@@ -73,7 +74,8 @@ export function App() {
         // 应用版本（关于页）
         try {
           useAppStore.getState().setAppVersion(await getVersion());
-        } catch {
+        } catch (e) {
+          log.warn("读取应用版本失败", e);
           useAppStore.getState().setAppVersion("unknown");
         }
 

@@ -117,7 +117,9 @@ pub async fn quit_codex() -> Result<(), String> {
         }
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
-    Err(tr("Codex did not exit in time; please quit it manually and retry"))
+    let err = tr("Codex did not exit in time; please quit it manually and retry");
+    log::error!("[quit_codex] {}", err);
+    Err(err)
 }
 
 /// macOS 桌面版是否运行：pgrep 大小写敏感，"Codex" 不会误匹配 CLI 的 codex
@@ -160,7 +162,9 @@ pub async fn quit_codex() -> Result<(), String> {
         }
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
-    Err(tr("Codex did not exit in time; please quit it manually and retry"))
+    let err = tr("Codex did not exit in time; please quit it manually and retry");
+    log::error!("[quit_codex] {}", err);
+    Err(err)
 }
 
 /// 其他平台不发出标记、不会被调用，空实现保底
@@ -335,6 +339,7 @@ async fn fail_if_exited(proc: &mut ManagedProcess) -> Result<(), String> {
                 ("detail", detail),
             ]);
             crate::notify_process_failure(&proc.name, &proc.message);
+            log::error!("[进程事故] {}: {}", proc.name, proc.message);
             Err(proc.message.clone())
         }
         _ => Ok(()),
@@ -391,6 +396,7 @@ async fn refresh_liveness(proc: &mut ManagedProcess) {
                 ("detail", detail),
             ]);
             crate::notify_process_failure(&proc.name, &proc.message);
+            log::error!("[进程事故] {}: {}", proc.name, proc.message);
         }
         Ok(None) => {
             if let Some(port) = proc.cdp_port {
@@ -402,6 +408,7 @@ async fn refresh_liveness(proc: &mut ManagedProcess) {
                         ("port", port.to_string()),
                     ]);
                     crate::notify_process_failure(&proc.name, &proc.message);
+                    log::error!("[进程事故] {}: {}", proc.name, proc.message);
                 }
             }
         }
@@ -484,18 +491,22 @@ async fn ensure_codex_cdp(
         #[cfg(target_os = "macos")]
         let running = !new_instance && codex_running();
         if running {
-            return Err(format!(
+            let err = format!(
                 "{}{}",
                 CODEX_RUNNING_NO_CDP_MARK,
                 tr("Codex is already running without the CDP debug port")
-            ));
+            );
+            log::error!("[ensure_codex_cdp] {}", &err);
+            return Err(err);
         }
     }
     if app_path.is_empty() {
-        return Err(trf(
+        let err = trf(
             "CDP port {port} is not responding and no Codex app path is configured. Select the Codex app in Settings, or start Codex manually with --remote-debugging-port={port}",
             &[("port", port.to_string())],
-        ));
+        );
+        log::error!("[ensure_codex_cdp] {}", &err);
+        return Err(err);
     }
     let debug_args = [
         format!("--remote-debugging-port={}", port),
@@ -508,12 +519,18 @@ async fn ensure_codex_cdp(
             cmd.arg("-n");
         }
         cmd.arg("-a").arg(app_path).arg("--args").args(&debug_args);
-        let out = cmd.output().map_err(|e| trf("Cannot launch Codex: {error}", &[("error", e.to_string())]))?;
+        let out = cmd.output().map_err(|e| {
+            let err = trf("Cannot launch Codex: {error}", &[("error", e.to_string())]);
+            log::error!("[ensure_codex_cdp] {}", &err);
+            err
+        })?;
         if !out.status.success() {
-            return Err(trf(
+            let err = trf(
                 "Failed to launch Codex: {error}",
                 &[("error", String::from_utf8_lossy(&out.stderr).trim().to_string())],
-            ));
+            );
+            log::error!("[ensure_codex_cdp] {}", &err);
+            return Err(err);
         }
     }
     #[cfg(not(target_os = "macos"))]
@@ -522,7 +539,11 @@ async fn ensure_codex_cdp(
         // 商店版（msix: 哨兵）：COM 激活并把调试参数透传到应用命令行
         #[cfg(target_os = "windows")]
         if let Some(amid) = app_path.strip_prefix("msix:") {
-            crate::launch_store_app(amid, &debug_args.join(" "))?;
+            crate::launch_store_app(amid, &debug_args.join(" "))
+                .map_err(|e| {
+                    log::error!("[ensure_codex_cdp] {}", e);
+                    e
+                })?;
         } else {
             // 拉起 Codex 时注入带 token 前缀的 URL：Codex 会话内 shell 直跑的
             // taskctl 靠该 env 定位服务（否则落到无 token 的默认根 URL，撞上
@@ -532,10 +553,14 @@ async fn ensure_codex_cdp(
                 .args(&debug_args)
                 .env("CODEX_TASKBOARD_URL", url)
                 .spawn()
-                .map_err(|e| trf("Cannot launch Codex ({path}): {error}", &[
-                    ("path", app_path.to_string()),
-                    ("error", e.to_string()),
-                ]))?;
+                .map_err(|e| {
+                    let err = trf("Cannot launch Codex ({path}): {error}", &[
+                        ("path", app_path.to_string()),
+                        ("error", e.to_string()),
+                    ]);
+                    log::error!("[ensure_codex_cdp] {}", &err);
+                    err
+                })?;
         }
         // Linux 直接带参数拉起 exe，同样注入 token URL（同 Windows，taskctl 404 的同一根因）
         #[cfg(not(target_os = "windows"))]
@@ -545,10 +570,14 @@ async fn ensure_codex_cdp(
                 .args(&debug_args)
                 .env("CODEX_TASKBOARD_URL", url)
                 .spawn()
-                .map_err(|e| trf("Cannot launch Codex ({path}): {error}", &[
-                    ("path", app_path.to_string()),
-                    ("error", e.to_string()),
-                ]))?;
+                .map_err(|e| {
+                    let err = trf("Cannot launch Codex ({path}): {error}", &[
+                        ("path", app_path.to_string()),
+                        ("error", e.to_string()),
+                    ]);
+                    log::error!("[ensure_codex_cdp] {}", &err);
+                    err
+                })?;
         }
     }
     // 等窗口和 CDP 就绪，最多 15 秒
@@ -561,12 +590,16 @@ async fn ensure_codex_cdp(
     // Windows 上 new_instance 被忽略（无法强制新实例），超时多半意味着 Codex 已在
     // 运行且没带调试参数——单实例激活会丢弃参数，故两种模式给出一致提示
     Err(if new_instance && cfg!(target_os = "macos") {
-        trf("Timed out waiting for Codex CDP port {port} to be ready", &[("port", port.to_string())])
+        let err = trf("Timed out waiting for Codex CDP port {port} to be ready", &[("port", port.to_string())]);
+        log::error!("[ensure_codex_cdp] {}", &err);
+        err
     } else {
-        trf(
+        let err = trf(
             "Timed out waiting for Codex CDP port {port} to be ready. If Codex is already running, quit it completely and retry",
             &[("port", port.to_string())],
-        )
+        );
+        log::error!("[ensure_codex_cdp] {}", &err);
+        err
     })
 }
 
@@ -651,6 +684,7 @@ impl ProcessManager {
                 tb.status = ProcessStatus::Failed;
                 tb.message = trf("Launch failed: {error}", &[("error", e.to_string())]);
                 crate::notify_process_failure(&tb.name, &tb.message);
+                log::error!("[进程启动失败] {}: {}", tb.name, e);
                 Err(trf("Failed to start Taskboard server: {error}", &[("error", e.to_string())]))
             }
         }
@@ -788,6 +822,7 @@ impl ProcessManager {
                 inj.status = ProcessStatus::Failed;
                 inj.message = trf("Launch failed: {error}", &[("error", e.to_string())]);
                 crate::notify_process_failure(&inj.name, &inj.message);
+                log::error!("[进程启动失败] {}: {}", inj.name, e);
                 Err(trf("Failed to start Codex injector: {error}", &[("error", e.to_string())]))
             }
         }

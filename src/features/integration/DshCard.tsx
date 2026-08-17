@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
 import { useAppStore } from "@/shared/store";
 import * as cmd from "@/shared/commands";
-import { BTN, BTN_PRIMARY, TOGGLE } from "@/shared/lib/ui";
+import { BTN, BTN_PRIMARY, BTN_SM, TOGGLE } from "@/shared/lib/ui";
 import type { DshStatus, DshStepEvent } from "@/shared/types";
 
 // 时间轴步骤顺序（与 Rust dsh_setup 的 index 一一对应）
@@ -28,10 +28,11 @@ export function statusTextKey(s: DshStatus): string {
   if (!s.nodeAvailable) return "Node.js not detected";
   if (!s.dshInstalled) return "DeepSeek Harness not installed";
   if (!s.dshCompatible) return "dsh version is not supported by the auth plugins";
-  if (!s.pluginsInstalled) return "dsh auth plugins not installed";
   if (!s.tailscaleInstalled || !s.tailscaleOnline) return "Tailscale not ready";
   if (!s.magicDnsEnabled) return "MagicDNS not enabled";
   if (!s.dshRunning) return "dsh web not running";
+  // 授权插件只服务于远程访问链路；纯本地用 dsh 不需要，故放在运行之后
+  if (!s.pluginsInstalled) return "dsh auth plugins not installed";
   if (!s.serveConfigured) return "Tailscale serve not configured";
   return "Remote access ready";
 }
@@ -70,6 +71,26 @@ function StepMarker({ state }: { state: DshStepEvent["state"] }) {
     default:
       return <>○</>;
   }
+}
+
+// 单个可用地址行：地址 + 复制/打开（本地与远程各一行，互不混淆）
+function AddressRow({
+  url,
+  onCopy,
+  onOpen,
+}: {
+  url: string;
+  onCopy: (u: string) => void;
+  onOpen: (u: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-1.5">
+      <span className="shrink-0 rounded-full bg-primary/15 px-2.5 py-0.5 font-mono text-xs text-primary">{url}</span>
+      <button className={BTN_SM} onClick={() => void onCopy(url)}>{t("Copy")}</button>
+      <button className={BTN_SM} onClick={() => void onOpen(url)}>{t("Open")}</button>
+    </div>
+  );
 }
 
 export function DshCard() {
@@ -149,45 +170,67 @@ export function DshCard() {
     }
   };
 
-  const stop = async () => {
+  const open = async (url: string) => {
     try {
-      await cmd.dshStop();
-      toast(t("dsh remote access services stopped"), "info");
-    } catch (e) {
-      toast(t("Stop failed: {{error}}", { error: String(e) }), "error");
-    }
-    // 停止后回到状态驱动时间轴，避免事件时间轴残留「已就绪」的历史状态
-    setHasRunSetup(false);
-    try {
-      const s = await cmd.dshDetect();
-      setStatus(s);
-      setDshTimeline(timelineFromStatus(s));
-    } catch (e) {
-      toast(t("dsh detection failed: {{error}}", { error: String(e) }), "error");
-    }
-  };
-
-  const open = async () => {
-    if (!status?.url) {
-      toast(t("Remote URL not available yet; run the one-click setup first"), "error");
-      return;
-    }
-    try {
-      await openUrl(status.url);
+      await openUrl(url);
     } catch (e) {
       toast(t("Failed to open: {{error}}", { error: String(e) }), "error");
     }
   };
 
-  // 复制远程地址：Open 只会用系统默认浏览器打开，用户想把地址发到手机/
+  // 复制地址：Open 只会用系统默认浏览器打开，用户想把地址发到手机/
   // 换已配好代理规则的浏览器时需要手动复制
-  const copyUrl = async () => {
-    if (!status?.url) return;
+  const copyUrl = async (url: string) => {
     try {
-      await navigator.clipboard.writeText(status.url);
-      toast(t("Remote URL copied"), "info");
+      await navigator.clipboard.writeText(url);
+      toast(t("Address copied"), "info");
     } catch (e) {
       toast(t("Failed to copy: {{error}}", { error: String(e) }), "error");
+    }
+  };
+
+  const stopLocal = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await cmd.dshStop();
+      toast(t("dsh web stopped"), "info");
+    } catch (e) {
+      toast(t("Stop failed: {{error}}", { error: String(e) }), "error");
+    } finally {
+      setBusy(false);
+      // 停止后回到状态驱动时间轴，避免事件时间轴残留「已就绪」的历史状态
+      setHasRunSetup(false);
+      try {
+        const s = await cmd.dshDetect();
+        setStatus(s);
+        setDshTimeline(timelineFromStatus(s));
+      } catch (e) {
+        toast(t("dsh detection failed: {{error}}", { error: String(e) }), "error");
+      }
+    }
+  };
+
+  // 关闭远程访问（关掉 HTTPS Serve，dsh web 保持本地运行）
+  const stopRemote = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await cmd.dshStop();
+      toast(t("dsh remote access services stopped"), "info");
+    } catch (e) {
+      toast(t("Stop failed: {{error}}", { error: String(e) }), "error");
+    } finally {
+      setBusy(false);
+      // 停止后回到状态驱动时间轴，避免事件时间轴残留「已就绪」的历史状态
+      setHasRunSetup(false);
+      try {
+        const s = await cmd.dshDetect();
+        setStatus(s);
+        setDshTimeline(timelineFromStatus(s));
+      } catch (e) {
+        toast(t("dsh detection failed: {{error}}", { error: String(e) }), "error");
+      }
     }
   };
 
@@ -277,27 +320,31 @@ export function DshCard() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <button className={BTN_PRIMARY} disabled={busy} onClick={() => void startLocal()}>
-          {t("One-click start dsh web")}
-        </button>
-        <button className={BTN_PRIMARY} disabled={busy} onClick={() => void start()}>
-          {busy ? t("Working…") : t("One-click remote access")}
-        </button>
-        <button className={BTN} disabled={busy || !status || (!status.dshRunning && !status.serveConfigured)} onClick={() => void stop()}>
-          {t("Stop")}
-        </button>
-        <div className="ml-auto flex items-center gap-2">
-          {status?.url && !busy && (
-            <span className="shrink-0 rounded-full bg-primary/15 px-2.5 py-0.5 font-mono text-xs text-primary">
-              {status.url}
-            </span>
+        {status?.dshRunning ? (
+          <button className={BTN} disabled={busy} onClick={() => void stopLocal()}>
+            {t("Stop dsh web")}
+          </button>
+        ) : (
+          <button className={BTN_PRIMARY} disabled={busy} onClick={() => void startLocal()}>
+            {t("One-click start dsh web")}
+          </button>
+        )}
+        {status?.url ? (
+          <button className={BTN} disabled={busy} onClick={() => void stopRemote()}>
+            {t("Stop remote access")}
+          </button>
+        ) : (
+          <button className={BTN_PRIMARY} disabled={busy} onClick={() => void start()}>
+            {busy ? t("Working…") : t("One-click remote access")}
+          </button>
+        )}
+        <div className="ml-auto flex min-w-0 flex-col items-end gap-1.5">
+          {status?.localUrl && !busy && (
+            <AddressRow url={status.localUrl} onCopy={copyUrl} onOpen={open} />
           )}
-          <button className={BTN} disabled={busy || !status?.url} onClick={() => void copyUrl()}>
-            {t("Copy URL")}
-          </button>
-          <button className={BTN} disabled={busy || !status?.url} onClick={() => void open()}>
-            {t("Open")}
-          </button>
+          {status?.url && !busy && (
+            <AddressRow url={status.url} onCopy={copyUrl} onOpen={open} />
+          )}
         </div>
       </div>
 

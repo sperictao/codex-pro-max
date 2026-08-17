@@ -52,10 +52,19 @@ pub(crate) fn load_schema() -> Vec<GuardParam> {
         let _ = std::fs::write(&path, BUILTIN_SCHEMA);
         return builtin;
     }
-    let disk: Vec<GuardParam> = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|c| serde_json::from_str(&c).ok())
-        .unwrap_or_default();
+    let disk: Vec<GuardParam> = match std::fs::read_to_string(&path) {
+        Ok(c) => match serde_json::from_str(&c) {
+            Ok(v) => v,
+            Err(e) => {
+                log::warn!("[看守 schema] 磁盘 schema 解析失败，已回退内置: {}", e);
+                Vec::new()
+            }
+        },
+        Err(e) => {
+            log::warn!("[看守 schema] 磁盘 schema 读取失败，已回退内置: {}", e);
+            Vec::new()
+        }
+    };
 
     merge_schema(builtin, disk)
 }
@@ -84,9 +93,15 @@ pub(crate) fn load_disk_schema() -> Result<Vec<GuardParam>, String> {
         return Ok(Vec::new());
     }
     let content = std::fs::read_to_string(&path)
-        .map_err(|e| trf("Failed to read schema file: {error}", &[("error", e.to_string())]))?;
+        .map_err(|e| {
+            crate::logging::warn("看守 schema 读取", &e.to_string());
+            trf("Failed to read schema file: {error}", &[("error", e.to_string())])
+        })?;
     let schema: Vec<GuardParam> = serde_json::from_str(&content)
-        .map_err(|e| trf("Failed to parse schema file: {error}", &[("error", e.to_string())]))?;
+        .map_err(|e| {
+            crate::logging::warn("看守 schema 解析", &e.to_string());
+            trf("Failed to parse schema file: {error}", &[("error", e.to_string())])
+        })?;
     Ok(schema)
 }
 
@@ -94,12 +109,21 @@ pub(crate) fn save_disk_schema(schema: &[GuardParam]) -> Result<(), String> {
     let path = schema_file_path()?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
-            .map_err(|e| trf("Failed to create schema directory: {error}", &[("error", e.to_string())]))?;
+            .map_err(|e| {
+                crate::logging::error("看守 schema 写目录", &e.to_string());
+                trf("Failed to create schema directory: {error}", &[("error", e.to_string())])
+            })?;
     }
     let content = serde_json::to_string_pretty(schema)
-        .map_err(|e| trf("Failed to serialize schema: {error}", &[("error", e.to_string())]))?;
+        .map_err(|e| {
+            crate::logging::error("看守 schema 序列化", &e.to_string());
+            trf("Failed to serialize schema: {error}", &[("error", e.to_string())])
+        })?;
     std::fs::write(&path, content)
-        .map_err(|e| trf("Failed to write schema file: {error}", &[("error", e.to_string())]))
+        .map_err(|e| {
+            crate::logging::error("看守 schema 写入", &e.to_string());
+            trf("Failed to write schema file: {error}", &[("error", e.to_string())])
+        })
 }
 
 #[cfg(test)]
