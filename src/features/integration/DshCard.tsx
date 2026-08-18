@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
 import { useAppStore } from "@/shared/store";
 import * as cmd from "@/shared/commands";
-import { BTN, BTN_PRIMARY, BTN_SM, TOGGLE } from "@/shared/lib/ui";
+import { BTN_DESTRUCTIVE, BTN_PRIMARY, BTN_SM, TOGGLE } from "@/shared/lib/ui";
 import type { DshStatus, DshStepEvent } from "@/shared/types";
 
 export type DshAccessMode = "local" | "remote";
@@ -130,7 +130,10 @@ export function DshCard() {
   const timeline = useAppStore((s) => s.dshTimeline);
   const setDshTimeline = useAppStore((s) => s.setDshTimeline);
   const [status, setStatus] = useState<DshStatus | null>(null);
-  const [busy, setBusy] = useState(false);
+  // 启动/修复与停止各自维护 busy（同主页 Start All / Stop All 语义），互斥防并发
+  const [startBusy, setStartBusy] = useState(false);
+  const [stopBusy, setStopBusy] = useState(false);
+  const busy = startBusy || stopBusy;
   // 是否跑过一键流程：跑过则时间轴以事件流为准，否则用检测结果渲染就绪视图
   const [hasRunSetup, setHasRunSetup] = useState(false);
   // 当前访问模式：local（127.0.0.1:3899 本地访问）或 remote（Tailscale HTTPS 远程访问）。
@@ -173,7 +176,7 @@ export function DshCard() {
   // 结束后刷新状态并按模式切回状态驱动时间轴
   const startCurrent = async () => {
     if (busy) return;
-    setBusy(true);
+    setStartBusy(true);
     setHasRunSetup(true);
     const ids = isRemote ? STEP_IDS : LOCAL_STEP_IDS;
     // 初始化为全 pending，随后由后端 dsh-step 事件逐步推进
@@ -194,7 +197,7 @@ export function DshCard() {
       // 远程失败详情已由 dsh-step 事件渲染在时间轴节点上
       if (!isRemote) toast(t("dsh start failed: {{error}}", { error: String(e) }), "error");
     } finally {
-      setBusy(false);
+      setStartBusy(false);
       // 成功后回到状态驱动视图；失败时保留事件时间轴（问题+解决方案持续可见）
       if (succeeded) setHasRunSetup(false);
       try {
@@ -213,14 +216,14 @@ export function DshCard() {
   // 本地模式会关掉 dsh web（serve/自启若从未配置则为 no-op）
   const stopCurrent = async () => {
     if (busy) return;
-    setBusy(true);
+    setStopBusy(true);
     try {
       await cmd.dshStop();
       toast(t("dsh web stopped"), "info");
     } catch (e) {
       toast(t("Stop failed: {{error}}", { error: String(e) }), "error");
     } finally {
-      setBusy(false);
+      setStopBusy(false);
       // 停止后回到状态驱动时间轴，避免事件时间轴残留「已就绪」的历史状态
       setHasRunSetup(false);
       try {
@@ -254,14 +257,14 @@ export function DshCard() {
 
   const repair = async () => {
     if (busy) return;
-    setBusy(true);
+    setStartBusy(true);
     try {
       const version = await cmd.dshUpdate();
       toast(t("dsh integration repaired for {{version}}", { version }), "success");
     } catch (e) {
       toast(t("dsh integration repair failed: {{error}}", { error: String(e) }), "error");
     } finally {
-      setBusy(false);
+      setStartBusy(false);
       // 更新流程不走 dsh-step 事件流：回到状态驱动时间轴
       setHasRunSetup(false);
       try {
@@ -379,11 +382,19 @@ export function DshCard() {
       </label>
 
       <div className="flex flex-wrap items-center gap-2">
-        <button className={BTN_PRIMARY} disabled={busy} onClick={() => void startCurrent()}>
-          {t("One-click start dsh web")}
+        <button
+          className={BTN_PRIMARY}
+          disabled={busy || !!status?.dshRunning}
+          onClick={() => void startCurrent()}
+        >
+          {startBusy ? t("Starting...") : t("One-click start dsh web")}
         </button>
-        <button className={BTN} disabled={busy} onClick={() => void stopCurrent()}>
-          {t("One-click stop dsh web")}
+        <button
+          className={BTN_DESTRUCTIVE}
+          disabled={busy || !status?.dshRunning}
+          onClick={() => void stopCurrent()}
+        >
+          {stopBusy ? t("Stopping...") : t("One-click stop dsh web")}
         </button>
         <div className="ml-auto flex min-w-0 flex-col items-end gap-1.5">
           {activeUrl && (
