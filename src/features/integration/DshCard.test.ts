@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DshStatus } from "@/shared/types";
-import { localTimelineFromStatus, statusTextKey, timelineFromStatus } from "./DshCard";
+import { localStatusTextKey, localTimelineFromStatus, statusTextKey, timelineFromStatus } from "./DshCard";
 
 const ready: DshStatus = {
   nodeAvailable: true,
@@ -63,5 +63,22 @@ describe("local one-click timeline", () => {
     const steps = localTimelineFromStatus({ ...ready, dshRunning: false });
     expect(steps[2].state).toBe("pending");
     expect(steps[3].state).toBe("pending");
+  });
+});
+
+describe("local mode status text", () => {
+  it("ignores remote-only prerequisites and reports ready when dsh web runs", () => {
+    // 本地模式不要求插件/Tailscale：插件缺失即可就绪
+    expect(localStatusTextKey({ ...ready, pluginsInstalled: false, serveConfigured: false }))
+      .toBe("Local access ready");
+    expect(statusTextKey({ ...ready, pluginsInstalled: false, serveConfigured: false }))
+      .toBe("dsh auth plugins not installed");
+  });
+
+  it("reports missing prerequisites in local order", () => {
+    expect(localStatusTextKey({ ...ready, dshRunning: false })).toBe("dsh web not running");
+    expect(localStatusTextKey({ ...ready, nodeAvailable: false })).toBe("Node.js not detected");
+    expect(localStatusTextKey({ ...ready, dshInstalled: false, dshCompatible: false }))
+      .toBe("DeepSeek Harness not installed");
   });
 });

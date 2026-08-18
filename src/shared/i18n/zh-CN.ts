@@ -271,9 +271,11 @@ export const zhCN: Record<I18nKey, string> = {
   // —— DeepSeek Harness 远程访问 ——
   "DeepSeek Harness": "DeepSeek Harness",
   "Remote access to the dsh Web UI over Tailscale HTTPS: https://<hostname>.ts.net → dsh web :3899. Tailscale identity is authorized by bundled dsh plugins; remote privileged APIs stay denied.": "通过 Tailscale HTTPS 远程访问 dsh Web UI：https://<hostname>.ts.net → dsh web :3899。内置 dsh 插件校验 Tailscale 身份，远程特权 API 保持禁用。",
-  "One-click remote access": "一键启用远程访问",
   "Remote access": "远程访问",
-  "Enable or disable remote access to the dsh Web UI over Tailscale HTTPS in one click.": "一键启用或关闭通过 Tailscale HTTPS 远程访问 dsh Web UI。",
+  "Remote access mode": "远程访问模式",
+  "Local access mode": "本地访问模式",
+  "Switching the access mode only selects the setup/close flow; click Start or Stop below to apply it. It does not start or stop anything by itself.": "切换访问模式只会改变安装与关闭流程，不会自动执行任何启动或停止操作；请用下方的启动/关闭按钮执行。",
+  "Local access to the dsh Web UI at http://127.0.0.1:3899.": "在 http://127.0.0.1:3899 本地访问 dsh Web UI。",
   "One-click start dsh web": "一键启动 dsh web",
   "One-click stop dsh web": "一键关闭 dsh web",
   "dsh web stopped": "dsh web 已停止",

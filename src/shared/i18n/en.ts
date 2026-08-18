@@ -269,9 +269,11 @@ export const en = {
   // —— DeepSeek Harness 远程访问 ——
   "DeepSeek Harness": "DeepSeek Harness",
   "Remote access to the dsh Web UI over Tailscale HTTPS: https://<hostname>.ts.net → dsh web :3899. Tailscale identity is authorized by bundled dsh plugins; remote privileged APIs stay denied.": "Remote access to the dsh Web UI over Tailscale HTTPS: https://<hostname>.ts.net → dsh web :3899. Tailscale identity is authorized by bundled dsh plugins; remote privileged APIs stay denied.",
-  "One-click remote access": "Enable remote access",
   "Remote access": "Remote access",
-  "Enable or disable remote access to the dsh Web UI over Tailscale HTTPS in one click.": "Enable or disable remote access to the dsh Web UI over Tailscale HTTPS in one click.",
+  "Remote access mode": "Remote access mode",
+  "Local access mode": "Local access mode",
+  "Switching the access mode only selects the setup/close flow; click Start or Stop below to apply it. It does not start or stop anything by itself.": "Switching the access mode only selects the setup/close flow; click Start or Stop below to apply it. It does not start or stop anything by itself.",
+  "Local access to the dsh Web UI at http://127.0.0.1:3899.": "Local access to the dsh Web UI at http://127.0.0.1:3899.",
   "One-click start dsh web": "One-click start dsh web",
   "One-click stop dsh web": "One-click stop dsh web",
   "dsh web stopped": "dsh web stopped",

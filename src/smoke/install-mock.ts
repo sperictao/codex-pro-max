@@ -91,7 +91,7 @@ const dsh: AnyRec = {
   nodeAvailable: true, dshInstalled: true, dshVersion: "0.1.0-rc.6",
   supportedVersion: "0.1.0-rc.6", dshCompatible: true, pluginsInstalled: true,
   dshRunning: false, tailscaleInstalled: true, tailscaleOnline: true,
-  hostname: "mbp", url: null, magicDnsEnabled: true,
+  hostname: "mbp", localUrl: null, url: null, magicDnsEnabled: true,
   serveConfigured: false,
   autostartEnabled: false, error: null,
 };
@@ -188,10 +188,10 @@ const routes: Record<string, (args: AnyRec) => any> = {
     Object.assign(dsh, { dshRunning: true, serveConfigured: true, url: "https://mbp.ts.net" });
   },
   dsh_start_web: () => {
-    dsh.dshRunning = true;
+    Object.assign(dsh, { dshRunning: true, localUrl: "http://127.0.0.1:3899" });
     return "http://127.0.0.1:3899";
   },
-  dsh_stop: () => { Object.assign(dsh, { dshRunning: false, serveConfigured: false, url: null }); },
+  dsh_stop: () => { Object.assign(dsh, { dshRunning: false, serveConfigured: false, url: null, localUrl: null }); },
   dsh_update: () => {
     Object.assign(dsh, { dshVersion: "0.1.0-rc.6", dshCompatible: true, pluginsInstalled: true });
     return "0.1.0-rc.6";

@@ -270,21 +270,45 @@ await shot("10-skill");
 await page.click("header button:has-text('Integrations')");
 await page.waitForTimeout(600);
 check("集成：dsh 状态链文案（web 未运行）", (await txt("#integration-view"))?.includes("dsh web not running"));
-check("集成：dsh 版本胶囊", (await txt("#integration-view"))?.includes("0.9.0"));
+check("集成：dsh 版本胶囊", (await txt("#integration-view"))?.includes("0.1.0-rc.6"));
 check("集成：fastctx 状态文案", (await txt("#integration-view"))?.includes("not integrated"));
 check("集成：fastctx 更新胶囊 v1.3.0", (await txt("#integration-view"))?.includes("v1.3.0"));
-check("集成：dsh 时间轴（检测驱动，8 步）", (await page.locator(".timeline-node").count()) === 8);
+check("集成：dsh 模式开关默认远程", await page.locator("#toggle-dsh-remote-access").isChecked());
+check("集成：dsh 时间轴（检测驱动，远程 8 步）", (await page.locator(".timeline-node").count()) === 8);
 await shot("11-integration");
 
-// dsh 一键安装 → 全 done + url 胶囊
-await page.click("button:has-text('One-click remote access')");
-await page.waitForSelector(".toast:has-text('Remote access is ready')", { timeout: 8000 });
+// 远程模式一键启动（dsh_setup 全链路）→ 全 done + 远程 url 胶囊
+await page.click("button:has-text('One-click start dsh web')");
+await page.waitForSelector(".toast:has-text('Remote access ready')", { timeout: 8000 });
 await page.waitForTimeout(500);
-check("集成：dsh 一键安装成功 toast", true);
-check("集成：安装后 url 胶囊", (await txt("#integration-view"))?.includes("https://mbp.ts.net"));
-check("集成：安装后状态 Remote access ready", (await txt("#integration-view"))?.includes("Remote access ready"));
-check("集成：时间轴全 done", (await page.locator(".timeline-node[data-state='done']").count()) === 8);
+check("集成：dsh 远程启动成功 toast", true);
+check("集成：远程模式 url 胶囊", (await txt("#integration-view"))?.includes("https://mbp.ts.net"));
+check("集成：远程模式状态 Remote access ready", (await txt("#integration-view"))?.includes("Remote access ready"));
+check("集成：远程模式时间轴全 done", (await page.locator(".timeline-node[data-state='done']").count()) === 8);
 await shot("12-dsh-ready");
+
+// 切换到本地模式：开关只是选择模式，不执行任何启停；时间轴切为本地 4 步 + 本地 url 胶囊
+await page.click("#toggle-dsh-remote-access");
+await page.waitForTimeout(400);
+check("集成：本地模式时间轴（4 步）", (await page.locator(".timeline-node").count()) === 4);
+check("集成：本地模式 url 胶囊", (await txt("#integration-view"))?.includes("http://127.0.0.1:3899"));
+check("集成：本地模式状态 Local access ready", (await txt("#integration-view"))?.includes("Local access ready"));
+await shot("12b-dsh-local");
+
+// 本地模式一键关闭 → 状态回未运行 + URL 胶囊（Copy/Open 按钮）消失
+await page.click("button:has-text('One-click stop dsh web')");
+await page.waitForSelector(".toast:has-text('dsh web stopped')");
+await page.waitForTimeout(400);
+check("集成：本地模式停止后 url 胶囊消失", !(await visible("#integration-view button:has-text('Copy')")));
+check("集成：本地模式停止后状态 dsh web not running", (await txt("#integration-view"))?.includes("dsh web not running"));
+
+// 切回远程模式并重新启动，供后续 dsh-step 事件桥用例（8 步时间轴）
+await page.click("#toggle-dsh-remote-access");
+await page.waitForTimeout(300);
+check("集成：切回远程模式时间轴（8 步）", (await page.locator(".timeline-node").count()) === 8);
+await page.click("button:has-text('One-click start dsh web')");
+await page.waitForSelector(".toast:has-text('Remote access ready')", { timeout: 8000 });
+await page.waitForTimeout(400);
 
 // dsh-step 事件桥：失败节点问题+解决方案
 await page.evaluate(() => window.__smoke.emit("dsh-step", { index: 7, id: "verify", state: "failed", detail: null, problem: "端口被占用", solution: "关闭 3899 占用进程" }));
