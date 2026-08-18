@@ -1520,7 +1520,7 @@ pub async fn dsh_start_web(app: tauri::AppHandle) -> Result<String, String> {
             3,
             steps[3],
             "done",
-            Some(tr("Local access is ready").into()),
+            Some(tr("Local access is ready")),
             None,
             None,
         );

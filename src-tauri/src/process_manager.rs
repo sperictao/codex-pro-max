@@ -496,7 +496,7 @@ async fn ensure_codex_cdp(
                 CODEX_RUNNING_NO_CDP_MARK,
                 tr("Codex is already running without the CDP debug port")
             );
-            log::error!("[ensure_codex_cdp] {}", &err);
+            log::error!("[ensure_codex_cdp] {}", err);
             return Err(err);
         }
     }
@@ -505,7 +505,7 @@ async fn ensure_codex_cdp(
             "CDP port {port} is not responding and no Codex app path is configured. Select the Codex app in Settings, or start Codex manually with --remote-debugging-port={port}",
             &[("port", port.to_string())],
         );
-        log::error!("[ensure_codex_cdp] {}", &err);
+        log::error!("[ensure_codex_cdp] {}", err);
         return Err(err);
     }
     let debug_args = [
@@ -521,7 +521,7 @@ async fn ensure_codex_cdp(
         cmd.arg("-a").arg(app_path).arg("--args").args(&debug_args);
         let out = cmd.output().map_err(|e| {
             let err = trf("Cannot launch Codex: {error}", &[("error", e.to_string())]);
-            log::error!("[ensure_codex_cdp] {}", &err);
+            log::error!("[ensure_codex_cdp] {}", err);
             err
         })?;
         if !out.status.success() {
@@ -529,7 +529,7 @@ async fn ensure_codex_cdp(
                 "Failed to launch Codex: {error}",
                 &[("error", String::from_utf8_lossy(&out.stderr).trim().to_string())],
             );
-            log::error!("[ensure_codex_cdp] {}", &err);
+            log::error!("[ensure_codex_cdp] {}", err);
             return Err(err);
         }
     }
@@ -558,7 +558,7 @@ async fn ensure_codex_cdp(
                         ("path", app_path.to_string()),
                         ("error", e.to_string()),
                     ]);
-                    log::error!("[ensure_codex_cdp] {}", &err);
+                    log::error!("[ensure_codex_cdp] {}", err);
                     err
                 })?;
         }
@@ -575,7 +575,7 @@ async fn ensure_codex_cdp(
                         ("path", app_path.to_string()),
                         ("error", e.to_string()),
                     ]);
-                    log::error!("[ensure_codex_cdp] {}", &err);
+                    log::error!("[ensure_codex_cdp] {}", err);
                     err
                 })?;
         }
@@ -591,14 +591,14 @@ async fn ensure_codex_cdp(
     // 运行且没带调试参数——单实例激活会丢弃参数，故两种模式给出一致提示
     Err(if new_instance && cfg!(target_os = "macos") {
         let err = trf("Timed out waiting for Codex CDP port {port} to be ready", &[("port", port.to_string())]);
-        log::error!("[ensure_codex_cdp] {}", &err);
+        log::error!("[ensure_codex_cdp] {}", err);
         err
     } else {
         let err = trf(
             "Timed out waiting for Codex CDP port {port} to be ready. If Codex is already running, quit it completely and retry",
             &[("port", port.to_string())],
         );
-        log::error!("[ensure_codex_cdp] {}", &err);
+        log::error!("[ensure_codex_cdp] {}", err);
         err
     })
 }
