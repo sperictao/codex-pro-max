@@ -9,7 +9,7 @@
     "build": "tsc && vite build",
     "test": "node scripts/test-theme.mjs && pnpm exec vitest run",
     "preview": "vite preview",
-    "tauri": "tauri",
+    "tauri": "node scripts/tauri.mjs",
     "build:updater": "node scripts/build-updater.mjs",
     "build:taskboard": "npm --prefix vendor/dashi-taskboard install && npm --prefix vendor/dashi-taskboard run build:web",
     "build:dsh-plugins": "node scripts/build-dsh-plugins.mjs",
