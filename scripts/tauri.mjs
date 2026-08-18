@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
 
@@ -16,9 +17,26 @@ if (existsSync(cargoBin)) {
   process.env.PATH = `${cargoBin}${process.env.PATH ? `:${process.env.PATH}` : ""}`;
 }
 
-// node_modules/.bin/tauri 是 npm 装的可执行 shim（shebang 脚本，跨平台由 npm 提供 bin 链接）
-const cli = new URL("../node_modules/.bin/tauri", import.meta.url).pathname;
-const result = spawnSync(cli, args, { stdio: "inherit", env: process.env });
+// node_modules/.bin/tauri 是 npm 装的可执行 shim。Windows 上实际可执行的是 tauri.CMD
+// （cmd 批处理）；fileURLToPath 避免 pathname 在 Windows 产生 `/D:/` 前缀。
+const binDir = fileURLToPath(new URL("../node_modules/.bin/", import.meta.url));
+const isWin = process.platform === "win32";
+const candidates = isWin
+  ? [join(binDir, "tauri.CMD"), join(binDir, "tauri.exe"), join(binDir, "tauri.ps1")]
+  : [join(binDir, "tauri")];
+const cli = candidates.find((p) => existsSync(p));
+
+if (!cli) {
+  console.error(`✗ tauri CLI 未找到（${binDir}）`);
+  process.exit(1);
+}
+
+const result = spawnSync(cli, args, {
+  stdio: "inherit",
+  env: process.env,
+  // Windows 上 .CMD 是批处理，spawnSync 直接跑不了，需要 shell 解析
+  shell: isWin,
+});
 if (result.error) {
   console.error(`✗ failed to run tauri: ${result.error.message}`);
   process.exit(1);
