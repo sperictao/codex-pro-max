@@ -13,6 +13,19 @@ import type { DshStatus, DshStepEvent } from "@/shared/types";
 
 export type DshAccessMode = "local" | "remote";
 
+// 访问模式持久化 key：localStorage 记用户上次选择，未选择过回落本地模式
+const ACCESS_MODE_KEY = "dsh-access-mode";
+
+function readStoredMode(): DshAccessMode {
+  if (typeof localStorage === "undefined") return "local";
+  return localStorage.getItem(ACCESS_MODE_KEY) === "remote" ? "remote" : "local";
+}
+
+function storeMode(mode: DshAccessMode): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(ACCESS_MODE_KEY, mode);
+}
+
 // 远程时间轴步骤顺序（与 Rust dsh_setup 的 index 一一对应）
 const STEP_IDS = ["node", "install", "plugins", "tailscale", "magicdns", "start", "serve", "verify"] as const;
 
@@ -137,8 +150,8 @@ export function DshCard() {
   // 是否跑过一键流程：跑过则时间轴以事件流为准，否则用检测结果渲染就绪视图
   const [hasRunSetup, setHasRunSetup] = useState(false);
   // 当前访问模式：local（127.0.0.1:3899 本地访问）或 remote（Tailscale HTTPS 远程访问）。
-  // 开关只切换模式，不执行任何启用/停止
-  const [mode, setMode] = useState<DshAccessMode>("remote");
+  // 默认本地模式；用户切换后记住选择（localStorage）
+  const [mode, setMode] = useState<DshAccessMode>(readStoredMode);
 
   const isRemote = mode === "remote";
 
@@ -164,6 +177,7 @@ export function DshCard() {
   const switchMode = (next: DshAccessMode) => {
     if (next === mode || busy) return;
     setMode(next);
+    storeMode(next);
     setHasRunSetup(false);
     if (status) {
       setDshTimeline(next === "remote" ? timelineFromStatus(status) : localTimelineFromStatus(status));

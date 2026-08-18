@@ -273,9 +273,22 @@ check("集成：dsh 状态链文案（web 未运行）", (await txt("#integratio
 check("集成：dsh 版本胶囊", (await txt("#integration-view"))?.includes("0.1.0-rc.6"));
 check("集成：fastctx 状态文案", (await txt("#integration-view"))?.includes("not integrated"));
 check("集成：fastctx 更新胶囊 v1.3.0", (await txt("#integration-view"))?.includes("v1.3.0"));
-check("集成：dsh 模式开关默认远程", await page.locator("#toggle-dsh-remote-access").isChecked());
-check("集成：dsh 时间轴（检测驱动，远程 8 步）", (await page.locator(".timeline-node").count()) === 8);
+check("集成：dsh 模式开关默认本地", !(await page.locator("#toggle-dsh-remote-access").isChecked()));
+check("集成：dsh 时间轴（检测驱动，本地 4 步）", (await page.locator(".timeline-node").count()) === 4);
 await shot("11-integration");
+
+// 切换到远程模式：开关只是选择模式；时间轴切为远程 8 步
+await page.click("#toggle-dsh-remote-access");
+await page.waitForTimeout(400);
+check("集成：切换后远程模式时间轴（8 步）", (await page.locator(".timeline-node").count()) === 8);
+
+// 持久化：刷新后仍记住远程模式
+await page.reload();
+await page.waitForSelector("text=Codex Pro Max", { timeout: 15000 });
+await page.click("header button:has-text('Integrations')");
+await page.waitForTimeout(600);
+check("集成：刷新后仍为远程模式", await page.locator("#toggle-dsh-remote-access").isChecked());
+check("集成：刷新后远程时间轴（8 步）", (await page.locator(".timeline-node").count()) === 8);
 
 // 远程模式一键启动（dsh_setup 全链路）→ 全 done + 远程 url 胶囊
 await page.click("button:has-text('One-click start dsh web')");
@@ -287,7 +300,7 @@ check("集成：远程模式状态 Remote access ready", (await txt("#integratio
 check("集成：远程模式时间轴全 done", (await page.locator(".timeline-node[data-state='done']").count()) === 8);
 await shot("12-dsh-ready");
 
-// 切换到本地模式：开关只是选择模式，不执行任何启停；时间轴切为本地 4 步 + 本地 url 胶囊
+// 切换到本地模式：时间轴切回本地 4 步 + 本地 url 胶囊
 await page.click("#toggle-dsh-remote-access");
 await page.waitForTimeout(400);
 check("集成：本地模式时间轴（4 步）", (await page.locator(".timeline-node").count()) === 4);
