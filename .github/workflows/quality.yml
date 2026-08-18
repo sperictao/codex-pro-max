@@ -8,6 +8,7 @@ on:
 jobs:
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -23,6 +24,7 @@ jobs:
 
   rust:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
         with:
@@ -36,14 +38,25 @@ jobs:
           cache: "pnpm"
       - run: pnpm install
       - name: Install Linux dependencies
+        timeout-minutes: 15
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf
+          for attempt in 1 2 3; do
+            echo "apt-get attempt ${attempt}/3"
+            if timeout 240 sudo apt-get update && timeout 300 sudo apt-get install -y \
+              libwebkit2gtk-4.1-dev \
+              libgtk-3-dev \
+              libappindicator3-dev \
+              librsvg2-dev \
+              patchelf; then
+              break
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "apt failed or timed out, retrying in 30s..."
+              sleep 30
+            else
+              exit 1
+            fi
+          done
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
