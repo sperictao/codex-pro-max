@@ -12,7 +12,8 @@
 //! 安全边界：dsh 显式绑定 loopback；Tailscale Serve 注入调用者身份；
 //! `dsh-client-connection-authz` 在 HTTP/WebSocket 入口消费
 //! `dsh-auth-tailscale` 提供的 authorizer。Launcher 不改写 Host/Origin，也不伪造
-//! loopback 身份。远程特权 API 默认保持拒绝。
+//! loopback 身份。远程特权 API 需要调用方持有用户在设置里配置的管理 App
+//! Capability（由 tailnet grants 下发），未授权的远程身份仍被拒绝。
 //!
 //! 跨平台：安装/检测走 CLI（npm / tailscale / node），
 //! 插件从应用内置 tarball 安装，开机自启走 launchd(macOS) /
@@ -38,6 +39,16 @@ const CONNECTION_PLUGIN_TARBALL: &str = "dsh-client-connection-authz-873c465f140
 const AUTH_PLUGIN_TARBALL: &str = "dsh-auth-tailscale-ea7ca9fa3db4.tgz";
 const TAILSCALE_LOGIN_ENV: &str = "DSH_TAILSCALE_ALLOWED_LOGINS";
 const LOCAL_ONLY_LOGIN: &str = "local-only@localhost.invalid";
+/// 远程特权接口（settings/credentials/host 等 loopback authority）与普通远程
+/// API/WS 各自所需的 App Capability 环境变量。capability 路径固定为
+/// `/cap/dsh-admin` / `/cap/dsh`，域名由用户在集成卡片远程模式里配置；
+/// 留空则不注入对应 env，行为回退（远程管理恒 403 / 普通访问只靠身份
+/// allowlist）。三处必须同名：注入的 env、`tailscale serve --accept-app-caps`
+/// 与 tailnet grants。
+const ADMIN_CAP_ENV: &str = "DSH_TAILSCALE_ADMIN_CAPABILITY";
+const USE_CAP_ENV: &str = "DSH_TAILSCALE_USE_CAPABILITY";
+const ADMIN_CAP_PATH: &str = "/cap/dsh-admin";
+const USE_CAP_PATH: &str = "/cap/dsh";
 
 /// dsh web 端口。
 const WEB_PORT: u16 = 3899;
@@ -733,6 +744,115 @@ fn resolve_host_and_url() -> (Option<String>, Option<String>) {
     (None, None)
 }
 
+// ============ 远程授权配置 ============
+
+/// dsh 远程访问授权配置：由 `resolve_auth_config` 从设置解析，贯穿 spawn、
+/// serve 与自启脚本三条注入路径。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct AuthConfig {
+    /// 额外允许的 Tailscale 登录名（不含本机当前用户）
+    extra_allowed_logins: Vec<String>,
+    /// 完整 use capability（`<domain>/cap/dsh`）；None = 不注入
+    use_capability: Option<String>,
+    /// 完整 admin capability（`<domain>/cap/dsh-admin`）；None = 不注入
+    admin_capability: Option<String>,
+}
+
+impl AuthConfig {
+    /// 逗号拼接的完整 allowlist（本机当前登录 + 额外登录名，去重）。
+    fn allowed_logins(&self, login: &str) -> String {
+        let mut all = vec![login.to_string()];
+        for extra in &self.extra_allowed_logins {
+            if extra != login {
+                all.push(extra.clone());
+            }
+        }
+        all.join(",")
+    }
+
+    /// 需经 Serve 转发的 capability（0/1/2 个），按 use 在前、admin 在后的固定顺序。
+    fn capabilities(&self) -> Vec<String> {
+        [self.use_capability.clone(), self.admin_capability.clone()]
+            .into_iter()
+            .flatten()
+            .collect()
+    }
+
+    /// spawn_detached 的 env 列表：allowed_logins 必注入，use/admin 仅在配置时注入。
+    fn env_pairs<'a>(&'a self, login: &'a str) -> Vec<(&'a str, String)> {
+        let mut envs = vec![(TAILSCALE_LOGIN_ENV, self.allowed_logins(login))];
+        if let Some(cap) = &self.use_capability {
+            envs.push((USE_CAP_ENV, cap.clone()));
+        }
+        if let Some(cap) = &self.admin_capability {
+            envs.push((ADMIN_CAP_ENV, cap.clone()));
+        }
+        envs
+    }
+}
+
+/// 校验 capability 的域名段（Tailscale `{domain}/{name}` 规则的域名部分）：
+/// ASCII 字母数字、`-`、`.`，至少含一个 `.`，且不以 `-`/`.` 开头或结尾。
+/// 合法返回 trim 后的域名；非法返回友好错误。
+fn validate_cap_domain(domain: &str) -> Result<String, String> {
+    let trimmed = domain.trim();
+    let valid = !trimmed.is_empty()
+        && trimmed.contains('.')
+        && !trimmed.starts_with(['-', '.'])
+        && !trimmed.ends_with(['-', '.'])
+        && trimmed
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.');
+    if valid {
+        Ok(trimmed.to_string())
+    } else {
+        Err(trf(
+            "Invalid capability domain: {domain}. Use a domain you control (e.g. example.com)",
+            &[("domain", domain.to_string())],
+        ))
+    }
+}
+
+/// 解析「额外允许的登录名」设置：逗号分隔、trim、去空、去重，
+/// 并沿用 Tailscale 登录名的字符白名单校验。
+fn parse_extra_logins(raw: &str) -> Result<Vec<String>, String> {
+    let mut seen = Vec::new();
+    for item in raw.split(',') {
+        let login = item.trim();
+        if login.is_empty() {
+            continue;
+        }
+        if !login
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "@._+-".contains(c))
+        {
+            return Err(tr("Tailscale login name contains unsupported characters"));
+        }
+        if !seen.iter().any(|existing| existing == login) {
+            seen.push(login.to_string());
+        }
+    }
+    Ok(seen)
+}
+
+/// 从设置解析远程授权配置。域名非法时返回 Err（调用方在时间轴 fail 并给方案）。
+fn resolve_auth_config() -> Result<AuthConfig, String> {
+    let config = config::load_config()?;
+    Ok(AuthConfig {
+        extra_allowed_logins: parse_extra_logins(&config.dsh_extra_allowed_logins)?,
+        use_capability: if config.dsh_use_cap_domain.trim().is_empty() {
+            None
+        } else {
+            Some(format!("{}{}", validate_cap_domain(&config.dsh_use_cap_domain)?, USE_CAP_PATH))
+        },
+        admin_capability: if config.dsh_admin_cap_domain.trim().is_empty() {
+            None
+        } else {
+            Some(format!("{}{}", validate_cap_domain(&config.dsh_admin_cap_domain)?, ADMIN_CAP_PATH))
+        },
+    })
+}
+
 fn tailscale_login_from_status_json(raw: &str) -> Result<String, String> {
     let status: serde_json::Value = serde_json::from_str(raw).map_err(|e| {
         let err = trf(
@@ -1021,11 +1141,12 @@ impl StepCtx<'_> {
     }
 }
 
-/// 后台启动 dsh web 进程：显式绑定 loopback，并把 Tailscale 登录名交给
-/// 授权插件。不等待端口就绪，返回子进程 PID 供启动等待探活；
+/// 后台启动 dsh web 进程：显式绑定 loopback，并把 Tailscale 登录名与按配置
+/// 解析出的 use/admin App Capability 交给授权插件。不等待端口就绪，返回子进程
+/// PID 供启动等待探活；
 /// 失败返回 (problem, solution) 供时间轴与更新流程分别展示针对性排障提示。
 /// dsh_setup 与 dsh_update 共用
-fn spawn_dsh_web(login: &str, fqdn: Option<&str>) -> Result<u32, (String, String)> {
+fn spawn_dsh_web(login: &str, fqdn: Option<&str>, auth: &AuthConfig) -> Result<u32, (String, String)> {
     let dsh_bin = match resolve_dsh_bin() {
         Ok(b) => b,
         Err(e) => {
@@ -1049,13 +1170,9 @@ fn spawn_dsh_web(login: &str, fqdn: Option<&str>) -> Result<u32, (String, String
         .map(|d| d.join("dsh-web.log"))
         .unwrap_or_else(|_| PathBuf::from("dsh-web.log"));
     let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    spawn_detached(
-        &dsh_bin.display().to_string(),
-        &arg_refs,
-        &[(TAILSCALE_LOGIN_ENV, login)],
-        &log,
-    )
-    .map_err(|e| {
+    let env_pairs = auth.env_pairs(login);
+    let envs: Vec<(&str, &str)> = env_pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    spawn_detached(&dsh_bin.display().to_string(), &arg_refs, &envs, &log).map_err(|e| {
         log::error!("[dsh 启动] 拉起 dsh web 进程失败: {}", e);
         (
             e,
@@ -1095,12 +1212,30 @@ fn start_failure_diagnosis(log: &Path) -> (String, String) {
     (problem, solution)
 }
 
+/// tailscale serve 命令（按配置转发 use/admin App Capability 到 dsh），供
+/// dsh_setup 与测试共用。没有配置任何 capability 时不带 --accept-app-caps。
+fn serve_command(auth: &AuthConfig) -> Vec<String> {
+    let mut args = vec![
+        "serve".to_string(),
+        "--https=443".to_string(),
+        "--bg".to_string(),
+    ];
+    let caps = auth.capabilities();
+    if !caps.is_empty() {
+        args.push(format!("--accept-app-caps={}", caps.join(",")));
+    }
+    args.push(WEB_PORT.to_string());
+    args
+}
+
 /// serve 配置失败时的针对性方案：错误文本含 TLS 证书类提示（教程 3.3 强调
 /// HTTPS Certificates 是与 MagicDNS 独立的开关）→ 指向 admin/dns；否则 →
 /// serve 首次启用授权链接
 fn serve_failure_solution(err: &str) -> String {
     let e = err.to_lowercase();
-    if e.contains("tls cert") || e.contains("does not support") || e.contains("certificate") {
+    if e.contains("accept-app-caps") || e.contains("unknown flag") || e.contains("app cap") {
+        tr("Tailscale 1.92+ is required to forward App Capabilities; update Tailscale, then retry")
+    } else if e.contains("tls cert") || e.contains("does not support") || e.contains("certificate") {
         tr("MagicDNS or HTTPS Certificates may not be enabled; open https://login.tailscale.com/admin/dns and enable MagicDNS and HTTPS Certificates, then retry")
     } else {
         tr("Open the authorization link in the error output to enable Serve for this tailnet (https://login.tailscale.com/f/serve), then retry")
@@ -1126,6 +1261,22 @@ pub async fn dsh_setup(app: tauri::AppHandle) -> Result<(), String> {
             .filter(|(index, _)| *index > cur)
             .map(|(index, id)| (*id, index))
             .collect()
+    };
+
+    // 授权配置解析（域名/登录名校验）放在最前面，配置非法时立刻在首步失败，
+    // 而不是等装好 dsh/Tailscale 之后才报。解析结果贯穿 start / serve 两步。
+    let auth = {
+        let ctx = StepCtx { app: &app, index: 0, id: steps[0] };
+        match resolve_auth_config() {
+            Ok(auth) => auth,
+            Err(error) => {
+                return ctx.fail(
+                    &error,
+                    &tr("Fix the remote authorization settings in the Integration card (remote mode), then retry"),
+                    &remaining_after(0),
+                )
+            }
+        }
     };
 
     {
@@ -1287,7 +1438,7 @@ pub async fn dsh_setup(app: tauri::AppHandle) -> Result<(), String> {
         }
         if port_listening(WEB_PORT) {
             ctx.running(&tr("Restarting dsh web with authorization plugins…"));
-            if let Err(error) = restart_dsh_web(&tailscale.1, fqdn.as_deref()) {
+            if let Err(error) = restart_dsh_web(&tailscale.1, fqdn.as_deref(), &auth) {
                 return ctx.fail(
                     &error,
                     &tr("Check the log at ~/.dsh/dsh-web.log"),
@@ -1296,7 +1447,7 @@ pub async fn dsh_setup(app: tauri::AppHandle) -> Result<(), String> {
             }
         } else {
             ctx.running(&tr("Starting dsh web on 127.0.0.1:3899…"));
-            let pid = match spawn_dsh_web(&tailscale.1, fqdn.as_deref()) {
+            let pid = match spawn_dsh_web(&tailscale.1, fqdn.as_deref(), &auth) {
                 Ok(pid) => pid,
                 Err((problem, solution)) => {
                     return ctx.fail(&problem, &solution, &remaining_after(5))
@@ -1320,10 +1471,9 @@ pub async fn dsh_setup(app: tauri::AppHandle) -> Result<(), String> {
             id: steps[6],
         };
         ctx.running(&tr("Configuring Tailscale Serve directly to dsh…"));
-        let result = run_capture(
-            &tailscale.0,
-            &["serve", "--https=443", "--bg", &WEB_PORT.to_string()],
-        );
+        let serve_args = serve_command(&auth);
+        let serve_refs: Vec<&str> = serve_args.iter().map(|s| s.as_str()).collect();
+        let result = run_capture(&tailscale.0, &serve_refs);
         match result {
             Ok((_, _, true)) if serve_configured(&tailscale.0) => {
                 let (_, url) = resolve_host_and_url();
@@ -1510,7 +1660,7 @@ pub async fn dsh_start_web(app: tauri::AppHandle) -> Result<String, String> {
                 id: steps[2],
             };
             ctx.running(&tr("Restarting dsh web…"));
-            if let Err(error) = restart_dsh_web(LOCAL_ONLY_LOGIN, None) {
+            if let Err(error) = restart_dsh_web(LOCAL_ONLY_LOGIN, None, &AuthConfig::default()) {
                 return ctx.fail_err(&error, &tr("Check the log at ~/.dsh/dsh-web.log"), &remaining_after(2));
             }
             ctx.done(&tr("dsh web is running on 127.0.0.1:3899"));
@@ -1534,7 +1684,7 @@ pub async fn dsh_start_web(app: tauri::AppHandle) -> Result<String, String> {
         id: steps[start_idx],
     };
     ctx.running(&tr("Starting dsh web on 127.0.0.1:3899…"));
-    let pid = match spawn_dsh_web(LOCAL_ONLY_LOGIN, None) {
+    let pid = match spawn_dsh_web(LOCAL_ONLY_LOGIN, None, &AuthConfig::default()) {
         Ok(pid) => pid,
         Err((problem, solution)) => {
             return ctx.fail_err(&problem, &solution, &remaining_after(start_idx));
@@ -1586,13 +1736,14 @@ pub async fn dsh_update(app: tauri::AppHandle) -> Result<String, String> {
         })?;
     if was_running {
         let (login, fqdn) = runtime_auth_context();
-        restart_dsh_web(&login, fqdn.as_deref())?;
+        let auth = resolve_auth_config()?;
+        restart_dsh_web(&login, fqdn.as_deref(), &auth)?;
     }
     Ok(version)
 }
 
 /// 重启 dsh web，确保新 profile 和授权环境生效。
-fn restart_dsh_web(login: &str, fqdn: Option<&str>) -> Result<(), String> {
+fn restart_dsh_web(login: &str, fqdn: Option<&str>, auth: &AuthConfig) -> Result<(), String> {
     stop_supervised_services();
     kill_by_pattern(dsh_web_cmd_pattern());
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
@@ -1604,7 +1755,7 @@ fn restart_dsh_web(login: &str, fqdn: Option<&str>) -> Result<(), String> {
         log::error!("[dsh 重启] {}", err);
         return Err(err);
     }
-    let pid = spawn_dsh_web(login, fqdn).map_err(|(problem, _)| {
+    let pid = spawn_dsh_web(login, fqdn, auth).map_err(|(problem, _)| {
         log::error!("[dsh 重启] 启动 dsh web 失败: {}", problem);
         problem
     })?;
@@ -1734,9 +1885,9 @@ fn port_guard_js(port: u16) -> String {
 }
 
 /// 生成 dsh web 启动脚本（自启用）：带端口守卫、loopback 绑定、
-/// Tailscale 授权身份与 --trusted-host。
+/// Tailscale 授权身份、按配置解析的 use/admin App Capability 与 --trusted-host。
 #[cfg_attr(windows, allow(dead_code))]
-fn render_start_web(node: &str, dsh: &str, host: &str, login: &str) -> String {
+fn render_start_web(node: &str, dsh: &str, host: &str, login: &str, auth: &AuthConfig) -> String {
     let trusted = if host.is_empty() {
         String::new()
     } else {
@@ -1749,13 +1900,25 @@ fn render_start_web(node: &str, dsh: &str, host: &str, login: &str) -> String {
         .parent()
         .map(|p| p.display().to_string())
         .unwrap_or_default();
+    let use_cap_line = auth
+        .use_capability
+        .as_deref()
+        .map(|cap| format!("export {USE_CAP_ENV}={}\n", sh_quote(cap)))
+        .unwrap_or_default();
+    let admin_cap_line = auth
+        .admin_capability
+        .as_deref()
+        .map(|cap| format!("export {ADMIN_CAP_ENV}={}\n", sh_quote(cap)))
+        .unwrap_or_default();
     format!(
-        "#!/bin/sh\n# generated by Codex Pro Max; do not edit\nif {node} -e {guard}; then exit 0; fi\nexport PATH={node_dir}:$PATH\nexport {login_env}={login}\nexec {dsh} --profile web --host 127.0.0.1 --port {port}{trusted}\n",
+        "#!/bin/sh\n# generated by Codex Pro Max; do not edit\nif {node} -e {guard}; then exit 0; fi\nexport PATH={node_dir}:$PATH\nexport {login_env}={login}\n{use_cap_line}{admin_cap_line}exec {dsh} --profile web --host 127.0.0.1 --port {port}{trusted}\n",
         node = sh_quote(node),
         guard = sh_quote(&port_guard_js(WEB_PORT)),
         node_dir = sh_quote(&node_dir),
         login_env = TAILSCALE_LOGIN_ENV,
-        login = sh_quote(login),
+        login = sh_quote(&auth.allowed_logins(login)),
+        use_cap_line = use_cap_line,
+        admin_cap_line = admin_cap_line,
         dsh = sh_quote(dsh),
         port = WEB_PORT,
         trusted = trusted,
@@ -1844,6 +2007,7 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
         let ts = tailscale_path().ok_or_else(|| tr("Tailscale is not installed"))?;
         let login = resolve_tailscale_login(&ts)?;
         let fqdn = resolve_fqdn().unwrap_or_default();
+        let auth = resolve_auth_config()?;
         fs::create_dir_all(&agents_dir).map_err(|error| {
             log::error!("[dsh 自启(mac)] 创建 LaunchAgents 目录失败: {}", error);
             trf(
@@ -1853,7 +2017,7 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
         })?;
         fs::write(
             &web_script,
-            render_start_web(&node, &dsh_bin.display().to_string(), &fqdn, &login),
+            render_start_web(&node, &dsh_bin.display().to_string(), &fqdn, &login, &auth),
         )
         .map_err(|error| {
             log::error!("[dsh 自启(mac)] 写启动脚本失败: {}", error);
@@ -1971,6 +2135,7 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
         let ts = tailscale_path().ok_or_else(|| tr("Tailscale is not installed"))?;
         let login = resolve_tailscale_login(&ts)?;
         let fqdn = resolve_fqdn().unwrap_or_default();
+        let auth = resolve_auth_config()?;
         let trusted = if fqdn.is_empty() {
             String::new()
         } else {
@@ -1980,13 +2145,25 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
             .parent()
             .map(|path| path.display().to_string())
             .unwrap_or_default();
+        let use_cap_line = auth
+            .use_capability
+            .as_deref()
+            .map(|cap| format!("set \"{USE_CAP_ENV}={cap}\"\r\n"))
+            .unwrap_or_default();
+        let admin_cap_line = auth
+            .admin_capability
+            .as_deref()
+            .map(|cap| format!("set \"{ADMIN_CAP_ENV}={cap}\"\r\n"))
+            .unwrap_or_default();
         let web = format!(
-            "@echo off\r\nrem generated by Codex Pro Max; do not edit\r\nset \"PATH={node_dir};%PATH%\"\r\n\"{node}\" -e \"{guard}\" >nul 2>&1\r\nif %errorlevel%==0 exit /b 0\r\nset \"{login_env}={login}\"\r\ncall \"{dsh}\" --profile web --host 127.0.0.1 --port {port}{trusted}\r\n",
+            "@echo off\r\nrem generated by Codex Pro Max; do not edit\r\nset \"PATH={node_dir};%PATH%\"\r\n\"{node}\" -e \"{guard}\" >nul 2>&1\r\nif %errorlevel%==0 exit /b 0\r\nset \"{login_env}={login}\"\r\n{use_cap_line}{admin_cap_line}call \"{dsh}\" --profile web --host 127.0.0.1 --port {port}{trusted}\r\n",
             node_dir = node_dir,
             node = node,
             guard = port_guard_js(WEB_PORT),
             login_env = TAILSCALE_LOGIN_ENV,
-            login = login,
+            login = auth.allowed_logins(&login),
+            use_cap_line = use_cap_line,
+            admin_cap_line = admin_cap_line,
             dsh = dsh_bin.display(),
             port = WEB_PORT,
             trusted = trusted,
@@ -2055,9 +2232,10 @@ fn autostart_impl(enabled: bool) -> Result<(), String> {
         let ts = tailscale_path().ok_or_else(|| tr("Tailscale is not installed"))?;
         let login = resolve_tailscale_login(&ts)?;
         let fqdn = resolve_fqdn().unwrap_or_default();
+        let auth = resolve_auth_config()?;
         fs::write(
             &web_script,
-            render_start_web(&node, &dsh_bin.display().to_string(), &fqdn, &login),
+            render_start_web(&node, &dsh_bin.display().to_string(), &fqdn, &login, &auth),
         )
         .map_err(|error| {
             log::error!("[dsh 自启(linux)] 写启动脚本失败: {}", error);
@@ -2187,9 +2365,10 @@ fn render_desktop_entry(name: &str, script: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        dsh_web_cmd_pattern, ere_to_ps_wildcards, normalize_version, plugin_profile_is_current,
-        port_guard_js, render_desktop_entry, render_start_web, rpc_request, serve_failure_solution,
-        serve_status_targets_web, sh_quote, tailscale_login_from_status_json, win_cmd_line, win_quote,
+        dsh_web_cmd_pattern, ere_to_ps_wildcards, normalize_version, parse_extra_logins,
+        plugin_profile_is_current, port_guard_js, render_desktop_entry, render_start_web,
+        rpc_request, serve_command, serve_failure_solution, serve_status_targets_web, sh_quote,
+        tailscale_login_from_status_json, validate_cap_domain, win_cmd_line, win_quote, AuthConfig,
     };
     use crate::i18n::set_current;
     use std::path::Path;
@@ -2231,6 +2410,31 @@ mod tests {
     }
 
     #[test]
+    fn validate_cap_domain_accepts_and_rejects() {
+        assert_eq!(validate_cap_domain("example.com").unwrap(), "example.com");
+        assert_eq!(validate_cap_domain("  sub.example.com  ").unwrap(), "sub.example.com");
+        assert!(validate_cap_domain("").is_err());
+        assert!(validate_cap_domain("example").is_err());
+        assert!(validate_cap_domain("-example.com").is_err());
+        assert!(validate_cap_domain("example.com.").is_err());
+        assert!(validate_cap_domain("example .com").is_err());
+        assert!(validate_cap_domain("example/com").is_err());
+    }
+
+    #[test]
+    fn parse_extra_logins_splits_trims_dedups() {
+        assert_eq!(
+            parse_extra_logins("alice@example.com, bob@example.com ,alice@example.com").unwrap(),
+            vec!["alice@example.com".to_string(), "bob@example.com".to_string()]
+        );
+        assert_eq!(parse_extra_logins("").unwrap(), Vec::<String>::new());
+        assert_eq!(parse_extra_logins(" , ").unwrap(), Vec::<String>::new());
+        // 逗号是分隔符，两段各自是合法登录名；真正非法的是白名单之外的字符
+        assert!(parse_extra_logins("bad login@example.com").is_err());
+        assert!(parse_extra_logins("bad%PATH%@example.com").is_err());
+    }
+
+    #[test]
     fn sh_quote_handles_spaces_and_quotes() {
         assert_eq!(sh_quote("/Users/a b/node"), "'/Users/a b/node'");
         assert_eq!(sh_quote("it's"), "'it'\\''s'");
@@ -2239,14 +2443,21 @@ mod tests {
 
     #[test]
     fn start_scripts_embed_guard_and_exec() {
+        let auth = AuthConfig {
+            extra_allowed_logins: Vec::new(),
+            use_capability: None,
+            admin_capability: Some("example.com/cap/dsh-admin".to_string()),
+        };
         let web = render_start_web(
             "/usr/local/bin/node",
             "/home/u/.npm-global/bin/dsh",
             "etmacmini.ts.net",
             "owner@example.com",
+            &auth,
         );
         assert!(web.contains("net.connect(3899"));
         assert!(web.contains("export DSH_TAILSCALE_ALLOWED_LOGINS='owner@example.com'"));
+        assert!(web.contains("export DSH_TAILSCALE_ADMIN_CAPABILITY='example.com/cap/dsh-admin'"));
         assert!(web.contains("--trusted-host 'etmacmini.ts.net'"));
         assert!(web.contains(
             "exec '/home/u/.npm-global/bin/dsh' --profile web --host 127.0.0.1 --port 3899"
@@ -2318,6 +2529,42 @@ mod tests {
     }
 
     #[test]
+    fn serve_command_forwards_configured_capabilities() {
+        // 只转发非空的 capability：0/1/2 三种形态。漏传 --accept-app-caps 时，
+        // 即使 dsh 端注入了对应 env 也拿不到能力头，远程设置会退化成恒定 403
+        let none = AuthConfig::default();
+        assert_eq!(
+            serve_command(&none),
+            vec!["serve".to_string(), "--https=443".to_string(), "--bg".to_string(), "3899".to_string()]
+        );
+        let admin_only = AuthConfig {
+            extra_allowed_logins: Vec::new(),
+            use_capability: None,
+            admin_capability: Some("example.com/cap/dsh-admin".to_string()),
+        };
+        assert_eq!(
+            serve_command(&admin_only),
+            vec![
+                "serve".to_string(), "--https=443".to_string(), "--bg".to_string(),
+                "--accept-app-caps=example.com/cap/dsh-admin".to_string(), "3899".to_string(),
+            ]
+        );
+        let both = AuthConfig {
+            extra_allowed_logins: Vec::new(),
+            use_capability: Some("example.com/cap/dsh".to_string()),
+            admin_capability: Some("example.com/cap/dsh-admin".to_string()),
+        };
+        assert_eq!(
+            serve_command(&both),
+            vec![
+                "serve".to_string(), "--https=443".to_string(), "--bg".to_string(),
+                "--accept-app-caps=example.com/cap/dsh,example.com/cap/dsh-admin".to_string(),
+                "3899".to_string(),
+            ]
+        );
+    }
+
+    #[test]
     fn serve_status_matches_only_the_dsh_web_target() {
         let ready = "https://node.example.ts.net (tailnet only)\n|-- / proxy http://127.0.0.1:3899";
         assert!(serve_status_targets_web(ready));
@@ -2329,13 +2576,20 @@ mod tests {
 
     #[test]
     fn auth_start_script_binds_loopback_and_exports_allowlist() {
+        let auth = AuthConfig {
+            extra_allowed_logins: vec!["alice@example.com".to_string()],
+            use_capability: None,
+            admin_capability: Some("example.com/cap/dsh-admin".to_string()),
+        };
         let web = render_start_web(
             "/usr/local/bin/node",
             "/home/u/.npm-global/bin/dsh",
             "node.tailnet.ts.net",
             "owner@example.com",
+            &auth,
         );
-        assert!(web.contains("export DSH_TAILSCALE_ALLOWED_LOGINS='owner@example.com'"));
+        assert!(web.contains("export DSH_TAILSCALE_ALLOWED_LOGINS='owner@example.com,alice@example.com'"));
+        assert!(web.contains("export DSH_TAILSCALE_ADMIN_CAPABILITY='example.com/cap/dsh-admin'"));
         assert!(web.contains("--host 127.0.0.1 --port 3899"));
         assert!(web.contains("--trusted-host 'node.tailnet.ts.net'"));
         assert!(!web.contains("SSH_CONNECTION"));
@@ -2468,6 +2722,12 @@ mod tests {
         assert_eq!(
             serve_failure_solution(serve_err),
             "Open the authorization link in the error output to enable Serve for this tailnet (https://login.tailscale.com/f/serve), then retry"
+        );
+        // 旧 Tailscale 不认识 --accept-app-caps：提示升级而非指向 serve 授权链接
+        let old_ts_err = "unknown flag: --accept-app-caps";
+        assert_eq!(
+            serve_failure_solution(old_ts_err),
+            "Tailscale 1.92+ is required to forward App Capabilities; update Tailscale, then retry"
         );
         set_current("en");
     }

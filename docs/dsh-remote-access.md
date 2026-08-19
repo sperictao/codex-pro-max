@@ -38,9 +38,48 @@ Connection 替代包会精确禁用内置
 - dsh 只监听 `127.0.0.1:3899`，不能从 LAN 或公网绕过 Serve 直连。
 - 普通远程 HTTP、RPC 与 WebSocket 必须通过 Tailscale 身份授权。
 - 本机请求仍需同时满足 loopback TCP peer 与 loopback Host，才能走真实本地旁路。
-- Launcher 不配置 admin App Capability，因此远程 settings、credentials、宿主文件等
-  特权接口保持拒绝；本机特权接口仍可用。
+- Launcher 按集成卡片远程模式里配置的两类域名注入 capability（见下节）；
+  域名留空就不注入对应 capability，远程特权接口（settings、credentials、宿主
+  文件等）保持拒绝，普通远程访问只靠身份 allowlist。本机特权接口始终可用。
 - 只使用私有 Tailscale Serve，不使用 Funnel，也不把 dsh 绑定到 `0.0.0.0`。
+
+## 远程授权配置（集成卡片 → 远程模式）
+
+远程访问的授权策略由三个设置项组成（均在集成卡片切到远程模式后内联编辑，默认全空）：
+
+| 设置 | 注入的 env | 默认空语义 |
+| --- | --- | --- |
+| 管理 capability 域名 | `DSH_TAILSCALE_ADMIN_CAPABILITY` = `<域名>/cap/dsh-admin` | 远程管理接口（settings/credentials）恒 403 |
+| 普通使用 capability 域名 | `DSH_TAILSCALE_USE_CAPABILITY` = `<域名>/cap/dsh` | 普通远程 API/WS 只靠身份 allowlist |
+| 额外允许的登录名 | 追加进 `DSH_TAILSCALE_ALLOWED_LOGINS`（本机当前用户始终自动包含） | 只有本机当前用户可访问 |
+
+三项需在 **Launcher 注入的 env**、**`tailscale serve --accept-app-caps`** 与
+**tailnet grants** 三处同名。Launcher 已自动完成前两者：dsh_setup 会把非空的
+capability 以 `--accept-app-caps=<use>,<admin>` 传给 serve，并把解析出的完整
+capability 与 allowlist 注入 dsh web / 自启脚本。剩下的一环是 tailnet policy——
+按你配置的域名给目标身份下发 capability：
+
+```json
+{
+  "grants": [
+    {
+      "src": ["group:dsh-admins"],
+      "dst": ["tag:dsh-host"],
+      "app": {
+        "example.com/cap/dsh": [{}],
+        "example.com/cap/dsh-admin": [{}]
+      }
+    }
+  ]
+}
+```
+
+`dst` 需匹配运行 dsh 的节点（若未打 tag，可改用该节点身份或 `autogroup:member`）；
+`src` 填你允许远程访问/管理的账号或组。capability 名必须与你在卡片里配置的域名
+一致（普通用户给 `<域名>/cap/dsh`，管理员再加 `<域名>/cap/dsh-admin`）。capability
+名必须使用你控制的域名，不能落入 `tailscale.com`/`tailscale.io` 保留命名空间。
+转发 App Capability 需要 Tailscale 1.92+；旧版本 serve 会报
+`unknown flag: --accept-app-caps`。
 
 开启或关闭自启时，Launcher 会卸载并删除旧版自己生成的 proxy plist/unit/cmd/desktop
 和 `start-proxy.*`，并停止遗留的 `loopback-proxy.js` 进程；不会删除用户目录中的

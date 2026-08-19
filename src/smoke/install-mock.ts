@@ -23,6 +23,9 @@ const config: AnyRec = {
   minimize_to_tray_on_close: true,
   language: "system",
   codex_guard: { enabled: true, params: {} },
+  dsh_admin_cap_domain: "",
+  dsh_use_cap_domain: "",
+  dsh_extra_allowed_logins: "",
 };
 let resolvedLanguage = "en";
 

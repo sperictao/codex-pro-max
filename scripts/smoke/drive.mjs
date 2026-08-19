@@ -281,6 +281,7 @@ await shot("11-integration");
 await page.click("#toggle-dsh-remote-access");
 await page.waitForTimeout(400);
 check("集成：切换后远程模式时间轴（8 步）", (await page.locator(".timeline-node").count()) === 8);
+check("集成：远程模式显示远程授权配置块", await visible("#dsh-remote-auth-block"));
 
 // 持久化：刷新后仍记住远程模式
 await page.reload();

@@ -3,12 +3,12 @@
 // 不执行任何启用/停止；一键启动/关闭按钮按当前模式走对应流程。
 // 时间轴步骤由事件桥写入 store.dshTimeline；未跑过流程时用检测结果推导就绪视图
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
 import { useAppStore } from "@/shared/store";
 import * as cmd from "@/shared/commands";
-import { BTN_DESTRUCTIVE, BTN_PRIMARY, BTN_SM, TOGGLE } from "@/shared/lib/ui";
+import { BTN_DESTRUCTIVE, BTN_PRIMARY, BTN_SM, INPUT_MONO, TOGGLE } from "@/shared/lib/ui";
 import type { DshStatus, DshStepEvent } from "@/shared/types";
 
 export type DshAccessMode = "local" | "remote";
@@ -154,6 +154,28 @@ export function DshCard() {
   const [mode, setMode] = useState<DshAccessMode>(readStoredMode);
 
   const isRemote = mode === "remote";
+
+  // 远程授权配置（集成卡片内联编辑，仅远程模式显示）：本地草稿 + 一次性灌入，
+  // onChange 同步写 store 草稿，点保存才落盘（与设置页 NetworkSection 同模式）
+  const config = useAppStore((s) => s.config);
+  const setConfigField = useAppStore((s) => s.setConfigField);
+  const saveConfig = useAppStore((s) => s.saveConfig);
+  const [adminCapDomain, setAdminCapDomain] = useState("");
+  const [useCapDomain, setUseCapDomain] = useState("");
+  const [extraLogins, setExtraLogins] = useState("");
+  const authLoadedRef = useRef(false);
+  useEffect(() => {
+    if (config && !authLoadedRef.current) {
+      authLoadedRef.current = true;
+      setAdminCapDomain(config.dsh_admin_cap_domain);
+      setUseCapDomain(config.dsh_use_cap_domain);
+      setExtraLogins(config.dsh_extra_allowed_logins);
+    }
+  }, [config]);
+  const saveRemoteAuth = async () => {
+    await saveConfig();
+    toast(t("Remote authorization saved"), "success");
+  };
 
   const refresh = useCallback(async () => {
     try {
@@ -394,6 +416,49 @@ export function DshCard() {
           onChange={(e) => switchMode(e.target.checked ? "remote" : "local")}
         />
       </label>
+
+      {isRemote && (
+        <div className="flex flex-col gap-3 rounded-lg border border-border p-3" id="dsh-remote-auth-block">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-medium">{t("Remote authorization")}</span>
+            <button className={BTN_SM} id="btn-save-remote-auth" disabled={busy} onClick={() => void saveRemoteAuth()}>
+              {t("Save")}
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs opacity-70" htmlFor="dsh-admin-cap-domain">{t("Admin capability domain")}</label>
+            <input type="text" className={INPUT_MONO} id="dsh-admin-cap-domain"
+              value={adminCapDomain}
+              onChange={(e) => { setAdminCapDomain(e.target.value); setConfigField({ dsh_admin_cap_domain: e.target.value }); }} />
+            <span className="text-xs opacity-60">
+              {adminCapDomain.trim()
+                ? t("Full capability: {{capability}}", { capability: `${adminCapDomain.trim()}/cap/dsh-admin` })
+                : t("Empty = remote management (settings/credentials) stays unavailable")}
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs opacity-70" htmlFor="dsh-use-cap-domain">{t("Use capability domain")}</label>
+            <input type="text" className={INPUT_MONO} id="dsh-use-cap-domain"
+              value={useCapDomain}
+              onChange={(e) => { setUseCapDomain(e.target.value); setConfigField({ dsh_use_cap_domain: e.target.value }); }} />
+            <span className="text-xs opacity-60">
+              {useCapDomain.trim()
+                ? t("Full capability: {{capability}}", { capability: `${useCapDomain.trim()}/cap/dsh` })
+                : t("Empty = plain remote access only needs identity allowlist")}
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs opacity-70" htmlFor="dsh-extra-allowed-logins">{t("Extra allowed logins")}</label>
+            <input type="text" className={INPUT_MONO} id="dsh-extra-allowed-logins"
+              value={extraLogins}
+              onChange={(e) => { setExtraLogins(e.target.value); setConfigField({ dsh_extra_allowed_logins: e.target.value }); }} />
+            <span className="text-xs opacity-60">{t("Comma-separated; the current user on this machine is always allowed")}</span>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <button

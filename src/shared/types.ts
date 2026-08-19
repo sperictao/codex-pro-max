@@ -12,6 +12,9 @@ export interface LauncherConfig {
   minimize_to_tray_on_close: boolean;
   language: string;
   codex_guard: GuardState;
+  dsh_admin_cap_domain: string;
+  dsh_use_cap_domain: string;
+  dsh_extra_allowed_logins: string;
 }
 
 export interface GuardState {

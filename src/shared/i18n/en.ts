@@ -319,6 +319,15 @@ export const en = {
   "dsh updated to {{version}}": "dsh updated to {{version}}",
   "dsh update failed: {{error}}": "dsh update failed: {{error}}",
   "Version check failed: {{error}}": "Version check failed: {{error}}",
+  "Remote authorization": "Remote authorization",
+  "Admin capability domain": "Admin capability domain",
+  "Use capability domain": "Use capability domain",
+  "Extra allowed logins": "Extra allowed logins",
+  "Full capability: {{capability}}": "Full capability: {{capability}}",
+  "Empty = remote management (settings/credentials) stays unavailable": "Empty = remote management (settings/credentials) stays unavailable",
+  "Empty = plain remote access only needs identity allowlist": "Empty = plain remote access only needs identity allowlist",
+  "Comma-separated; the current user on this machine is always allowed": "Comma-separated; the current user on this machine is always allowed",
+  "Remote authorization saved": "Remote authorization saved",
 
   // —— 更新 ——
   "Check failed: {{error}}": "Check failed: {{error}}",

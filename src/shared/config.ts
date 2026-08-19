@@ -22,5 +22,8 @@ export function currentConfigDraft(s: {
     minimize_to_tray_on_close: c?.minimize_to_tray_on_close ?? false,
     language: s.languageSetting,
     codex_guard: s.guardState,
+    dsh_admin_cap_domain: c?.dsh_admin_cap_domain ?? "",
+    dsh_use_cap_domain: c?.dsh_use_cap_domain ?? "",
+    dsh_extra_allowed_logins: c?.dsh_extra_allowed_logins ?? "",
   };
 }

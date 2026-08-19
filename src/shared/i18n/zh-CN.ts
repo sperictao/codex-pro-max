@@ -321,6 +321,15 @@ export const zhCN: Record<I18nKey, string> = {
   "dsh updated to {{version}}": "dsh 已更新到 {{version}}",
   "dsh update failed: {{error}}": "dsh 更新失败: {{error}}",
   "Version check failed: {{error}}": "版本检查失败: {{error}}",
+  "Remote authorization": "远程授权",
+  "Admin capability domain": "管理 capability 域名",
+  "Use capability domain": "普通使用 capability 域名",
+  "Extra allowed logins": "额外允许的登录名",
+  "Full capability: {{capability}}": "完整 capability：{{capability}}",
+  "Empty = remote management (settings/credentials) stays unavailable": "留空 = 远程管理（settings/credentials）不可用",
+  "Empty = plain remote access only needs identity allowlist": "留空 = 普通远程访问只需身份 allowlist",
+  "Comma-separated; the current user on this machine is always allowed": "逗号分隔；本机当前用户始终允许",
+  "Remote authorization saved": "远程授权已保存",
 
   // —— 更新 ——
   "Check failed: {{error}}": "检查失败: {{error}}",
