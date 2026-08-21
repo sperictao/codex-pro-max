@@ -223,6 +223,10 @@ export function DshCard() {
     try {
       if (isRemote) {
         await cmd.dshSetup();
+        // dsh_setup 返回 void：serve 配置完成后远程地址由 detect 给出。三个授权参数
+        // 留空也能正常 serve（普通远程访问只靠身份 allowlist），故成功即打开远程地址
+        const s = await cmd.dshDetect();
+        if (s.url) await open(s.url);
         toast(t("Remote access ready"), "success");
       } else {
         const url = await cmd.dshStartWeb();
