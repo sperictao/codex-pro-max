@@ -65,6 +65,8 @@ jobs:
           workspaces: src-tauri
       - name: Ensure taskboard resource dirs exist
         run: mkdir -p vendor/dashi-taskboard/dist/web
+      - name: Install vendored taskboard dependencies
+        run: npm --prefix vendor/dashi-taskboard install
       - name: Build bundled dsh plugins
         run: pnpm run build:dsh-plugins
       - name: Clippy
