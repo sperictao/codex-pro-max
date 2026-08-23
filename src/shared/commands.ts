@@ -5,7 +5,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { log } from "./logger";
 import type {
   CustomParamPayload,
-  DshStatus,
   FastctxApplyResult,
   FastctxStatus,
   GuardFileView,
@@ -82,14 +81,6 @@ export const fastctxInstall = () => invokeTyped<void>("fastctx_install");
 export const fastctxApply = () => invokeTyped<FastctxApplyResult>("fastctx_apply");
 export const fastctxUnapply = () => invokeTyped<void>("fastctx_unapply");
 export const fastctxOpenConsole = () => invokeTyped<void>("fastctx_open_console");
-
-// ============ dsh ============
-export const dshDetect = () => invokeTyped<DshStatus>("dsh_detect");
-export const dshSetup = () => invokeTyped<void>("dsh_setup");
-export const dshStartWeb = () => invokeTyped<string>("dsh_start_web");
-export const dshStop = () => invokeTyped<void>("dsh_stop");
-export const dshUpdate = () => invokeTyped<string>("dsh_update");
-export const dshSetAutostart = (enabled: boolean) => invokeTyped<void>("dsh_set_autostart", { enabled });
 
 // ============ 更新 ============
 export const getUpdaterConfigHealth = () => invokeTyped<UpdaterConfigHealth>("get_updater_config_health");

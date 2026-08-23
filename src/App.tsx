@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
 import { getVersion } from "@tauri-apps/api/app";
 import { useAppStore, type View } from "./shared/store";
-import { onDshStep, onStatusUpdate, onUpdaterDownloadProgress } from "./shared/events";
+import { onStatusUpdate, onUpdaterDownloadProgress } from "./shared/events";
 import * as cmd from "./shared/commands";
 import { log } from "./shared/logger";
 import { currentConfigDraft } from "./shared/config";
@@ -48,7 +48,6 @@ export function App() {
       ),
     );
     bind(onUpdaterDownloadProgress((p) => useAppStore.getState().setDownloadProgress(p)));
-    bind(onDshStep((s) => useAppStore.getState().handleDshStep(s)));
 
     // 进程事故通知需要系统授权（macOS），启动时静默请求一次
     void (async () => {

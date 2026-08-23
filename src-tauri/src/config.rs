@@ -58,19 +58,6 @@ pub struct LauncherConfig {
     #[serde(default)]
     pub codex_guard: crate::codex_guard::CodexGuardState,
 
-    /// dsh 远程管理 capability 的域名部分（完整为 `{domain}/cap/dsh-admin`）。
-    /// 空 = 不注入 DSH_TAILSCALE_ADMIN_CAPABILITY，远程管理接口恒 403。
-    #[serde(default)]
-    pub dsh_admin_cap_domain: String,
-
-    /// dsh 远程普通使用 capability 的域名部分（完整为 `{domain}/cap/dsh`）。
-    /// 空 = 不注入 DSH_TAILSCALE_USE_CAPABILITY，普通远程访问只靠身份 allowlist。
-    #[serde(default)]
-    pub dsh_use_cap_domain: String,
-
-    /// 额外允许访问 dsh 的 Tailscale 登录名（逗号分隔）；本机当前用户始终自动包含。
-    #[serde(default)]
-    pub dsh_extra_allowed_logins: String,
 }
 
 fn default_codex_path() -> String {
@@ -161,9 +148,6 @@ impl Default for LauncherConfig {
             minimize_to_tray_on_close: false,
             language: default_language(),
             codex_guard: Default::default(),
-            dsh_admin_cap_domain: String::new(),
-            dsh_use_cap_domain: String::new(),
-            dsh_extra_allowed_logins: String::new(),
         }
     }
 }
@@ -256,9 +240,6 @@ pub fn merge_settings(current: &mut LauncherConfig, settings: &LauncherConfig) {
     current.separate_window_mode = settings.separate_window_mode;
     current.minimize_to_tray_on_close = settings.minimize_to_tray_on_close;
     current.language = settings.language.clone();
-    current.dsh_admin_cap_domain = settings.dsh_admin_cap_domain.clone();
-    current.dsh_use_cap_domain = settings.dsh_use_cap_domain.clone();
-    current.dsh_extra_allowed_logins = settings.dsh_extra_allowed_logins.clone();
 }
 
 /// 保存配置文件
@@ -359,9 +340,6 @@ mod tests {
             separate_window_mode: true,
             minimize_to_tray_on_close: true,
             language: "zh-CN".to_string(),
-            dsh_admin_cap_domain: "admin.example.com".to_string(),
-            dsh_use_cap_domain: "use.example.com".to_string(),
-            dsh_extra_allowed_logins: "alice@example.com,bob@example.com".to_string(),
             ..Default::default()
         };
 
@@ -377,9 +355,6 @@ mod tests {
         assert!(current.separate_window_mode);
         assert!(current.minimize_to_tray_on_close);
         assert_eq!(current.language, "zh-CN");
-        assert_eq!(current.dsh_admin_cap_domain, "admin.example.com");
-        assert_eq!(current.dsh_use_cap_domain, "use.example.com");
-        assert_eq!(current.dsh_extra_allowed_logins, "alice@example.com,bob@example.com");
 
         // codex_guard 不变
         assert!(current.codex_guard.enabled);

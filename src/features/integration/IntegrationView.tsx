@@ -2,7 +2,6 @@
 // 两张卡片挂载时各自检测一次（旧行为：点击导航进入时刷新两者状态）
 
 import { useTranslation } from "react-i18next";
-import { DshCard } from "./DshCard";
 import { FastctxCard } from "./FastctxCard";
 
 export function IntegrationView() {
@@ -10,7 +9,6 @@ export function IntegrationView() {
   return (
     <main className="flex-1 overflow-y-auto p-6" id="integration-view">
       <h2 className="mb-4 text-base font-semibold">{t("Integrations")}</h2>
-      <DshCard />
       <FastctxCard />
     </main>
   );

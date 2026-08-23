@@ -8,7 +8,6 @@ use serde::Serialize;
 
 mod config;
 mod codex_guard;
-mod dsh;
 mod fastctx;
 mod i18n;
 mod logging;
@@ -1062,12 +1061,6 @@ pub fn run() {
             fastctx::fastctx_apply,
             fastctx::fastctx_unapply,
             fastctx::fastctx_open_console,
-            dsh::dsh_detect,
-            dsh::dsh_setup,
-            dsh::dsh_start_web,
-            dsh::dsh_stop,
-            dsh::dsh_set_autostart,
-            dsh::dsh_update,
             updater::get_updater_config_health,
             updater::get_updater_help_paths,
             updater::check_update,

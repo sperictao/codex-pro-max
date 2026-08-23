@@ -9,7 +9,6 @@ import * as cmd from "./commands";
 import { currentConfigDraft } from "./config";
 import type {
   DownloadProgress,
-  DshStepEvent,
   GuardFileView,
   GuardState,
   GuardView,
@@ -66,7 +65,6 @@ interface AppStore {
   services: { taskboard: ProcessInfo; injector: ProcessInfo };
   servicesReceived: { taskboard: boolean; injector: boolean };
   // 事件桥写入区
-  dshTimeline: DshStepEvent[];
   downloadProgress: DownloadProgress | null;
   // 看守（视图数据 + 文件列表；操作逻辑在 features/guard/ops.ts）
   guardView: GuardView | null;
@@ -96,8 +94,6 @@ interface AppStore {
   setAutostart: (enabled: boolean) => void;
   updateService: (info: ProcessInfo) => void;
   refreshStatus: () => Promise<void>;
-  handleDshStep: (step: DshStepEvent) => void;
-  setDshTimeline: (steps: DshStepEvent[]) => void;
   setDownloadProgress: (p: DownloadProgress) => void;
   setLanguageSetting: (setting: string) => Promise<void>;
   saveConfig: () => Promise<void>;
@@ -121,7 +117,6 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   appVersion: "-",
   services: initialServices(),
   servicesReceived: { taskboard: false, injector: false },
-  dshTimeline: [],
   downloadProgress: null,
   updaterHealth: null,
   updaterHealthError: null,
@@ -194,19 +189,6 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     }
   },
 
-  handleDshStep: (step) =>
-    set((s) => {
-      const tl = [...s.dshTimeline];
-      const i = tl.findIndex((x) => x.index === step.index);
-      if (i >= 0) {
-        tl[i] = step;
-      } else {
-        tl.push(step);
-        tl.sort((a, b) => a.index - b.index);
-      }
-      return { dshTimeline: tl };
-    }),
-  setDshTimeline: (steps) => set({ dshTimeline: steps }),
   setDownloadProgress: (p) => set({ downloadProgress: p }),
 
   // 语言切换编排（旧 shell.setLanguage）：落盘 + Rust 重建托盘 + react-i18next 响应式重渲染

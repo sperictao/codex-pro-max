@@ -2,7 +2,7 @@
 // 每个函数返回 unlisten；调用方负责在 effect cleanup 中解绑
 
 import { listen } from "@tauri-apps/api/event";
-import type { DownloadProgress, DshStepEvent, ProcessStatus } from "./types";
+import type { DownloadProgress, ProcessStatus } from "./types";
 
 export interface StatusUpdatePayload {
   name: string;
@@ -16,5 +16,3 @@ export const onStatusUpdate = (cb: (p: StatusUpdatePayload) => void) =>
 export const onUpdaterDownloadProgress = (cb: (p: DownloadProgress) => void) =>
   listen<DownloadProgress>("updater-download-progress", (e) => cb(e.payload));
 
-export const onDshStep = (cb: (p: DshStepEvent) => void) =>
-  listen<DshStepEvent>("dsh-step", (e) => cb(e.payload));

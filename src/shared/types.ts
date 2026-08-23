@@ -12,9 +12,6 @@ export interface LauncherConfig {
   minimize_to_tray_on_close: boolean;
   language: string;
   codex_guard: GuardState;
-  dsh_admin_cap_domain: string;
-  dsh_use_cap_domain: string;
-  dsh_extra_allowed_logins: string;
 }
 
 export interface GuardState {
@@ -102,34 +99,6 @@ export interface FastctxStatus {
 export interface FastctxApplyResult {
   selfCheckPassed: boolean;
   selfCheckOutput: string;
-}
-
-export interface DshStatus {
-  nodeAvailable: boolean;
-  dshInstalled: boolean;
-  dshVersion: string | null;
-  supportedVersion: string;
-  dshCompatible: boolean;
-  pluginsInstalled: boolean;
-  dshRunning: boolean;
-  tailscaleInstalled: boolean;
-  tailscaleOnline: boolean;
-  hostname: string | null;
-  localUrl: string | null;
-  url: string | null;
-  magicDnsEnabled: boolean;
-  serveConfigured: boolean;
-  autostartEnabled: boolean;
-  error: string | null;
-}
-
-export interface DshStepEvent {
-  index: number;
-  id: string;
-  state: "running" | "done" | "failed" | "skipped" | "pending";
-  detail: string | null;
-  problem: string | null;
-  solution: string | null;
 }
 
 export interface UpdaterConfigHealth {
