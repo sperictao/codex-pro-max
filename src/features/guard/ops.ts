@@ -155,9 +155,9 @@ export async function addCustom(form: AddCustomForm): Promise<boolean> {
       label: form.label,
       description: form.desc,
       file: "",
-      applyMode: form.mode,
+      apply_mode: form.mode,
       path: form.path,
-      valueType: effectiveType,
+      value_type: effectiveType,
       default: parseDefaultValue(form.defaultRaw, effectiveType),
       custom: true,
     };

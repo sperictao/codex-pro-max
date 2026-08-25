@@ -82,9 +82,9 @@ export interface CustomParamPayload {
   label: string;
   description: string;
   file: string;
-  applyMode: string;
+  apply_mode: string;
   path: string;
-  valueType: string;
+  value_type: string;
   default: unknown;
   custom: boolean;
 }

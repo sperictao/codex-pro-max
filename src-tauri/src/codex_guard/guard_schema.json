@@ -104,6 +104,32 @@
     "description_en": "Disable the built-in image_generation"
   },
   {
+    "id": "model_context_window",
+    "group": "config.toml",
+    "label": "模型上下文窗口",
+    "description": "Codex 模型的上下文窗口大小；1000000 = 1M token",
+    "file": "config.toml",
+    "apply_mode": "toml_key",
+    "path": "model_context_window",
+    "value_type": "int",
+    "default": 1000000,
+    "label_en": "Model context window",
+    "description_en": "Context window size for the Codex model; 1000000 = 1M tokens"
+  },
+  {
+    "id": "model_auto_compact_token_limit",
+    "group": "config.toml",
+    "label": "自动压缩 token 上限",
+    "description": "上下文达到该 token 数时自动压缩；应小于 model_context_window",
+    "file": "config.toml",
+    "apply_mode": "toml_key",
+    "path": "model_auto_compact_token_limit",
+    "value_type": "int",
+    "default": 900000,
+    "label_en": "Auto-compact token limit",
+    "description_en": "Automatically compact context when it reaches this token count; should be lower than model_context_window"
+  },
+  {
     "id": "agents-v1-remove",
     "group": "config.toml",
     "label": "移除 multi_agent_v1 配置",

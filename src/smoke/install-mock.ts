@@ -155,7 +155,19 @@ const routes: Record<string, (args: AnyRec) => any> = {
   },
   guard_add_custom_param: ({ param, fileId }) => {
     const g = guardView.groups.find((x: AnyRec) => x.id === fileId);
-    if (g) g.params.push({ ...param, value: param.default, applied: false, locked: false, actual: null, status: "missing", error: null, lastChecked: null, lastRestored: null });
+    if (g) g.params.push({
+      ...param,
+      applyMode: param.apply_mode,
+      valueType: param.value_type,
+      value: param.default,
+      applied: false,
+      locked: false,
+      actual: null,
+      status: "missing",
+      error: null,
+      lastChecked: null,
+      lastRestored: null,
+    });
   },
   guard_remove_custom_param: ({ id }) => {
     for (const g of guardView.groups) g.params = g.params.filter((p: AnyRec) => p.id !== id);

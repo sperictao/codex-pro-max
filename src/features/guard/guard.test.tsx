@@ -211,7 +211,7 @@ describe("自定义参数", () => {
     const ok = await ops.addCustom({ ...baseForm, mode: "file_overwrite", path: "", valueType: "bool", defaultRaw: "hello" });
     expect(ok).toBe(true);
     expect(cmd.guardAddCustomParam).toHaveBeenCalledWith(
-      expect.objectContaining({ applyMode: "file_overwrite", valueType: "text", default: "hello", custom: true }),
+      expect.objectContaining({ apply_mode: "file_overwrite", value_type: "text", default: "hello", custom: true }),
       "f1",
     );
   });

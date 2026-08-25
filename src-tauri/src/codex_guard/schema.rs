@@ -133,7 +133,7 @@ mod tests {
     #[test]
     fn builtin_schema_parses() {
         let v: Vec<GuardParam> = serde_json::from_str(BUILTIN_SCHEMA).unwrap();
-        assert_eq!(v.len(), 11);
+        assert_eq!(v.len(), 13);
     }
 
     #[test]
