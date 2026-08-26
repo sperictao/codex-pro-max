@@ -67,8 +67,6 @@ jobs:
         run: mkdir -p vendor/dashi-taskboard/dist/web
       - name: Install vendored taskboard dependencies
         run: npm --prefix vendor/dashi-taskboard install
-      - name: Build bundled dsh plugins
-        run: pnpm run build:dsh-plugins
       - name: Clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
       - name: Test
