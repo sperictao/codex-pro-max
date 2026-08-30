@@ -10,6 +10,8 @@ import type {
   GuardFileView,
   GuardView,
   LauncherConfig,
+  ModelConfigView,
+  ModelPreset,
   ProcessInfo,
   SkillStatus,
   UpdateInfo,
@@ -88,6 +90,24 @@ export const getUpdaterHelpPaths = () => invokeTyped<UpdaterHelpPaths>("get_upda
 export const checkUpdate = () => invokeTyped<UpdateInfo>("check_update");
 export const installUpdate = (expectedVersion: string | null) =>
   invokeTyped<string>("install_update", { expectedVersion });
+
+// ============ 模型配置 ============
+// 三键语义统一「空 = 回落默认（删键）」；provider 为 openai 与空等价（内置默认）
+export const modelConfigView = () => invokeTyped<ModelConfigView>("model_config_view");
+export const modelApply = (model: string, provider: string, effort: string) =>
+  invokeTyped<void>("model_apply", { model, provider, effort });
+export const modelProviderSave = (p: {
+  id: string;
+  name: string;
+  baseUrl: string;
+  envKey: string;
+  bearerToken: string;
+}) => invokeTyped<void>("model_provider_save", p);
+export const modelProviderDelete = (id: string) =>
+  invokeTyped<void>("model_provider_delete", { id });
+export const modelPresetSave = (preset: ModelPreset) =>
+  invokeTyped<void>("model_preset_save", { preset });
+export const modelPresetDelete = (id: string) => invokeTyped<void>("model_preset_delete", { id });
 
 // ============ 语言 ============
 export const getResolvedLanguage = () => invokeTyped<string>("get_resolved_language");

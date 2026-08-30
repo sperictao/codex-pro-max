@@ -299,6 +299,19 @@ fn zh_cn(key: &str) -> Option<&'static str> {
         "Built-in files cannot be removed" => "内置文件不可删除",
         "Selected file must be inside ~/.codex" => "选择的文件必须位于 ~/.codex 目录内",
 
+        // —— 模型配置（model_config.rs）——
+        "openai is the built-in provider id and cannot be recreated" => "openai 是内置供应商 id，不能重建",
+        "Provider id may only contain letters, digits, '-' and '_'" => "供应商 id 只能包含字母、数字、- 和 _",
+        "Provider name cannot be empty" => "供应商名称不能为空",
+        "Base URL must start with http:// or https://" => "Base URL 必须以 http:// 或 https:// 开头",
+        "Choose one auth method: environment variable name or API key" => "认证方式二选一：环境变量名或 API Key",
+        "Provider not found: {id}" => "未找到供应商: {id}",
+        "Model provider does not exist: {id}" => "模型供应商不存在: {id}",
+        "Invalid reasoning effort: {value}" => "无效的推理力度: {value}",
+        "Preset name cannot be empty" => "预设名称不能为空",
+        "Model id cannot be empty" => "模型 id 不能为空",
+        "Preset not found: {id}" => "未找到预设: {id}",
+
         _ => return None,
     })
 }

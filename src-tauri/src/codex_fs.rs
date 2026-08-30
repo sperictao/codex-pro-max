@@ -1,8 +1,86 @@
-//! TOML 路径读写（toml_edit 保留注释与格式）
+//! ~/.codex 文件操作内核：目录定位、写前备份、TOML 路径读写。
+//! 看守、模型配置等直接操作 ~/.codex 文件的域共用此模块；
+//! 领域逻辑（托管/锁定语义等）不在此。
 
 use toml_edit::{DocumentMut, Item, Table};
 
 use crate::i18n::{tr, trf};
+
+// ============ 路径与时间 ============
+
+pub(crate) fn codex_home() -> Result<std::path::PathBuf, String> {
+    Ok(crate::config::home_dir()?.join(".codex"))
+}
+
+pub(crate) fn codex_file(rel: &str) -> Result<std::path::PathBuf, String> {
+    Ok(codex_home()?.join(rel))
+}
+
+pub(crate) fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+// ============ 写前备份 ============
+
+/// 写入前备份目标文件到 ~/.codex/dashi-backups/，每个文件保留 20 份
+fn backup(rel_file: &str, target: &std::path::Path) -> Result<(), String> {
+    if !target.exists() {
+        return Ok(());
+    }
+    let dir = codex_home()?.join("dashi-backups");
+    std::fs::create_dir_all(&dir).map_err(|e| {
+        crate::logging::error("备份: 创建备份目录", &e.to_string());
+        trf("Failed to create backup directory: {error}", &[("error", e.to_string())])
+    })?;
+    let flat = rel_file.replace(['/', '\\'], "_");
+    let dest = dir.join(format!("{}.{}.bak", flat, now_secs()));
+    std::fs::copy(target, &dest).map_err(|e| {
+        crate::logging::error("备份: 写备份文件", &e.to_string());
+        trf("Backup failed: {error}", &[("error", e.to_string())])
+    })?;
+
+    // 只保留 20 份：文件名即时间戳，字典序可排
+    let mut olds: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .map_err(|e| {
+            crate::logging::error("备份: 扫描备份目录", &e.to_string());
+            trf("Failed to read backup directory: {error}", &[("error", e.to_string())])
+        })?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with(&format!("{}.", flat)) && n.ends_with(".bak"))
+        })
+        .collect();
+    olds.sort();
+    while olds.len() > 20 {
+        let _ = std::fs::remove_file(olds.remove(0));
+    }
+    Ok(())
+}
+
+pub(crate) fn write_with_backup(rel_file: &str, target: &std::path::Path, content: &str) -> Result<(), String> {
+    backup(rel_file, target)?;
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| {
+            crate::logging::error("文件写入: 创建目录", &e.to_string());
+            trf("Failed to create directory: {error}", &[("error", e.to_string())])
+        })?;
+    }
+    std::fs::write(target, content).map_err(|e| {
+        crate::logging::error("文件写入", &e.to_string());
+        trf("Failed to write {path}: {error}", &[
+            ("path", target.display().to_string()),
+            ("error", e.to_string()),
+        ])
+    })
+}
+
+// ============ TOML 路径读写（toml_edit 保留注释与格式） ============
 
 pub(crate) fn get_toml_path<'a>(doc: &'a DocumentMut, path: &str) -> Option<&'a Item> {
     let mut item = doc.as_item();
@@ -18,7 +96,7 @@ pub(crate) fn set_toml_path(doc: &mut DocumentMut, path: &str, val: Item) -> Res
     for seg in &segs[..segs.len() - 1] {
         if item.as_table_like().is_none() {
             let err = trf("Intermediate path node {node} is not a table", &[("node", seg.to_string())]);
-            crate::logging::error("看守 TOML 写入", &err);
+            crate::logging::error("TOML 写入", &err);
             return Err(err);
         }
         if item.get(seg).is_none() {
@@ -29,7 +107,7 @@ pub(crate) fn set_toml_path(doc: &mut DocumentMut, path: &str, val: Item) -> Res
         item = item.get_mut(seg).unwrap();
         if item.as_table_like().is_none() {
             let err = trf("Intermediate path node {node} is not a table", &[("node", seg.to_string())]);
-            crate::logging::error("看守 TOML 写入", &err);
+            crate::logging::error("TOML 写入", &err);
             return Err(err);
         }
     }
@@ -37,7 +115,7 @@ pub(crate) fn set_toml_path(doc: &mut DocumentMut, path: &str, val: Item) -> Res
     item.as_table_like_mut()
         .ok_or_else(|| {
             let err = tr("Path endpoint is not a table");
-            crate::logging::error("看守 TOML 写入", &err);
+            crate::logging::error("TOML 写入", &err);
             err
         })?
         .insert(last, val);
@@ -66,13 +144,13 @@ pub(crate) fn json_to_toml(v: &serde_json::Value) -> Result<Item, String> {
             .map(toml_edit::value)
             .ok_or_else(|| {
                 let err = tr("Integer parameters do not support decimals");
-                crate::logging::error("看守 TOML 转换", &err);
+                crate::logging::error("TOML 转换", &err);
                 err
             }),
         serde_json::Value::String(s) => Ok(toml_edit::value(s.as_str())),
         _ => {
             let err = tr("Unsupported value type");
-            crate::logging::error("看守 TOML 转换", &err);
+            crate::logging::error("TOML 转换", &err);
             Err(err)
         }
     }

@@ -128,3 +128,31 @@ export interface DownloadProgress {
   attempt: number;
   maxAttempts: number;
 }
+
+// ============ 模型配置（config.toml 模型域；见 features/models） ============
+
+/// 模型预设：一组可一键应用的模型组合（预设库在启动器配置，应用即写 config.toml）
+export interface ModelPreset {
+  id: string;
+  label: string;
+  model: string;
+  provider: string;
+  effort: string;
+}
+
+export interface ModelProviderView {
+  id: string;
+  name: string;
+  baseUrl: string;
+  envKey: string;
+  bearerToken: string;
+  active: boolean;
+}
+
+export interface ModelConfigView {
+  model: string;
+  provider: string;
+  effort: string;
+  providers: ModelProviderView[];
+  presets: ModelPreset[];
+}

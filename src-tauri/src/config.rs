@@ -1,6 +1,25 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// 模型预设：一组可一键应用的模型组合（模型配置域的快速切换列表）。
+/// config.toml 无对应概念，预设库归启动器所有；应用 = 把三个字段写入 config.toml（见 model_config）
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ModelPreset {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub label: String,
+    /// 空 = 删 model 键（codex 默认模型）
+    #[serde(default)]
+    pub model: String,
+    /// 空或 openai = 删 model_provider 键（内置默认供应商）
+    #[serde(default)]
+    pub provider: String,
+    /// 空 = 删 model_reasoning_effort 键
+    #[serde(default)]
+    pub effort: String,
+}
+
 /// 启动器配置，持久化到 ~/.codex-pro-max/config.json
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LauncherConfig {
@@ -57,6 +76,10 @@ pub struct LauncherConfig {
     /// Codex 配置看守状态（见 codex_guard.rs）
     #[serde(default)]
     pub codex_guard: crate::codex_guard::CodexGuardState,
+
+    /// 模型预设库（见 model_config.rs）；不属于设置页字段，merge_settings 不触碰
+    #[serde(default)]
+    pub model_presets: Vec<ModelPreset>,
 
 }
 
@@ -148,6 +171,7 @@ impl Default for LauncherConfig {
             minimize_to_tray_on_close: false,
             language: default_language(),
             codex_guard: Default::default(),
+            model_presets: Vec::new(),
         }
     }
 }
@@ -366,6 +390,26 @@ mod tests {
         let cfg = LauncherConfig::default();
         assert!(!cfg.codex_guard.enabled);
         assert!(cfg.codex_guard.params.is_empty());
+    }
+
+    #[test]
+    fn merge_settings_preserves_model_presets() {
+        let mut current = LauncherConfig {
+            model_presets: vec![ModelPreset {
+                id: "p1".to_string(),
+                label: "快速档".to_string(),
+                model: "gpt-5-codex".to_string(),
+                provider: String::new(),
+                effort: "low".to_string(),
+            }],
+            ..Default::default()
+        };
+
+        merge_settings(&mut current, &LauncherConfig::default());
+
+        // 设置页保存不得清掉预设库（与 codex_guard 同级别的非设置页字段）
+        assert_eq!(current.model_presets.len(), 1);
+        assert_eq!(current.model_presets[0].label, "快速档");
     }
 
     #[test]

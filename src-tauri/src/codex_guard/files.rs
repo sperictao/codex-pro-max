@@ -71,7 +71,7 @@ fn detect_file_path_in(home: &Path, rel: &str) -> Option<String> {
 }
 
 pub(crate) fn detect_file_path(rel: &str) -> Option<String> {
-    detect_file_path_in(&super::codex_home().ok()?, rel)
+    detect_file_path_in(&crate::codex_fs::codex_home().ok()?, rel)
 }
 
 #[cfg(test)]

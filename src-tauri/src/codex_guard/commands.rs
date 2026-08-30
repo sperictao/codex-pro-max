@@ -10,7 +10,8 @@ use super::validate::{
     normalize_custom_id, validate_file_path, validate_guard_file, validate_param_fields,
 };
 use super::view::{build_view, GuardView};
-use super::{codex_home, now_secs, DetectRecord, GuardFile, GuardParam};
+use super::{DetectRecord, GuardFile, GuardParam};
+use crate::codex_fs::{codex_home, now_secs};
 
 fn find_param(schema: &[GuardParam], id: &str) -> Result<GuardParam, String> {
     schema

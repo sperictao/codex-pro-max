@@ -18,7 +18,7 @@ import type {
   UpdaterConfigHealth,
 } from "./types";
 
-export type View = "home" | "skill" | "guard" | "integration" | "settings";
+export type View = "home" | "skill" | "guard" | "models" | "integration" | "settings";
 export type SettingsSection = "general" | "appearance" | "network" | "mode" | "guard" | "about";
 export type ToastType = "success" | "error" | "info";
 

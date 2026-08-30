@@ -5,14 +5,14 @@ use toml_edit::DocumentMut;
 
 use crate::i18n::{tr, trf};
 
-use super::backup::write_with_backup;
+use crate::codex_fs::write_with_backup;
 use super::markdown_block::{block_begin, block_end, extract_block, upsert_block};
 use super::schema::default_for_lang;
-use super::toml_ops::{
-    get_toml_path, json_to_toml, remove_toml_path, render_toml_value, set_toml_path,
+use super::{GuardParam, GuardParamState};
+use crate::codex_fs::{
+    codex_file, get_toml_path, json_to_toml, remove_toml_path, render_toml_value, set_toml_path,
     toml_matches_json,
 };
-use super::{codex_file, GuardParam, GuardParamState};
 
 pub struct CheckResult {
     pub status: String, // match | drift | missing | error

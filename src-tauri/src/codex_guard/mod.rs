@@ -1,14 +1,12 @@
 //! Codex 配置看守：schema 驱动的 ~/.codex 参数托管、锁定与漂移恢复。
 //! 词汇与语义边界见仓库 CONTEXT.md 与 docs/adr/0001。
 
-mod backup;
 mod commands;
 mod engine;
 mod files;
 mod markdown_block;
 mod poll;
 mod schema;
-mod toml_ops;
 mod validate;
 mod view;
 
@@ -17,9 +15,6 @@ pub use poll::poll_loop;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
-
-use crate::config;
 
 use schema::pick_i18n;
 
@@ -120,19 +115,4 @@ pub struct DetectRecord {
     pub at: u64,
 }
 
-// ============ 路径与基础工具（模块共享 kernel） ============
-
-pub(crate) fn codex_home() -> Result<PathBuf, String> {
-    Ok(config::home_dir()?.join(".codex"))
-}
-
-pub(crate) fn codex_file(rel: &str) -> Result<PathBuf, String> {
-    Ok(codex_home()?.join(rel))
-}
-
-pub(crate) fn now_secs() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
-}
+// ============ 共享文件工具（codex_home / 备份 / TOML 读写）已提升至 crate::codex_fs ============

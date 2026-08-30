@@ -7,10 +7,12 @@ use tauri::{Emitter, Manager, State};
 use serde::Serialize;
 
 mod config;
+mod codex_fs;
 mod codex_guard;
 mod fastctx;
 mod i18n;
 mod logging;
+mod model_config;
 mod process_manager;
 mod updater;
 mod version;
@@ -1061,6 +1063,12 @@ pub fn run() {
             fastctx::fastctx_apply,
             fastctx::fastctx_unapply,
             fastctx::fastctx_open_console,
+            model_config::model_config_view,
+            model_config::model_apply,
+            model_config::model_provider_save,
+            model_config::model_provider_delete,
+            model_config::model_preset_save,
+            model_config::model_preset_delete,
             updater::get_updater_config_health,
             updater::get_updater_help_paths,
             updater::check_update,

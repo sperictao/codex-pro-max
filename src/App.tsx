@@ -16,12 +16,14 @@ import { SettingsView } from "./features/settings/SettingsView";
 import { SkillView } from "./features/skill/SkillView";
 import { GuardView } from "./features/guard/GuardView";
 import { IntegrationView } from "./features/integration/IntegrationView";
+import { ModelView } from "./features/models/ModelView";
 
 // Skill 按钮在旧 UI 无 data-i18n（恒为英文），其余走词典
 const NAV_ITEMS: { view: View; labelKey: string | null }[] = [
   { view: "home", labelKey: "Home" },
   { view: "skill", labelKey: null },
   { view: "guard", labelKey: "Guard" },
+  { view: "models", labelKey: "Models" },
   { view: "integration", labelKey: "Integrations" },
   { view: "settings", labelKey: "Settings" },
 ];
@@ -155,6 +157,7 @@ export function App() {
       {activeView === "settings" && <SettingsView />}
       {activeView === "skill" && <SkillView />}
       {activeView === "guard" && <GuardView />}
+      {activeView === "models" && <ModelView />}
       {activeView === "integration" && <IntegrationView />}
       <Toaster />
     </>

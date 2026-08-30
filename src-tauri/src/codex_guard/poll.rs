@@ -5,7 +5,7 @@ use crate::config;
 
 use super::engine::{apply, check, expected_of};
 use super::files::{builtin_files, load_files};
-use super::now_secs;
+use crate::codex_fs::now_secs;
 use super::schema::load_schema;
 
 pub async fn poll_loop() {
