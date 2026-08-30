@@ -82,6 +82,23 @@
 - 接入/摘除后需重启 Codex 会话才生效，启动器只提示，不自动重启。
 - fastctx 的安装、升级、输出档位、jobs 管理归 fastctx 自己的 TUI/CLI；启动器只做未安装引导（`npm i -g fastctx`）与「打开控制台」入口。
 
+## 模型配置（Model Config）
+
+启动器的第四功能域：对 `~/.codex/config.toml` 模型域做可视化管理（参考 CCursor 的 Model Config）：当前模型切换、模型供应商增删改、模型预设库。
+
+### 术语
+
+- **当前模型（Active Model）** — config.toml 顶层 `model` / `model_provider` / `model_reasoning_effort` 三键。「应用」= 把三个字段写入 config.toml；三键统一「空 = 删键回落默认」，`model_provider` 为 `openai`（内置）与空等价。
+- **模型供应商（Provider）** — config.toml 的 `[model_providers.<id>]` 表：`name` / `base_url` / 认证（`env_key` 环境变量名 或 `experimental_bearer_token` 直填 Key，二选一，也可都空供本地无鉴权端点）。增删改直接读写 config.toml；id 创建后不可改，`openai` 为内置保留 id。
+- **模型预设（Preset）** — 存在启动器配置里的 `{label, model, provider, effort}` 组合，一键应用 = 写当前模型三键（与应用当前模型同一条写入路径）。config.toml 无此概念，预设库归启动器所有。
+
+### 语义边界
+
+- config.toml 是唯一事实来源：不落第二份 providers.json；视图数据在进入页面与每次操作后从 config.toml 现读，不轮询（无锁定语义，区别于看守域的「锁定 + 60s 轮询」）。
+- 与看守域共享 config.toml 但键集不相交：本域只动 `model` / `model_provider` / `model_reasoning_effort` / `[model_providers.*]`；`model_context_window`、`model_auto_compact_token_limit` 归看守域。
+- 删除使用中的供应商 = 同时删 `model_provider` 键（回落内置 OpenAI）；引用它的预设不回滚，应用时报「供应商不存在」。删除供应商/预设不回滚已写入的键（与看守域「不回滚」一致）。
+- 保存预设时校验 provider 已定义（或为内置/空），避免攒下注定失败的预设；每次写入 config.toml 前备份到 `~/.codex/dashi-backups/`（与看守域同一备份机制）。
+
 ## 启动器壳（Shell）
 
 启动器的横切关注：Tauri 桌面壳的进程模型、生命周期与系统交互边界。

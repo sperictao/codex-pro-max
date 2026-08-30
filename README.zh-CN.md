@@ -24,6 +24,7 @@
 - 🟢 **Taskboard 服务** — 拉起/停止 [dashi-taskboard](https://github.com/chuspeeism/dashi-taskboard) 的 Node 服务，健康检查，首页聚合状态指示；内置 dashboard、列表、甘特图视图
 - 💉 **Codex 注入器** — 以独立 CDP 端口启动 Codex 桌面端并注入 Taskboard 面板（macOS / Windows 商店版均可识别）
 - 🔒 **Codex 配置看守** — 对 `~/.codex/` 下配置文件做 schema 驱动的参数托管、锁定与漂移自动恢复（词汇与边界见 [CONTEXT.md](CONTEXT.md)）
+- 🧠 **模型配置** — 可视化管理 `~/.codex/config.toml` 的当前模型、模型供应商（自定义 base_url 与鉴权）与模型预设，一键切换（参考 CCursor）
 - 🧰 **FastCtx 集成** — 一键安装 [FastCtx](https://github.com/yc-duan/fastctx) MCP 运行时并接入/摘除 Codex，全程委托 `fastctx` CLI
 - 🎨 **主题** — 42 个 tweakcn 主题族，原生支持亮 / 暗 / 跟随系统；28 种界面字体应用内自托管，完全离线
 - 🔄 **应用自更新** — 内置 Tauri Updater，检查更新、下载、重启一条龙

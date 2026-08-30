@@ -24,6 +24,7 @@
 - 🟢 **Taskboard Service** — start/stop the bundled [dashi-taskboard](https://github.com/chuspeeism/dashi-taskboard) Node service with health checks and an aggregate status indicator on the home page; dashboard, list, and Gantt views included
 - 💉 **Codex Injector** — launch Codex on a dedicated CDP port and inject the Taskboard panel into its UI (macOS and Windows Store builds)
 - 🔒 **Codex Config Guard** — schema-driven parameter management, locking, and automatic drift recovery for config files under `~/.codex/` (terminology and boundaries in [CONTEXT.md](CONTEXT.md))
+- 🧠 **Model Config** — visually manage the active model, model providers (custom base_url and auth), and model presets in `~/.codex/config.toml` with one-click switching (inspired by CCursor)
 - 🧰 **FastCtx Integration** — one-click install of the [FastCtx](https://github.com/yc-duan/fastctx) MCP runtime and integrate/unapply it into Codex, delegated to the `fastctx` CLI
 - 🎨 **Themes** — 42 tweakcn theme families with native light / dark / system modes; 28 UI fonts self-hosted in-app, fully offline
 - 🔄 **Self-Update** — built-in Tauri Updater: check, download, restart, done
