@@ -14,7 +14,7 @@ process.on("exit", () => rmSync(outputDir, { recursive: true, force: true }));
 // tsc 会跟随 import 把 theme-families.ts 一并编译进 outDir
 execFileSync(process.execPath, [
   join(root, "node_modules/typescript/bin/tsc"),
-  join(root, "src/theme.ts"),
+  join(root, "src/shared/theme.ts"),
   "--target",
   "ES2022",
   "--module",
