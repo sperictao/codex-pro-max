@@ -5,7 +5,7 @@ use toml_edit::DocumentMut;
 
 use crate::i18n::{tr, trf};
 
-use crate::codex_fs::write_with_backup;
+use crate::codex_fs::{backup, write_with_backup};
 use super::markdown_block::{block_begin, block_end, extract_block, upsert_block};
 use super::schema::default_for_lang;
 use super::{GuardParam, GuardParamState};
@@ -174,6 +174,73 @@ pub(crate) fn apply(param: &GuardParam, expected: &serde_json::Value) -> Result<
         other => {
             let err = trf("Unknown apply_mode: {mode}", &[("mode", other.to_string())]);
             log::error!("[看守写入] 参数 {} 未知 apply_mode: {}", param.id, err);
+            Err(err)
+        }
+    }
+}
+
+/// 把参数对应的值从 codex 文件中删除（写入前备份；备份在 remove 之前由调用方完成）
+/// 与 apply 的语义相反：apply 写入期望值，remove 移除该参数在目标文件中的存在
+pub(crate) fn remove(param: &GuardParam) -> Result<(), String> {
+    let file = codex_file(&param.file)?;
+    // 文件不存在时无需任何操作
+    let content = match std::fs::read_to_string(&file) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => {
+            let err = trf("Read failed: {error}", &[("error", e.to_string())]);
+            log::error!("[看守移除] 读取 {} 失败: {}", param.file, err);
+            return Err(err);
+        }
+    };
+
+    match param.apply_mode.as_str() {
+        "toml_key" => {
+            let mut doc = content
+                .parse::<DocumentMut>()
+                .map_err(|e| {
+                    let err = trf("TOML parse failed; nothing written: {error}", &[("error", e.to_string())]);
+                    log::error!("[看守移除] 解析 {} 失败: {}", param.file, err);
+                    err
+                })?;
+            remove_toml_path(&mut doc, &param.path);
+            write_with_backup(&param.file, &file, &doc.to_string())
+        }
+        "toml_absent" => {
+            // 期望状态本来就是不存在，无需操作
+            Ok(())
+        }
+        "file_overwrite" => {
+            // 备份后删除整个文件
+            backup(&param.file, &file)?;
+            std::fs::remove_file(&file).map_err(|e| {
+                let err = trf("Failed to delete file: {error}", &[("error", e.to_string())]);
+                log::error!("[看守移除] 删除 {} 失败: {}", param.file, err);
+                err
+            })
+        }
+        "markdown_block" => {
+            let begin = block_begin(&param.id);
+            let end = block_end(&param.id);
+            if let (Some(b), Some(e_start)) = (content.find(&begin), content.find(&end)) {
+                if b <= e_start {
+                    let e = e_start + end.len();
+                    // 移除区块及其前后多余空行
+                    let mut new_content = String::with_capacity(content.len());
+                    new_content.push_str(&content[..b]);
+                    let after = &content[e..];
+                    // 跳过区块后的换行
+                    let after = after.strip_prefix("\n").unwrap_or(after);
+                    new_content.push_str(after);
+                    return write_with_backup(&param.file, &file, &new_content);
+                }
+            }
+            // 标记不存在，无需操作
+            Ok(())
+        }
+        other => {
+            let err = trf("Unknown apply_mode: {mode}", &[("mode", other.to_string())]);
+            log::error!("[看守移除] 参数 {} 未知 apply_mode: {}", param.id, err);
             Err(err)
         }
     }

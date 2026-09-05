@@ -33,7 +33,7 @@ function ParamEditor({ p }: { p: GuardParamView }) {
       <div className="flex items-center gap-2">
         <input type="checkbox" className={TOGGLE} data-guard-id={p.id}
           checked={p.value === true} disabled={p.locked}
-          onChange={() => void ops.toggleBool(p.id)} />
+          onChange={(e) => void ops.toggleBool(p.id, e.target.checked)} />
         <span className="text-xs opacity-70">
           {p.value === true ? "true" : "false"} {t("(recommended {{default}})", { default: String(p.default) })}
         </span>
@@ -115,6 +115,11 @@ function ParamCard({ p }: { p: GuardParamView }) {
           ) : (
             <button className={BTN_SM} disabled={!p.applied} onClick={() => void ops.setLocked(p.id, true)}>
               {UNLOCK_SVG}{t("Lock")}
+            </button>
+          )}
+          {!p.applied && !p.locked && (
+            <button className={BTN_SM} onClick={() => void ops.removeConfig(p.id)}>
+              {t("Remove Config")}
             </button>
           )}
           {p.custom && (

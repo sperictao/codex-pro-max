@@ -68,6 +68,7 @@ export const guardRemoveFile = (id: string) => invokeTyped<void>("guard_remove_f
 export const guardAddCustomParam = (param: CustomParamPayload, fileId: string) =>
   invokeTyped<void>("guard_add_custom_param", { param, fileId });
 export const guardRemoveCustomParam = (id: string) => invokeTyped<void>("guard_remove_custom_param", { id });
+export const guardRemoveConfig = (id: string) => invokeTyped<void>("guard_remove_config", { id });
 export const guardGetSchemaFilePath = () => invokeTyped<string>("guard_get_schema_file_path");
 export const guardRelativizePickedPath = (absPath: string) =>
   invokeTyped<string>("guard_relativize_picked_path", { absPath });

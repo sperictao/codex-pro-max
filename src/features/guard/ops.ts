@@ -12,19 +12,23 @@ import type { CustomParamPayload, GuardParamView, GuardView } from "@/shared/typ
 const store = () => useAppStore.getState();
 const t = (key: string, params?: Record<string, string | number>) => i18n.t(key, params);
 
-async function findParam(id: string): Promise<GuardParamView | null> {
+async function findParam(id: string): Promise<(GuardParamView & { file: string }) | null> {
   const view: GuardView = await cmd.guardGetView();
-  return view.groups.flatMap((g) => g.params).find((x) => x.id === id) ?? null;
+  for (const g of view.groups) {
+    const p = g.params.find((x) => x.id === id);
+    if (p) return { ...p, file: g.file };
+  }
+  return null;
 }
 
 // ============ 参数操作 ============
 
-export async function toggleBool(id: string): Promise<void> {
-  if (store().guardState.params[id]?.locked) return;
+export async function toggleBool(id: string, next: boolean): Promise<void> {
   try {
     const p = await findParam(id);
     if (!p) return;
-    await cmd.guardSetValue(id, p.value !== true);
+    if (p.locked) return;
+    await cmd.guardSetValue(id, next);
     await store().refreshGuardView(true);
   } catch (e) {
     store().toast(t("Change failed: {{error}}", { error: String(e) }), "error");
@@ -92,6 +96,24 @@ export async function setLocked(id: string, locked: boolean): Promise<void> {
     store().toast(t("Operation failed: {{error}}", { error: String(e) }), "error");
   }
   await store().refreshGuardView(true);
+}
+
+export async function removeConfig(id: string): Promise<void> {
+  const p = await findParam(id);
+  if (!p) return;
+  const label = p.label || p.id;
+  const ok = await ask(
+    t("Remove config for {{label}}?\n\nThis will delete the parameter's value from ~/.codex/{{file}} (a backup is saved to ~/.codex/dashi-backups/). The guard entry itself stays; only the written config is removed.", { label, file: p.file }),
+    { title: t("Remove Config"), kind: "warning" },
+  );
+  if (!ok) return;
+  try {
+    await cmd.guardRemoveConfig(id);
+    store().toast(t("Config removed"), "success");
+    await store().refreshGuardView(true);
+  } catch (e) {
+    store().toast(t("Operation failed: {{error}}", { error: String(e) }), "error");
+  }
 }
 
 export async function removeCustom(id: string): Promise<void> {

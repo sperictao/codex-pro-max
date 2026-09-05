@@ -26,7 +26,7 @@ pub(crate) fn now_secs() -> u64 {
 // ============ 写前备份 ============
 
 /// 写入前备份目标文件到 ~/.codex/dashi-backups/，每个文件保留 20 份
-fn backup(rel_file: &str, target: &std::path::Path) -> Result<(), String> {
+pub(crate) fn backup(rel_file: &str, target: &std::path::Path) -> Result<(), String> {
     if !target.exists() {
         return Ok(());
     }

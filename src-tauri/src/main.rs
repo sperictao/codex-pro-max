@@ -1049,6 +1049,7 @@ pub fn run() {
             codex_guard::guard_apply,
             codex_guard::guard_set_applied,
             codex_guard::guard_set_locked,
+            codex_guard::guard_remove_config,
             codex_guard::guard_add_custom_param,
             codex_guard::guard_remove_custom_param,
             codex_guard::guard_get_schema_file_path,

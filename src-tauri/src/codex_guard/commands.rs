@@ -3,7 +3,7 @@
 use crate::config;
 use crate::i18n::{tr, trf};
 
-use super::engine::{apply, check, expected_of};
+use super::engine::{apply, check, expected_of, remove};
 use super::files::{detect_file_path, find_file, load_files, save_files};
 use super::schema::{load_disk_schema, load_schema, save_disk_schema, schema_file_path};
 use super::validate::{
@@ -173,6 +173,31 @@ pub fn guard_remove_custom_param(id: String) -> Result<(), String> {
     config::save_config(&cfg)?;
 
     Ok(())
+}
+
+/// 移除配置：把参数在 codex 文件中的值实际删除，并清除托管状态。
+/// 前提：参数必须处于禁用状态（applied == false）且未锁定。
+#[tauri::command]
+pub fn guard_remove_config(id: String) -> Result<(), String> {
+    let schema = load_schema();
+    let p = find_param(&schema, &id)?;
+    let mut cfg = config::load_config()?;
+    {
+        let st = cfg.codex_guard.params.get(&id);
+        if st.is_some_and(|s| s.applied) {
+            let err = tr("Disable the parameter before removing its config");
+            crate::logging::warn("看守: 移除配置", &err);
+            return Err(err);
+        }
+        if st.is_some_and(|s| s.locked) {
+            let err = tr("Unlock the parameter before removing its config");
+            crate::logging::warn("看守: 移除配置", &err);
+            return Err(err);
+        }
+    }
+    remove(&p)?;
+    cfg.codex_guard.params.remove(&id);
+    config::save_config(&cfg)
 }
 
 #[tauri::command]

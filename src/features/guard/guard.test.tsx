@@ -169,11 +169,18 @@ describe("参数操作", () => {
     expect(cmd.guardApply).toHaveBeenCalledWith("p1");
   });
 
-  it("锁定参数不接受 bool 取反（guardState.params 锁定短路）", async () => {
-    useAppStore.setState({ guardState: { enabled: true, params: { p1: { locked: true } } } });
-    await ops.toggleBool("p1");
+  it("锁定参数不接受 bool 修改（locked 短路）", async () => {
+    vi.mocked(cmd.guardGetView).mockResolvedValue(makeView([makeParam({ id: "p1", locked: true, value: false })]));
+    await ops.toggleBool("p1", true);
     expect(cmd.guardSetValue).not.toHaveBeenCalled();
-    expect(cmd.guardGetView).not.toHaveBeenCalled();
+  });
+
+  it("解锁后的 bool 参数直接写入目标值（不依赖视图取反）", async () => {
+    vi.mocked(cmd.guardGetView).mockResolvedValue(makeView([makeParam({ id: "p1", locked: false, value: false })]));
+    vi.mocked(cmd.guardSetValue).mockResolvedValue(undefined);
+    await ops.toggleBool("p1", true);
+    expect(cmd.guardSetValue).toHaveBeenCalledWith("p1", true);
+    expect(useAppStore.getState().toasts.some((t) => t.message.includes("Change failed"))).toBe(false);
   });
 });
 
