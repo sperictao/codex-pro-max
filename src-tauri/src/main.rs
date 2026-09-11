@@ -711,16 +711,9 @@ async fn install_skill(taskboard_path: String) -> Result<String, String> {
             err
         })?;
 
-    // 如果已存在则先删除
-    if skill_target.exists() {
-        std::fs::remove_file(&skill_target)
-            .or_else(|_| std::fs::remove_dir_all(&skill_target))
-            .map_err(|e| {
-                let err = i18n::trf("Failed to remove old link: {error}", &[("error", e.to_string())]);
-                log::error!("[install_skill] {}", err);
-                err
-            })?;
-    }
+    // 悬空符号链接（目标已删除）exists() 为 false 但 symlink() 会报 EEXIST，
+    // 必须按"路径存在（含悬空）"而非"目标可达"来判断，先删除再创建
+    replace_stale_skill_link(&skill_target)?;
 
     // 创建符号链接（跨平台）
     #[cfg(unix)]
@@ -748,6 +741,69 @@ async fn install_skill(taskboard_path: String) -> Result<String, String> {
     }
 
     Ok(i18n::trf("Skill installed to {path}", &[("path", skill_target.display().to_string())]))
+}
+
+/// 删除已占用目标路径的旧链接/目录，为创建符号链接腾位
+/// 用 symlink_metadata（不跟随链接）而非 exists()：悬空符号链接目标不可达，
+/// exists() 会漏判，随后 symlink() 报 EEXIST；replace 一律先删后建
+fn replace_stale_skill_link(skill_target: &std::path::Path) -> Result<(), String> {
+    if std::fs::symlink_metadata(skill_target).is_err() {
+        return Ok(());
+    }
+    std::fs::remove_file(skill_target)
+        .or_else(|_| std::fs::remove_dir_all(skill_target))
+        .map_err(|e| {
+            let err = i18n::trf("Failed to remove old link: {error}", &[("error", e.to_string())]);
+            log::error!("[install_skill] {}", err);
+            err
+        })
+}
+
+#[cfg(all(test, unix))]
+mod skill_tests {
+    use std::fs;
+
+    use super::replace_stale_skill_link;
+
+    /// 复现并验证：悬空符号链接（指向已删除的旧 App 路径）残留时，
+    /// install_skill 的清理逻辑必须能删除它，否则 symlink() 报 EEXIST。
+    /// 回归：v1.21.3 之前用 Path::exists() 判断，悬空链接目标不可达被误判
+    /// 为"不存在"而跳过删除，安装报 "File exists (os error 17)"。
+    #[test]
+    fn install_skill_removes_dangling_symlink() {
+        let base = std::env::temp_dir().join(format!("skill-test-{}", std::process::id()));
+        let src_dir = base.join("repo/skills/manage-taskboard");
+        fs::create_dir_all(&src_dir).unwrap();
+        // 模拟 ~/.codex/skills/manage-taskboard 这个悬空链接：指向不存在的旧路径
+        let skills_home = base.join("home/.codex/skills");
+        fs::create_dir_all(&skills_home).unwrap();
+        let dangling = skills_home.join("manage-taskboard");
+        let gone = base.join("old-app/skills/manage-taskboard"); // 永不存在
+        std::os::unix::fs::symlink(&gone, &dangling).unwrap();
+        // exists() 跟随链接 -> false；symlink_metadata 不跟随 -> Ok
+        assert!(!dangling.exists());
+        assert!(fs::symlink_metadata(&dangling).is_ok());
+
+        replace_stale_skill_link(&dangling).unwrap();
+        assert!(fs::symlink_metadata(&dangling).is_err());
+
+        // 现在可以正常创建指向新源的符号链接
+        let new_target = skills_home.join("manage-taskboard");
+        std::os::unix::fs::symlink(&src_dir, &new_target).unwrap();
+        assert_eq!(fs::read_link(&new_target).unwrap(), src_dir);
+
+        fs::remove_dir_all(&base).ok();
+    }
+
+    /// 路径不存在时清理逻辑是幂等的（不报错）
+    #[test]
+    fn install_skill_cleanup_is_noop_when_absent() {
+        let base = std::env::temp_dir().join(format!("skill-test-absent-{}", std::process::id()));
+        let missing = base.join(".codex/skills/manage-taskboard");
+        assert!(fs::symlink_metadata(&missing).is_err());
+        replace_stale_skill_link(&missing).unwrap();
+        fs::remove_dir_all(&base).ok();
+    }
 }
 
 /// 运行 taskctl 命令
