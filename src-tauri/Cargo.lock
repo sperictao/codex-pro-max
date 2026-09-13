@@ -504,7 +504,7 @@ dependencies = [
 
 [[package]]
 name = "codex-pro-max"
-version = "1.21.4"
+version = "1.22.0"
 dependencies = [
  "hmac",
  "libc",
