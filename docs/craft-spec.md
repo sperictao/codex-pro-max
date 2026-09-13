@@ -34,6 +34,7 @@
 
 - **字号**：`text-xs` / `text-sm`（正文默认）/ `text-base`（标题、移动端输入）/ `text-[0.8rem]`（按钮 sm）/ `text-3xl`（KPI 数值）。**不新增 `--text-*` / `--leading-*` / `--font-weight-*` token**：一致性来自"只用这几档"，上游同样不做 type token。
 - **字距**：只用已有 tracking token 与 `tracking-tight`（标题）/ `tracking-widest`（微标签）两种用法，不写任意值。
+- **微标签（uppercase + tracking-widest）**：步骤 1..6 的全仓审计结果是 **0 处适用**——现有 24 处 `text-xs font-medium` 是表单字段标签（上游同类是 `text-sm font-medium` 的 FieldLabel，不属微标签）、20 处 `text-xs text-muted-foreground` 是元数据行、3 处 9/10/11px 极小字号全是等宽数据（更新数字、`⌘K`、路径）。**不要为了套用本条去放大写**；将来真出现 KPI 式 caption 时再按本条处理。
 - **半径**：`rounded-sm…4xl` 全部由 `--radius` 阶梯派生，桥必须完整（见 §4 步骤 0）。
 - **间距**：见 R8。
 - **遮罩**：`bg-black/10` + `backdrop-blur-xs`，两模式同值。
