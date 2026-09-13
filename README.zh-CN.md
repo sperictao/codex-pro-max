@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./assets/readme/hero.zh-CN.svg" width="100%" alt="Codex Pro Max — Tauri v2 桌面启动器：Taskboard 服务托管、Codex CDP 面板注入、~/.codex 配置看守、FastCtx MCP 集成、应用自更新">
+<img src="./assets/readme/hero.zh-CN.svg" width="100%" alt="Codex Pro Max — Tauri v2 桌面启动器：Taskboard 服务托管、Codex CDP 面板注入、~/.codex 配置看守与模型配置、Taskboard Skill 安装、FastCtx 集成、42 套主题、命令面板、应用自更新">
 
 **图形界面替代手写命令，一站式管理 dashi-taskboard 的使用体验。**
 
@@ -21,14 +21,17 @@
 
 ## ✨ 功能亮点
 
-- 🟢 **Taskboard 服务** — 拉起/停止 [dashi-taskboard](https://github.com/chuspeeism/dashi-taskboard) 的 Node 服务，健康检查，首页聚合状态指示；内置 dashboard、列表、甘特图视图
+- 🟢 **Taskboard 服务** — 拉起/停止 [dashi-taskboard](https://github.com/chuspeeism/dashi-taskboard) 的 Node 服务，健康检查，首页聚合状态指示；内置 dashboard、issues、列表、甘特图视图
 - 💉 **Codex 注入器** — 以独立 CDP 端口启动 Codex 桌面端并注入 Taskboard 面板（macOS / Windows 商店版均可识别）
 - 🔒 **Codex 配置看守** — 对 `~/.codex/` 下配置文件做 schema 驱动的参数托管、锁定与漂移自动恢复（词汇与边界见 [CONTEXT.md](CONTEXT.md)）
 - 🧠 **模型配置** — 可视化管理 `~/.codex/config.toml` 的当前模型、模型供应商（自定义 base_url 与鉴权）与模型预设，一键切换（参考 CCursor）
+- 🧩 **Taskboard Skill** — 一键把内置的 `manage-taskboard` Skill 安装进 Codex（在 `~/.codex/skills/manage-taskboard` 建符号链接），装好后可在 Codex 里直接创建、查看和管理看板任务；链接指向 Taskboard 仓库，随其更新自动同步
 - 🧰 **FastCtx 集成** — 一键安装 [FastCtx](https://github.com/yc-duan/fastctx) MCP 运行时并接入/摘除 Codex，全程委托 `fastctx` CLI
-- 🎨 **主题** — 42 个 tweakcn 主题族，原生支持亮 / 暗 / 跟随系统；28 种界面字体应用内自托管，完全离线
+- 🎨 **主题** — 42 个 tweakcn 主题族，原生支持亮 / 暗 / 跟随系统；26 种界面字体应用内自托管，完全离线
+- 🌐 **双语界面** — 英文与中文，默认跟随系统语言，运行时可随时切换
 - ⌘ **命令面板** — `Cmd/Ctrl+K`（或顶栏搜索按钮）模糊搜索，直达任意视图、设置分区或动作：检查更新、打开仓库、打开日志目录、切换亮暗
 - 🔄 **应用自更新** — 内置 Tauri Updater，检查更新、下载、重启一条龙
+- 🖥️ **桌面级行为** — 开机自启、关闭最小化到托盘、单实例运行，受管子进程意外退出时发系统通知
 
 ---
 
@@ -42,8 +45,8 @@
 
 1. **拉起服务** — 启动打包在内的 taskboard Node 服务，健康检查通过后标记就绪
 2. **注入面板** — 以独立 CDP 端口拉起 Codex 桌面端，把 Taskboard 面板注入其界面
-3. **看守配置** — 按 schema 托管 `~/.codex/` 参数；锁定后轮询（60s），发现漂移自动改回（写入前备份）
-5. **自我更新** — 检查 GitHub Releases 的 `latest.json`，下载、验签、重启完成升级
+3. **看守配置** — 按 schema 托管 `~/.codex/` 参数；锁定后轮询（60s），发现漂移自动改回（写入前备份到 `~/.codex/dashi-backups/`）
+4. **自我更新** — 检查 GitHub Releases 的 `latest.json`，下载、验签、重启完成升级
 
 ---
 
@@ -59,7 +62,9 @@ pnpm install
 pnpm run tauri dev
 ```
 
-首次完整运行前仍建议先跑一次 `pnpm run build:taskboard`（构建 taskboard 的 web UI 到 `dist/web`），否则注入的面板没有静态资源。
+首次完整运行前仍建议先跑一次 `pnpm run build:taskboard`（构建 taskboard 的 web UI 到 `vendor/dashi-taskboard/dist/web`），否则注入的面板没有静态资源。
+
+自检：`pnpm test` 跑工艺规范门、主题测试与 Vitest 套件；`cargo test --manifest-path src-tauri/Cargo.toml` 覆盖 Rust 侧；`pnpm smoke` 用无头 Chromium 驱动真实界面（首次需先执行 `pnpm exec playwright install chromium-headless-shell`）。
 
 ---
 
@@ -67,13 +72,14 @@ pnpm run tauri dev
 
 ```
 codex-pro-max/
-├── src/                    前端（TS + Vite，单页 UI）
+├── src/                    前端（React 19 + TS + Vite，单页 UI）
 ├── src-tauri/              Rust 后端（命令入口、配置、进程托管、看守、updater）
 ├── vendor/dashi-taskboard  git submodule → sperictao/dashi-taskboard（fork）
-├── scripts/                发布辅助脚本（build-updater、generate-latest-json）
+├── assets/                 应用内自托管字体（生成物）与 README hero 图
+├── scripts/                构建与发布辅助（主题、工艺门、发布预检、冒烟、updater）
 ├── release-notes/          每个版本的发布说明（CI 发布时必需）
 ├── CONTEXT.md              领域术语表
-└── docs/                   design.md、adr/、updater/、release/
+└── docs/                   design.md、craft-spec.md、adr/、updater/、release/
 ```
 
 taskboard 代码的权威来源是主仓库 `chuspeeism/dashi-taskboard`；本仓库通过 fork 的 submodule 消费它。
@@ -97,7 +103,13 @@ taskboard 侧的代码改动一律在 fork 仓库里进行并推送，然后按�
 ## 🚢 构建与发布
 
 - 本地打包：`pnpm run tauri build`（构建 taskboard，再构建前端与 Rust）
-- 发布：bump `package.json` / `src-tauri/Cargo.toml` / `src-tauri/tauri.conf.json`（及对应 lock 文件）版本号，新增 `release-notes/vX.Y.Z.md`，提交后打 tag 推送：
+- 发布：bump `package.json` / `src-tauri/Cargo.toml` / `src-tauri/tauri.conf.json`（及对应 lock 文件）版本号，新增 `release-notes/vX.Y.Z.md`，然后跑发布预检——校验版本号三处一致、tag 与版本一致、发布说明存在、bundle resources 中 git 跟踪的源路径都在（CI 的 `validate` job 在构建矩阵之前跑同一脚本）：
+
+```bash
+pnpm run check:release -- --tag vX.Y.Z
+```
+
+- 再提交、打 tag 推送：
 
 ```bash
 git tag vX.Y.Z && git push origin main vX.Y.Z
@@ -114,8 +126,9 @@ tag 推送触发 CI 五路构建（macOS aarch64 / x86_64 / universal、Windows�
 | 层 | 技术 |
 | --- | --- |
 | 桌面框架 | Tauri 2.x（Rust） |
-| 前端 | TypeScript 5 + Vite 8（单页 UI） |
-| UI 与主题 | Tailwind CSS v4 + tweakcn（shadcn token）主题体系；42 个主题族、28 种自托管字体（[ADR 0008](docs/adr/0008-tweakcn-token-theming.md)） |
+| 前端 | React 19 + TypeScript 5 + Vite 8（单页 UI，[ADR 0010](docs/adr/0010-shell-frontend-react-rewrite.md)） |
+| 状态与多语言 | Zustand store 由 Tauri 事件直写；react-i18next + en / zh-CN 词典 |
+| UI 与主题 | Tailwind CSS v4 + tweakcn（shadcn token）主题体系；42 个主题族、26 种自托管字体（[ADR 0008](docs/adr/0008-tweakcn-token-theming.md)） |
 | 组件层 | 仓内 shadcn `radix-nova` 原语，受可执行的一致性门约束（[工艺规范](docs/craft-spec.md)、[ADR 0011](docs/adr/0011-shell-component-primitive-layer.md)） |
 | taskboard 集成 | git submodule（fork 仓库消费上游） |
 | 配置看守 | schema 驱动，TOML / Markdown 区块 / 整文件三种比对模式 |
@@ -130,8 +143,10 @@ tag 推送触发 CI 五路构建（macOS aarch64 / x86_64 / universal、Windows�
 pnpm run tauri dev          # 开发模式（前端 + Rust 后端）
 pnpm run tauri build        # 生产打包
 pnpm run build              # 仅构建前端（tsc + vite build）
-pnpm test                   # 主题解析测试
-pnpm run build:taskboard    # 构建内置 taskboard 的 web UI 到 dist/web
+pnpm test                   # 工艺规范门 + 主题测试 + Vitest 套件
+pnpm run smoke              # 无头 Chromium 界面冒烟
+pnpm run check:release -- --tag vX.Y.Z   # 发布预检
+pnpm run build:taskboard    # 构建内置 taskboard 的 web UI
 pnpm run build:updater      # 生成 updater 产物
 ```
 
@@ -141,9 +156,12 @@ pnpm run build:updater      # 生成 updater 产物
 
 | 文档 | 内容 |
 | --- | --- |
-| [CONTEXT.md](CONTEXT.md) | 领域术语表（配置看守 + Taskboard 集成 + FastCtx 集成） |
+| [CONTEXT.md](CONTEXT.md) | 领域术语表（配置看守、Taskboard 集成、界面多语言、FastCtx、模型配置、启动器壳、主题、组件层） |
 | [docs/design.md](docs/design.md) | 架构与模块设计 |
+| [docs/craft-spec.md](docs/craft-spec.md) | 壳 UI 工艺规范，由 `scripts/check-craft.mjs` 强制执行 |
 | [scripts/build-themes.mjs](scripts/build-themes.mjs) | 主题构建：tweakcn registry → token + 本地字体 |
+| [docs/adr/0011](docs/adr/0011-shell-component-primitive-layer.md) | 仓内组件原语层（shadcn `radix-nova` 配方） |
+| [docs/adr/0010](docs/adr/0010-shell-frontend-react-rewrite.md) | 壳前端重写为 React 19（取代 ADR 0009） |
 | [docs/adr/0008](docs/adr/0008-tweakcn-token-theming.md) | tweakcn token 主题体系（取代 daisyUI 的 ADR 0007） |
 | [docs/adr/0001](docs/adr/0001-codex-config-guard-boundaries.md) | 看守的生命周期与回滚边界 |
 | [docs/adr/0002](docs/adr/0002-taskboard-submodule-packaging.md) | taskboard submodule 集成与打包白名单 |
@@ -157,7 +175,7 @@ pnpm run build:updater      # 生成 updater 产物
 
 - [dashi-taskboard](https://github.com/chuspeeism/dashi-taskboard) — 内置的任务看板，以 git submodule 集成于 `vendor/dashi-taskboard` 并随安装包分发（见 [ADR 0002](docs/adr/0002-taskboard-submodule-packaging.md)）。上游未声明许可；打包遵循 [CONTEXT.md](CONTEXT.md) 所述的上游 → fork（`sperictao/dashi-taskboard`）→ PR 协作流。启动器侧集成代码为我们自己的工作；看板本体为上游作者的作品。
 - [FastCtx](https://github.com/yc-duan/fastctx) — 可选集成，采用 [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) 许可。本启动器**不**再分发、不内嵌 FastCtx，仅在运行时调用用户自行安装的 `fastctx` CLI。本仓库中的全部集成代码均为我们自己的工作与独自的责任，不代表 FastCtx 作者的认可，FastCtx 作者亦不承担由此产生的任何责任。FastCtx 内嵌 Pdfium，其第三方许可见 FastCtx 的 `THIRD_PARTY_LICENSES.md`（仅在再分发 FastCtx 二进制时相关）。
-- 界面字体 — 28 种 Google Fonts 字族（latin / latin-ext 子集）随应用自托管，由 [scripts/build-themes.mjs](scripts/build-themes.mjs) 从 tweakcn registry 构建；各字族许可（多为 OFL）见其 Google Fonts 页面。
+- 界面字体 — 26 种 Google Fonts 字族（latin / latin-ext 子集）随应用自托管，由 [scripts/build-themes.mjs](scripts/build-themes.mjs) 从 tweakcn registry 构建；各字族许可（多为 OFL）见其 Google Fonts 页面。
 
 ---
 

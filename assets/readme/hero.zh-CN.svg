@@ -3,7 +3,7 @@
      role="img" aria-labelledby="title desc"
      font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif">
   <title id="title">Codex Pro Max</title>
-  <desc id="desc">Tauri v2 桌面启动器：管理 dashi-taskboard 服务、向 Codex 桌面端注入面板、看守 ~/.codex 配置、集成 FastCtx、通过 Tailscale HTTPS 暴露 DeepSeek Harness 远程访问，并支持应用自更新。右侧面板为启动器主界面的状态列表，每行对应一个受管组件。</desc>
+  <desc id="desc">Tauri v2 桌面启动器，面向 Codex 开发环境：托管内置的 dashi-taskboard 服务、通过 CDP 向 Codex 桌面端注入 Taskboard 面板、看守 ~/.codex 配置并管理模型与预设、把 Taskboard Skill 装进 Codex、集成 FastCtx、以 42 套主题给整个壳换肤，并支持应用自更新。右侧窗口逐个列出受管组件及其状态。</desc>
 
   <rect x="1" y="1" width="1198" height="398" rx="24" fill="#0D1117" stroke="#21262D" stroke-width="1.5"/>
 
@@ -15,59 +15,87 @@
     <text x="0" y="204" font-size="54" font-weight="700" fill="#58A6FF">Max</text>
     <text x="0" y="256" font-size="20" fill="#C9D1D9">图形界面替代手敲命令，</text>
     <text x="0" y="286" font-size="20" fill="#C9D1D9">一站式管理 Codex 开发环境。</text>
-    <text x="0" y="342" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
-          font-size="16" fill="#8B949E">服务 · CDP 注入 · 配置看守 · FastCtx · dsh · 更新</text>
+    <text x="0" y="322" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="15" fill="#6E7681">42 套主题 · 26 种字体 · EN / 中文 · 完全离线</text>
+    <text x="0" y="352" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="16" fill="#8B949E">服务 · 注入 · 看守 · 模型 · Skill · FastCtx · 更新</text>
   </g>
 
   <!-- divider -->
   <line x1="648" y1="44" x2="648" y2="368" stroke="#21262D" stroke-width="1.5"/>
 
-  <!-- launcher home window (product proof) -->
+  <!-- launcher shell: nav row + one status row per managed component -->
   <g transform="translate(668 44)">
     <rect x="0" y="0" width="476" height="324" rx="14" fill="#161B22" stroke="#3D444D" stroke-width="1.5"/>
 
     <!-- title bar -->
-    <line x1="0" y1="44" x2="476" y2="44" stroke="#21262D" stroke-width="1.5"/>
-    <circle cx="20" cy="22" r="4.5" fill="#FF5F57"/>
-    <circle cx="44" cy="22" r="4.5" fill="#FEBC2E"/>
-    <circle cx="68" cy="22" r="4.5" fill="#28C840"/>
-    <text x="96" y="27" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
-          font-size="16" fill="#8B949E">codex-pro-max — 启动器</text>
+    <line x1="0" y1="40" x2="476" y2="40" stroke="#21262D" stroke-width="1.5"/>
+    <circle cx="20" cy="20" r="4.5" fill="#FF5F57"/>
+    <circle cx="44" cy="20" r="4.5" fill="#FEBC2E"/>
+    <circle cx="68" cy="20" r="4.5" fill="#28C840"/>
+    <text x="96" y="25" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="15" fill="#8B949E">codex-pro-max — 启动器</text>
+
+    <!-- nav row: same source as the header, the settings sidebar and the command palette -->
+    <rect x="18" y="48" width="46" height="20" rx="6" fill="#21262D" stroke="#30363D" stroke-width="1"/>
+    <text x="41" y="62" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="13" fill="#E6EDF3">主页</text>
+    <text x="74" y="62" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="13" fill="#8B949E">Skill</text>
+    <text x="123" y="62" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="13" fill="#8B949E">看守</text>
+    <text x="164" y="62" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="13" fill="#8B949E">模型</text>
+    <text x="205" y="62" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="13" fill="#8B949E">集成</text>
+    <text x="246" y="62" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="13" fill="#8B949E">设置</text>
+    <rect x="410" y="48" width="48" height="20" rx="6" fill="#0D1117" stroke="#30363D" stroke-width="1"/>
+    <text x="434" y="62" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="12" fill="#8B949E">⌘K</text>
+    <line x1="0" y1="76" x2="476" y2="76" stroke="#21262D" stroke-width="1.5"/>
 
     <!-- rows: name + mono sublabel, one per managed component -->
     <g>
-      <circle cx="26" cy="72" r="5" fill="#3FB950"/>
-      <text x="46" y="68" font-size="20" font-weight="600" fill="#E6EDF3">Taskboard 服务</text>
-      <text x="46" y="89" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
-            font-size="18" fill="#8B949E">启停 · 健康检查</text>
-      <line x1="20" y1="100" x2="456" y2="100" stroke="#21262D" stroke-width="1.5"/>
+      <circle cx="26" cy="96.7" r="4.5" fill="#3FB950"/>
+      <text x="46" y="94" font-size="15" font-weight="600" fill="#E6EDF3">Taskboard 服务</text>
+      <text x="46" y="109" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            font-size="12.5" fill="#8B949E">启停 · 健康检查</text>
+      <line x1="18" y1="117.3" x2="458" y2="117.3" stroke="#21262D" stroke-width="1.5"/>
     </g>
     <g>
-      <circle cx="26" cy="128" r="5" fill="#3FB950"/>
-      <text x="46" y="124" font-size="20" font-weight="600" fill="#E6EDF3">Codex 注入器</text>
-      <text x="46" y="145" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
-            font-size="18" fill="#8B949E">CDP 面板注入</text>
-      <line x1="20" y1="156" x2="456" y2="156" stroke="#21262D" stroke-width="1.5"/>
+      <circle cx="26" cy="138" r="4.5" fill="#3FB950"/>
+      <text x="46" y="135.3" font-size="15" font-weight="600" fill="#E6EDF3">Codex 注入器</text>
+      <text x="46" y="150.3" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            font-size="12.5" fill="#8B949E">CDP 面板注入</text>
+      <line x1="18" y1="158.7" x2="458" y2="158.7" stroke="#21262D" stroke-width="1.5"/>
     </g>
     <g>
-      <circle cx="26" cy="184" r="5" fill="#3FB950"/>
-      <text x="46" y="180" font-size="20" font-weight="600" fill="#E6EDF3">配置看守</text>
-      <text x="46" y="201" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
-            font-size="18" fill="#8B949E">~/.codex · 漂移恢复</text>
-      <line x1="20" y1="212" x2="456" y2="212" stroke="#21262D" stroke-width="1.5"/>
+      <circle cx="26" cy="179.3" r="4.5" fill="#3FB950"/>
+      <text x="46" y="176.7" font-size="15" font-weight="600" fill="#E6EDF3">配置看守</text>
+      <text x="46" y="191.7" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            font-size="12.5" fill="#8B949E">~/.codex · 漂移恢复</text>
+      <line x1="18" y1="200" x2="458" y2="200" stroke="#21262D" stroke-width="1.5"/>
     </g>
     <g>
-      <circle cx="26" cy="240" r="5" fill="#3FB950"/>
-      <text x="46" y="236" font-size="20" font-weight="600" fill="#E6EDF3">FastCtx</text>
-      <text x="46" y="257" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
-            font-size="18" fill="#8B949E">MCP 运行时</text>
-      <line x1="20" y1="268" x2="456" y2="268" stroke="#21262D" stroke-width="1.5"/>
+      <circle cx="26" cy="220.7" r="4.5" fill="#3FB950"/>
+      <text x="46" y="218" font-size="15" font-weight="600" fill="#E6EDF3">模型配置</text>
+      <text x="46" y="233" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            font-size="12.5" fill="#8B949E">~/.codex/config.toml · 预设</text>
+      <line x1="18" y1="241.3" x2="458" y2="241.3" stroke="#21262D" stroke-width="1.5"/>
     </g>
     <g>
-      <circle cx="26" cy="296" r="5" fill="#3FB950"/>
-      <text x="46" y="292" font-size="20" font-weight="600" fill="#E6EDF3">dsh 远程访问</text>
-      <text x="46" y="313" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
-            font-size="18" fill="#8B949E">Tailscale HTTPS · :3899</text>
+      <circle cx="26" cy="262" r="4.5" fill="#3FB950"/>
+      <text x="46" y="259.3" font-size="15" font-weight="600" fill="#E6EDF3">Taskboard Skill</text>
+      <text x="46" y="274.3" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            font-size="12.5" fill="#8B949E">manage-taskboard · 技能安装</text>
+      <line x1="18" y1="282.7" x2="458" y2="282.7" stroke="#21262D" stroke-width="1.5"/>
+    </g>
+    <g>
+      <circle cx="26" cy="303.3" r="4.5" fill="#3FB950"/>
+      <text x="46" y="300.7" font-size="15" font-weight="600" fill="#E6EDF3">FastCtx</text>
+      <text x="46" y="315.7" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+            font-size="12.5" fill="#8B949E">MCP 运行时 · 接入</text>
     </g>
   </g>
 </svg>
