@@ -27,6 +27,7 @@
 - 🧠 **Model Config** — visually manage the active model, model providers (custom base_url and auth), and model presets in `~/.codex/config.toml` with one-click switching (inspired by CCursor)
 - 🧰 **FastCtx Integration** — one-click install of the [FastCtx](https://github.com/yc-duan/fastctx) MCP runtime and integrate/unapply it into Codex, delegated to the `fastctx` CLI
 - 🎨 **Themes** — 42 tweakcn theme families with native light / dark / system modes; 28 UI fonts self-hosted in-app, fully offline
+- ⌘ **Command Palette** — `Cmd/Ctrl+K` (or the header search button) fuzzy-finds and jumps straight to any view, settings section, or action: check for updates, open the repository, open the log directory, toggle light/dark
 - 🔄 **Self-Update** — built-in Tauri Updater: check, download, restart, done
 
 ---
@@ -115,6 +116,7 @@ Pushing the tag triggers five CI builds (macOS aarch64 / x86_64 / universal, Win
 | Desktop framework | Tauri 2.x (Rust) |
 | Frontend | TypeScript 5 + Vite 8 (single-page UI) |
 | UI and theming | Tailwind CSS v4 + tweakcn (shadcn token) theme system; 42 families, 28 self-hosted fonts ([ADR 0008](docs/adr/0008-tweakcn-token-theming.md)) |
+| Component layer | in-repo shadcn `radix-nova` primitives governed by a machine-checked [craft spec](docs/craft-spec.md) ([ADR 0011](docs/adr/0011-shell-component-primitive-layer.md)) |
 | taskboard integration | git submodule (consuming upstream via a fork) |
 | Config guard | schema-driven; TOML key / Markdown block / whole-file comparison modes |
 | FastCtx integration | delegated to the `fastctx` CLI (one-click npm global install in Settings) |

@@ -27,6 +27,7 @@
 - 🧠 **模型配置** — 可视化管理 `~/.codex/config.toml` 的当前模型、模型供应商（自定义 base_url 与鉴权）与模型预设，一键切换（参考 CCursor）
 - 🧰 **FastCtx 集成** — 一键安装 [FastCtx](https://github.com/yc-duan/fastctx) MCP 运行时并接入/摘除 Codex，全程委托 `fastctx` CLI
 - 🎨 **主题** — 42 个 tweakcn 主题族，原生支持亮 / 暗 / 跟随系统；28 种界面字体应用内自托管，完全离线
+- ⌘ **命令面板** — `Cmd/Ctrl+K`（或顶栏搜索按钮）模糊搜索，直达任意视图、设置分区或动作：检查更新、打开仓库、打开日志目录、切换亮暗
 - 🔄 **应用自更新** — 内置 Tauri Updater，检查更新、下载、重启一条龙
 
 ---
@@ -115,6 +116,7 @@ tag 推送触发 CI 五路构建（macOS aarch64 / x86_64 / universal、Windows�
 | 桌面框架 | Tauri 2.x（Rust） |
 | 前端 | TypeScript 5 + Vite 8（单页 UI） |
 | UI 与主题 | Tailwind CSS v4 + tweakcn（shadcn token）主题体系；42 个主题族、28 种自托管字体（[ADR 0008](docs/adr/0008-tweakcn-token-theming.md)） |
+| 组件层 | 仓内 shadcn `radix-nova` 原语，受可执行的一致性门约束（[工艺规范](docs/craft-spec.md)、[ADR 0011](docs/adr/0011-shell-component-primitive-layer.md)） |
 | taskboard 集成 | git submodule（fork 仓库消费上游） |
 | 配置看守 | schema 驱动，TOML / Markdown 区块 / 整文件三种比对模式 |
 | FastCtx 集成 | 委托 `fastctx` CLI（设置页支持一键 npm 全局安装） |

@@ -43,22 +43,21 @@
 
 批 0 为今天即有真实调用点者，随"横切"一次引入；其余**按调用点引入并在同一次提交里接线**（不预先囤积零调用点的原语）。
 
-| 原语 | 今天调用点 | 依赖 | 批次 |
+| 原语 | 引入时的调用点 | 依赖 | 状态 |
 | --- | --- | --- | --- |
-| Button（含 ButtonGroup） | 49 个 `<button>` + 类串常量 7 个 | cva | 0 |
-| Input / Textarea | 31 | — | 0 |
-| Select | 7 个原生 `<select>` | radix-ui | 0 |
-| Switch | 8（7× 假开关 + 1× `.text-switch`） | radix-ui | 0 |
-| Card | 10 处重复卡片块 | — | 0 |
-| Dialog | `Modal` 壳 + 6 处调用 | radix-ui | 0 |
-| Badge | 状态徽章 4 文件 + Active 标签 | — | 0 |
-| Tooltip | 看守参数说明悬浮卡 | radix-ui | 0 |
-| Separator | 顶栏竖分隔 | — | 0 |
-| DropdownMenu | 0 | radix-ui | ✅ 已随首屏落地：看守参数行/文件行与模型供应商/预设行的 **Delete** 收进 `⋯`，主操作（Lock/Unlock、Edit、Apply）仍在行内 |
-| Table | 0 | — | 随首屏（看守参数列表 / 模型供应商列表密度重做） |
-| Command（cmdk） | 0 | cmdk | **单独立项**：需要真实入口（Cmd+K 面板）才算功能，否则是死代码 |
-
-| Toast（sonner） | store 的 toast 队列 + `Toaster.tsx` + `.toast` recipe | sonner | 0 |
+| Button（含 ButtonGroup） | 49 个 `<button>` + 7 个类串常量 | cva | ✅ |
+| Input / Textarea | 31 | — | ✅ |
+| Select | 7 个原生 `<select>` | radix-ui | ✅ |
+| Switch | 8（7× 假开关 + 1× `.text-switch`） | radix-ui | ✅ |
+| Card | 10 处重复卡片块 | — | ✅ |
+| Dialog | `Modal` 壳 + 6 处调用 | radix-ui | ✅ 取代手写遮罩，顺带拿到焦点陷阱与 Escape |
+| Badge | 状态徽章 4 文件 + Active/版本胶囊 | — | ✅ |
+| Tooltip | 看守参数说明悬浮卡 | radix-ui | ✅ 取代手写绝对定位说明卡 |
+| Separator | 顶栏竖分隔 | — | ✅ |
+| DropdownMenu | 0（先给首屏接线） | radix-ui | ✅ 看守参数/文件行与模型供应商/预设行的 Delete 收进 `⋯`，主操作留行内 |
+| Command（cmdk） | 0（需真实入口才算功能） | cmdk | ✅ Cmd/Ctrl+K 面板 + 顶栏搜索入口，清单复用 `shared/navigation` |
+| Toast（sonner） | store 队列 + `Toaster.tsx` + `.toast` recipe | sonner | ✅ |
+| Table | 0 | — | ❌ **不引入**：全仓没有需要表格密度的屏（看守参数带内联编辑器、模型与预设列表各只有 2–4 行）；为凑调用点而引入正是本节反对的「囤原语」。将来真出现表格场景时再按调用点引入 |
 
 **胶囊约定**：状态/版本胶囊一律 `<Badge variant="secondary">`，**不允许调用点自写着色**（原 `bg-primary/15 text-primary` 那类着色已统一移除）；需要等宽数字时加 `font-mono`。
 
@@ -87,9 +86,9 @@
 
 8. Toast 换 sonner（**可拆为独立提交 0b 以便单独回滚**）：删 store 队列与 `.toast` recipe，约 57 处 `store().toast(msg, type)` 改为直连 `toast.success/error/info`（`guard/ops.ts` 32 处、`ModelView` 16 处、`HomeView` 15 处最集中），`guard.test.tsx` 的 4 条 `getState().toasts` 断言改为 spy sonner。
 
-**步骤 1..6 — 逐屏收敛**（每屏一次提交，可独立验证）
+**步骤 1..6 — 逐屏收敛 ✅ 已完成**（实际按关注点提交：代码 / 文档 / 清理，因为 `style.css` 与冒烟驱动同时承载多屏改动）
 
-`home` → `guard`（DropdownMenu 接管 `.guard-param-actions`）→ `models`（Select 主战场；DropdownMenu 复用；Table 视密度重做而定）→ `integration` → `settings` → `updater`
+`home` → `guard`（DropdownMenu 接管参数行操作、Tooltip 接管参数说明）→ `models`（Select 主战场；DropdownMenu 复用）→ `integration` → `settings` → `updater`
 
 每屏的完成标志：该屏不再引用已删除的类串、无裸颜色字面量、所有交互元素五态齐备、间距落在 R8 带内、`check-craft` 通过。
 
