@@ -1,5 +1,7 @@
 # Dependencies
 node_modules/
+# 项目卷上的 pnpm store：pnpm 在本卷会自动落到这里（有时是空目录），不该进仓
+.pnpm-store/
 
 # Build outputs
 dist/
