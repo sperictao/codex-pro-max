@@ -87,6 +87,7 @@ dashi-taskboard 以 git submodule 集成于 `vendor/dashi-taskboard`（指向 fo
 - 启动时加载配置并检测环境（Node 版本、Codex 应用）
 - 进程状态轮询（`get_status`），按状态机渲染启停按钮
 - 主题采用 tweakcn（shadcn token）的「主题族 × 模式」模型：42 族由 `scripts/build-themes.mjs` 从 tweakcn registry 生成（`src/themes.css` + `src/theme-families.ts` + `assets/fonts/` 本地字体），族和模式分别持久化到 localStorage，`<html data-theme>` 写入 `<族id>-light|dark`；系统模式监听 OS 外观变化。默认族 vercel，主题决策见 [ADR 0008](adr/0008-tweakcn-token-theming.md)
+- 壳 UI 的组件样式改由自有组件原语层单点定义（shadcn radix-nova 配方一次性移植），取代此前的类串常量层；视觉一致性规约见 [craft-spec.md](craft-spec.md)，决策见 [ADR 0011](adr/0011-shell-component-primitive-layer.md)
 - 对话框用 `@tauri-apps/plugin-dialog`，外链走 `plugin-shell`
 - 「检查更新」调 `@tauri-apps/plugin-updater`；未配置密钥时返回可读提示而非崩溃
 

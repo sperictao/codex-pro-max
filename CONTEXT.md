@@ -123,17 +123,38 @@
 
 ### 术语
 
-- **主题族（Theme Family）** — 一个 tweakcn 预设的本地化实例，亮暗原生成对。全量 41 族，由 `src/theme-families.ts`（构建脚本生成的 manifest）枚举，选择器中的可选项即 manifest 内容。
+- **主题族（Theme Family）** — 一个 tweakcn 预设的本地化实例，亮暗原生成对。全量 42 族，由 `src/theme-families.ts`（构建脚本生成的 manifest）枚举，选择器中的可选项即 manifest 内容。
 - **模式（Theme Mode）** — 三选一：跟随系统 / 亮 / 暗。与主题族正交。
 - **解析主题（Resolved Theme）** — 族 × 模式解析出的主题名，命名约定 `<族id>-light|dark`，赋给 `<html data-theme>`，对应 `src/themes.css` 中同名 scoped token 块；跟随系统时随 OS 切换重解析。
 - **默认族（Default Family）** — `vercel`，视觉基准。localStorage 中的族值不在 manifest 时静默回落默认族。
 - **色板卡（Swatch Card）** — 主题族选择器项：卡面自身带 `data-theme` 局部生效，直接渲染该族亮主题的色板缩略。
-- **主题构建脚本（Theme Build）** — `scripts/build-themes.mjs`：按写死的 41 个预设 id 从 tweakcn registry 拉取 token 与字体引用，生成 `src/themes.css`（scoped 块 + `@font-face`）与 `src/theme-families.ts`；生成物提交进 git、不手改，重跑脚本即主动跟随上游（上游新增预设不自动进入，id 列表是唯一事实来源）。
+- **主题构建脚本（Theme Build）** — `scripts/build-themes.mjs`：按写死的 42 个预设 id 从 tweakcn registry 拉取 token 与字体引用，生成 `src/themes.css`（scoped 块 + `@font-face`）与 `src/theme-families.ts`；生成物提交进 git、不手改，重跑脚本即主动跟随上游（上游新增预设不自动进入，id 列表是唯一事实来源）。
 - **字体本地化（Local Fonts）** — 预设引用的 Google 字体 woff2 全部由构建脚本下载进 `assets/fonts/`，CSP 保持 `font-src 'self'`，主题字体完全离线可用。
 
 ### 语义边界
 
 - 主题选择器只列亮族：用户不直接选暗色主题，暗面永远由命名约定的配对决定（「每主题适配亮暗」的唯一语义）。
 - 主题持久化在 localStorage（`theme` 模式、`theme-family` 族），不进 LauncherConfig、不同步 Rust；语言在 LauncherConfig，两者互不影响。
-- 视觉基准以默认族 vercel 为准：其余 40 族是增值选项，组件样式不得为任何族写特例。
+- 视觉基准以默认族 vercel 为准：其余 41 族是增值选项，组件样式不得为任何族写特例。
 - 字体随族：各族的 font token 是该族外观的组成部分，产品不承诺单一品牌字体。
+
+## 壳组件层（Component Layer）
+
+启动器的横切关注：壳 UI 组件与页面的一致性（shadcn radix-nova 配方的一次性移植，取代此前的类串常量层）。
+
+### 术语
+
+- **组件原语（Primitive）** — 壳 UI 中样式与交互状态单点定义的基础组件；调用点只传变体与尺寸，不再自行拼类串。
+  _Avoid_: 组件库、UI kit、样式常量
+- **层级（Elevation）** — 浮层与卡片的立体表达方式：浮层身份由取自前景色的 1px 描边承担，阴影只按语义阶梯（静止内容 → 嵌套装饰 → 临时弹层 → 面板 → 提示）使用主题生成物中的阴影 token。
+  _Avoid_: 投影、depth、z 轴
+- **状态完备（State Completeness）** — 一个交互元素同时具备默认、悬停、按下、键盘焦点、禁用五种表达，错误态经无障碍无效标记表达；缺一即不完备，是判定项不是审美项。
+- **视觉工艺规范（Craft Spec）** — 组件层与各屏一致性的唯一成文来源；新增屏必须匹配它。
+  _Avoid_: 设计规范、风格指南、design system
+
+### 语义边界
+
+- 组件层不拥有颜色：原语只引用语义 token，token 仍只活在主题族作用域内（界面主题的模型不变）。
+- 原语与主题族正交：不得为任何族写组件特例；层级靠描边与灰度 token、状态靠统一契约，对全部族同时成立。
+- 产品语义 recipe（选择卡、状态徽章、时间轴、模式预览、状态指示器）不是原语，保留为 recipe 且只读 token。
+- 配方是一次性移植、不跟随来源仓库版本演进；来源仅作出处记录，不构成依赖。
