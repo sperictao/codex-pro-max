@@ -1,18 +1,21 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
 import { getVersion } from "@tauri-apps/api/app";
-import { useAppStore, type View } from "./shared/store";
+import { useAppStore } from "./shared/store";
 import { onStatusUpdate, onUpdaterDownloadProgress } from "./shared/events";
 import * as cmd from "./shared/commands";
 import { log } from "./shared/logger";
 import { currentConfigDraft } from "./shared/config";
 import { i18n } from "./shared/i18n";
 import { Toaster } from "./shared/components/Toaster";
+import { CommandPalette } from "./shared/components/CommandPalette";
+import { NAV_ITEMS } from "./shared/navigation";
 import { Button } from "./shared/components/ui/button";
 import { openRepo } from "./shared/lib/links";
 import { UpdateBadge } from "./features/updater/UpdateBadge";
+import { SearchIcon } from "lucide-react";
 import { HomeView } from "./features/home/HomeView";
 import { SettingsView } from "./features/settings/SettingsView";
 import { SkillView } from "./features/skill/SkillView";
@@ -20,21 +23,28 @@ import { GuardView } from "./features/guard/GuardView";
 import { IntegrationView } from "./features/integration/IntegrationView";
 import { ModelView } from "./features/models/ModelView";
 
-// Skill 按钮在旧 UI 无 data-i18n（恒为英文），其余走词典
-const NAV_ITEMS: { view: View; labelKey: string | null }[] = [
-  { view: "home", labelKey: "Home" },
-  { view: "skill", labelKey: null },
-  { view: "guard", labelKey: "Guard" },
-  { view: "models", labelKey: "Models" },
-  { view: "integration", labelKey: "Integrations" },
-  { view: "settings", labelKey: "Settings" },
-];
+// 快捷键提示按平台显示（macOS ⌘ / 其余 Ctrl+）
+const PRIMARY_MODIFIER =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl+";
 
 export function App() {
   const { t } = useTranslation();
   const activeView = useAppStore((s) => s.activeView);
   const guardEnabled = useAppStore((s) => s.guardState.enabled);
   const navigate = useAppStore((s) => s.navigate);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Cmd/Ctrl+K 开关命令面板
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // 事件桥 + 初始化 + 3s 状态轮询
   useEffect(() => {
@@ -138,6 +148,18 @@ export function App() {
           <UpdateBadge />
         </div>
         <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-2 text-muted-foreground"
+            aria-label={t("Command Palette")}
+            onClick={() => setPaletteOpen(true)}
+          >
+            <SearchIcon className="size-4" />
+            <kbd className="pointer-events-none hidden h-5 items-center rounded border border-border bg-muted px-1.5 font-mono text-[10px] font-medium sm:inline-flex">
+              {PRIMARY_MODIFIER}K
+            </kbd>
+          </Button>
           {NAV_ITEMS.filter((item) => item.view !== "guard" || guardEnabled).map((item) => (
             <Button
               key={item.view}
@@ -158,6 +180,7 @@ export function App() {
       {activeView === "guard" && <GuardView />}
       {activeView === "models" && <ModelView />}
       {activeView === "integration" && <IntegrationView />}
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       <Toaster />
     </>
   );

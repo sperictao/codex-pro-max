@@ -78,6 +78,8 @@ interface AppStore {
   themeMode: ThemeMode;
   themeFamily: string;
   navigate: (view: View) => void;
+  /** 显式跳转（命令面板用）：不带顶栏的 toggle 语义，可同时落到某个设置分区 */
+  goto: (view: View, section?: SettingsSection) => void;
   setSettingsSection: (section: SettingsSection) => void;
   setThemeMode: (mode: ThemeMode) => void;
   setThemeFamily: (family: string) => void;
@@ -131,6 +133,7 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       set({ activeView: view });
     }
   },
+  goto: (view, section) => set(section ? { activeView: view, settingsSection: section } : { activeView: view }),
   setSettingsSection: (section) => set({ settingsSection: section }),
 
   setThemeMode: (mode) => {

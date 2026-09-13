@@ -96,6 +96,12 @@
   --status-warn: oklch(0.72 0.15 80); /* craft-allow-color: 状态语义固定色（ADR 0008） */
 }
 
+/* 隐藏滚动条但保留滚动（radix-nova 配方的 no-scrollbar，Tailwind 核心未提供） */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
 /* 主题/字体切换期间挂载，避免整屏 transition 重放（R9） */
 .disable-transitions * { transition: none !important; }
 html { overscroll-behavior: none; }

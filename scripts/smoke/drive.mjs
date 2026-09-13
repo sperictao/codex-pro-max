@@ -358,6 +358,24 @@ check("导航：进入集成页", await visible("#integration-view"));
 await page.click("header button:has-text('Integrations')");
 check("导航：再点集成回主页", await visible("#main-view"));
 
+// ============ 命令面板（Cmd+K） ============
+await page.click('header button[aria-label="Command Palette"]');
+await page.waitForSelector('[data-slot="command-input"]');
+check("命令面板：header 入口可打开", await visible('[data-slot="command-list"]'));
+await page.waitForTimeout(500); // 等弹层 100ms 进场动画结束再截图
+await shot("16-command-palette");
+await page.fill('[data-slot="command-input"]', "Appearance");
+await page.waitForTimeout(250);
+await page.keyboard.press("Enter");
+await page.waitForTimeout(400);
+check("命令面板：过滤后 Enter 跳到设置-外观", await visible("#section-appearance"));
+await page.keyboard.press("Meta+k");
+await page.waitForTimeout(350);
+check("命令面板：Cmd+K 打开", await visible('[data-slot="command-input"]'));
+await page.keyboard.press("Escape");
+await page.waitForTimeout(300);
+check("命令面板：Esc 关闭", !(await visible('[data-slot="command-input"]')));
+
 // ============ 控制台错误 ============
 const realErrors = consoleErrors.filter((e) => !e.includes("favicon"));
 check("全程无控制台错误", realErrors.length === 0, realErrors.slice(0, 3).join(" | "));
