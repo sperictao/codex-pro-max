@@ -58,13 +58,39 @@ const shot = async (name) => page.screenshot({ path: `${SHOTS}/${name}.png`, ful
 const txt = async (sel) => page.locator(sel).first().textContent().catch(() => null);
 const visible = async (sel) => page.locator(sel).first().isVisible().catch(() => false);
 const dataTheme = () => page.evaluate(() => document.documentElement.dataset.theme);
+// 行内 ⋯ 菜单：破坏性行操作收进 DropdownMenu（逐个打开直到找到含 Delete 的那张卡）
+const findDeleteInRowMenu = async (scopeSel) => {
+  const triggers = page.locator(scopeSel + ' button[aria-label="More actions"]');
+  const n = await triggers.count();
+  for (let i = 0; i < n; i++) {
+    await triggers.nth(i).click();
+    await page.waitForSelector('[data-slot="dropdown-menu-content"]', { timeout: 8000 });
+    const hit = (await page.locator('[data-slot="dropdown-menu-item"]:has-text("Delete")').count()) > 0;
+    if (hit) {
+      // Radix 菜单打开时会给 body 挂 pointer-events:none，必须先关掉再继续后续点击
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(200);
+      return true;
+    }
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(150);
+  }
+  return false;
+};
+
+// Radix Select：点触发器再点选项（原生 selectOption 不适用）
+const pickSelect = async (nth, text) => {
+  await page.locator('[data-slot=\"dialog-content\"] [data-slot=\"select-trigger\"]').nth(nth).click();
+  await page.click(`[data-slot="select-item"]:has-text("${text}")`);
+  await page.waitForTimeout(200);
+};
 
 // ============ 启动序列 ============
 await page.goto(URL);
 await page.waitForSelector("text=Codex Pro Max", { timeout: 15000 });
 await page.waitForTimeout(800); // 等 init（load_config/health/silent check）完成
 check("启动：页面渲染，header 出现", await visible("header"));
-check("启动：无初始化失败 toast", !(await visible(".toast.error")));
+check("启动：无初始化失败 toast", !(await visible('[data-sonner-toast][data-type="error"]')));
 check("启动：主题已应用（data-theme=vercel-light）", (await dataTheme()) === "vercel-light", await dataTheme());
 check("启动：进程卡初始为 Stopped ×2", (await page.locator(".status-badge.stopped").count()) >= 2);
 check("启动：消息行渲染 ×2", (await page.locator("#main-view .min-h-8").count()) === 2);
@@ -72,7 +98,7 @@ await shot("01-home-boot");
 
 // Start All → running
 await page.click("#btn-start-all");
-await page.waitForSelector(".toast:has-text('All services started')");
+await page.waitForSelector("[data-sonner-toast]:has-text('All services started')");
 check("主页：Start All 成功 toast", true);
 await page.waitForTimeout(300);
 check("主页：两卡 Running", (await page.locator(".status-badge.running").count()) >= 2);
@@ -91,7 +117,7 @@ await page.waitForTimeout(200);
 
 // Stop All → stopped
 await page.click("#btn-stop-all");
-await page.waitForSelector(".toast:has-text('All services stopped')");
+await page.waitForSelector("[data-sonner-toast]:has-text('All services stopped')");
 check("主页：Stop All 成功 toast + 指示器 Services stopped", (await txt(".status-indicator-text")) === "Services stopped");
 
 // ============ 设置-通用 ============
@@ -122,7 +148,7 @@ await page.waitForTimeout(500);
 check("i18n：切回英文", await visible("header button:has-text('Home')"));
 
 // ============ 设置-外观 ============
-await page.click('.nav-item:has-text("Appearance")');
+await page.click('#settings-view nav button:has-text("Appearance")');
 check("外观：41 族色板卡渲染", (await page.locator("#theme-family-grid button").count()) >= 40, String(await page.locator("#theme-family-grid button").count()));
 check("外观：footer 在外观分区隐藏", !(await visible("#settings-footer")));
 const before = await dataTheme();
@@ -140,9 +166,9 @@ check("外观：还原 vercel + system", (await dataTheme()) === "vercel-light",
 await shot("05-appearance");
 
 // ============ 设置-网络 / 模式 ============
-await page.click('.nav-item:has-text("Network")');
+await page.click('#settings-view nav button:has-text("Network")');
 check("网络：host/port/cdp 已填充", (await page.locator("#cfg-host").inputValue()) === "127.0.0.1" && (await page.locator("#cfg-port").inputValue()) === "47823");
-await page.click('.nav-item:has-text("Mode")');
+await page.click('#settings-view nav button:has-text("Mode")');
 check("模式：启动模式标签（全量）", (await txt("#section-mode"))?.includes("Full launch mode (restarts Codex)"));
 await page.click("#toggle-mode");
 await page.waitForTimeout(200);
@@ -151,49 +177,51 @@ await page.click("#toggle-mode");
 
 // 保存
 await page.click("#btn-save-config");
-await page.waitForSelector(".toast:has-text('Settings saved')");
+await page.waitForSelector("[data-sonner-toast]:has-text('Settings saved')");
 check("保存：Settings saved toast", true);
 
 // ============ 设置-看守（文件管理） ============
-await page.click('.nav-item:has-text("Guard")');
+await page.click('#settings-view nav button:has-text("Guard")');
 await page.waitForSelector("#settings-guard-files");
 await page.waitForTimeout(500); // 自动检测内置文件
 check("看守设置：footer 隐藏", !(await visible("#settings-footer")));
 check("看守设置：3 个文件卡", (await page.locator("#settings-guard-files > div").count()) === 3);
 check("看守设置：内置文件 Built-in 禁用", await page.locator("button:has-text('Built-in')").first().isDisabled());
-check("看守设置：自定义文件有 Delete", await visible("button:has-text('Delete')"));
+const fileMenuHasDelete = await findDeleteInRowMenu("#settings-guard-files");
+check("看守设置：自定义文件 Delete 收进 ⋯ 菜单", fileMenuHasDelete);
+await page.keyboard.press('Escape');
 check("看守设置：检测记录文案（path matches）", (await txt("#settings-guard-files"))?.includes("Detection: path matches"));
 await shot("06-settings-guard");
 
 // Detect 手动
 await page.click("button:has-text('Detect')");
-await page.waitForSelector(".toast:has-text('Detection complete: path matches')");
+await page.waitForSelector("[data-sonner-toast]:has-text('Detection complete: path matches')");
 check("看守设置：手动 Detect 一致 toast", true);
 
 // Edit 弹窗：格式禁用
 await page.click("button:has-text('Edit')");
-await page.waitForSelector(".modal-overlay");
+await page.waitForSelector("[data-slot=\"dialog-content\"]");
 check("文件弹窗：编辑标题", await visible("text=Edit Guard File"));
-check("文件弹窗：格式下拉禁用", await page.locator(".modal-overlay select").first().isDisabled());
+check("文件弹窗：格式下拉禁用", await page.locator('[data-slot=\"dialog-content\"] [data-slot=\"select-trigger\"]').first().isDisabled());
 await shot("07-file-modal-edit");
-await page.click(".modal-overlay button:has-text('Cancel')");
+await page.click("[data-slot=\"dialog-content\"] button:has-text('Cancel')");
 
 // Add File + Pick…
 await page.click("#guard-file-form-toggle");
-await page.waitForSelector(".modal-overlay");
+await page.waitForSelector("[data-slot=\"dialog-content\"]");
 await page.click("button:has-text('Pick…')");
 await page.waitForTimeout(300);
-check("文件弹窗：Pick… 回填相对路径", (await page.locator(".modal-overlay input").nth(1).inputValue()) === "picked.toml", await page.locator(".modal-overlay input").nth(1).inputValue());
-check("文件弹窗：名称自动带入", (await page.locator(".modal-overlay input").first().inputValue()) === "picked.toml");
-await page.click(".modal-overlay button:has-text('Cancel')");
+check("文件弹窗：Pick… 回填相对路径", (await page.locator("[data-slot=\"dialog-content\"] input").nth(1).inputValue()) === "picked.toml", await page.locator("[data-slot=\"dialog-content\"] input").nth(1).inputValue());
+check("文件弹窗：名称自动带入", (await page.locator("[data-slot=\"dialog-content\"] input").first().inputValue()) === "picked.toml");
+await page.click("[data-slot=\"dialog-content\"] button:has-text('Cancel')");
 
 // 总开关关 → Guard Tab 隐藏；开 → 恢复
 await page.click("#settings-guard-toggle");
-await page.waitForSelector(".toast:has-text('Config guard disabled')");
+await page.waitForSelector("[data-sonner-toast]:has-text('Config guard disabled')");
 check("看守设置：总开关关闭 toast", true);
 check("看守设置：Guard Tab 隐藏", !(await visible("header button:has-text('Guard')")));
 await page.click("#settings-guard-toggle");
-await page.waitForSelector(".toast:has-text('Config guard enabled')");
+await page.waitForSelector("[data-sonner-toast]:has-text('Config guard enabled')");
 check("看守设置：总开关开启后 Guard Tab 恢复", await visible("header button:has-text('Guard')"));
 
 // ============ 看守视图 ============
@@ -205,8 +233,8 @@ check("看守视图：状态徽标含 Drift", await visible(".status-badge.faile
 check("看守视图：锁定参数时间行", (await txt("#guard-view"))?.includes("Last checked"));
 check("看守视图：锁定参数编辑器禁用", await page.locator("[data-guard-id='agents.max_concurrent_threads_per_session']").isDisabled());
 check("看守视图：未启用参数 Lock 禁用", (await page.locator("#guard-view button:has-text('Lock'):disabled").count()) >= 1);
-const cardBtns = await page.locator(".guard-param-card").last().locator("button").allTextContents();
-check("看守视图：自定义参数有 Delete", (await page.locator("#guard-view .guard-param-card button:has-text('Delete')").count()) >= 1, cardBtns.join("/"));
+const paramMenuHasDelete = await findDeleteInRowMenu("#guard-view .guard-param-card");
+check("看守视图：自定义参数的 Delete 收进 ⋯ 菜单", paramMenuHasDelete);
 await shot("08-guard-view");
 
 // bool 切换
@@ -217,44 +245,44 @@ check("看守视图：bool 切换后显示 true（取反落盘+刷新）", (awai
 // 锁定流程：未锁参数 Lock → Unlock 出现
 const lockBtns = page.locator("button:has-text('Lock'):not([disabled])");
 await lockBtns.first().click();
-await page.waitForSelector(".toast:has-text('Locked')");
+await page.waitForSelector("[data-sonner-toast]:has-text('Locked')");
 check("看守视图：锁定成功 toast + Unlock 按钮", await visible("button:has-text('Unlock')"));
 // 解锁还原
 await page.locator(".guard-param-card:has([data-guard-id='features.image_generation']) button:has-text('Unlock')").click();
-await page.waitForSelector(".toast:has-text('Unlocked')");
+await page.waitForSelector("[data-sonner-toast]:has-text('Unlocked')");
 check("看守视图：解锁成功 toast", true);
 
 // 添加自定义参数弹窗联动
 await page.click("#guard-add-toggle");
-await page.waitForSelector(".modal-overlay");
-const modalText = async () => (await page.locator(".modal-overlay").textContent()) ?? "";
+await page.waitForSelector("[data-slot=\"dialog-content\"]");
+const modalText = async () => (await page.locator("[data-slot=\"dialog-content\"]").textContent()) ?? "";
 check("添加弹窗：toml_key 显示 TOML Path", (await modalText()).includes("TOML Path"));
-await page.selectOption(".modal-overlay select >> nth=0", "file_overwrite");
+await pickSelect(0, "file_overwrite");
 await page.waitForTimeout(200);
 check("添加弹窗：file_overwrite 隐藏 TOML Path 与值类型", !(await modalText()).includes("TOML Path") && !(await modalText()).includes("Value Type"));
-await page.selectOption(".modal-overlay select >> nth=0", "toml_key");
+await pickSelect(0, "toml_key");
 await page.waitForTimeout(200);
-await page.selectOption(".modal-overlay select >> nth=2", "none");
+await pickSelect(2, "none");
 await page.waitForTimeout(200);
 check("添加弹窗：值类型 none 隐藏默认值行", !(await modalText()).includes("Default Value"));
-await page.selectOption(".modal-overlay select >> nth=2", "text");
+await pickSelect(2, "text");
 await page.waitForTimeout(200);
-check("添加弹窗：text 类型默认值为 textarea", (await page.locator(".modal-overlay textarea").count()) === 1);
+check("添加弹窗：text 类型默认值为 textarea", (await page.locator("[data-slot=\"dialog-content\"] textarea").count()) === 1);
 // 空 ID 提交 → 校验 toast
-await page.click(".modal-overlay button:has-text('Add')");
-await page.waitForSelector(".toast:has-text('Please enter an ID')");
+await page.click("[data-slot=\"dialog-content\"] button:has-text('Add')");
+await page.waitForSelector("[data-sonner-toast]:has-text('Please enter an ID')");
 check("添加弹窗：空 ID 校验 toast", true);
 await shot("09-add-param-modal");
-await page.click(".modal-overlay button:has-text('Cancel')");
+await page.click("[data-slot=\"dialog-content\"] button:has-text('Cancel')");
 
 // 成功添加一个自定义参数
 await page.click("#guard-add-toggle");
-await page.waitForSelector(".modal-overlay");
-await page.fill(".modal-overlay input >> nth=0", "smoke_param");
-await page.fill(".modal-overlay input >> nth=1", "Smoke Param");
-await page.fill(".modal-overlay input >> nth=2", "features.smoke");
-await page.click(".modal-overlay button:has-text('Add')");
-await page.waitForSelector(".toast:has-text('Custom parameter added')");
+await page.waitForSelector("[data-slot=\"dialog-content\"]");
+await page.fill("[data-slot=\"dialog-content\"] input >> nth=0", "smoke_param");
+await page.fill("[data-slot=\"dialog-content\"] input >> nth=1", "Smoke Param");
+await page.fill("[data-slot=\"dialog-content\"] input >> nth=2", "features.smoke");
+await page.click("[data-slot=\"dialog-content\"] button:has-text('Add')");
+await page.waitForSelector("[data-sonner-toast]:has-text('Custom parameter added')");
 check("添加弹窗：成功添加自定义参数", true);
 await page.waitForTimeout(400);
 check("看守视图：新参数出现在分组中", (await txt("#guard-view"))?.includes("Smoke Param"));
@@ -269,79 +297,22 @@ await shot("10-skill");
 // ============ 集成 ============
 await page.click("header button:has-text('Integrations')");
 await page.waitForTimeout(600);
-check("集成：dsh 状态链文案（web 未运行）", (await txt("#integration-view"))?.includes("dsh web not running"));
-check("集成：dsh 版本胶囊", (await txt("#integration-view"))?.includes("0.1.0-rc.6"));
 check("集成：fastctx 状态文案", (await txt("#integration-view"))?.includes("not integrated"));
 check("集成：fastctx 更新胶囊 v1.3.0", (await txt("#integration-view"))?.includes("v1.3.0"));
-check("集成：dsh 模式开关默认本地", !(await page.locator("#toggle-dsh-remote-access").isChecked()));
-check("集成：dsh 时间轴（检测驱动，本地 4 步）", (await page.locator(".timeline-node").count()) === 4);
 await shot("11-integration");
-
-// 切换到远程模式：开关只是选择模式；时间轴切为远程 8 步
-await page.click("#toggle-dsh-remote-access");
-await page.waitForTimeout(400);
-check("集成：切换后远程模式时间轴（8 步）", (await page.locator(".timeline-node").count()) === 8);
-check("集成：远程模式显示远程授权配置块", await visible("#dsh-remote-auth-block"));
-
-// 持久化：刷新后仍记住远程模式
-await page.reload();
-await page.waitForSelector("text=Codex Pro Max", { timeout: 15000 });
-await page.click("header button:has-text('Integrations')");
-await page.waitForTimeout(600);
-check("集成：刷新后仍为远程模式", await page.locator("#toggle-dsh-remote-access").isChecked());
-check("集成：刷新后远程时间轴（8 步）", (await page.locator(".timeline-node").count()) === 8);
-
-// 远程模式一键启动（dsh_setup 全链路）→ 全 done + 远程 url 胶囊
-await page.click("button:has-text('One-click start dsh web')");
-await page.waitForSelector(".toast:has-text('Remote access ready')", { timeout: 8000 });
-await page.waitForTimeout(500);
-check("集成：dsh 远程启动成功 toast", true);
-check("集成：远程模式 url 胶囊", (await txt("#integration-view"))?.includes("https://mbp.ts.net"));
-check("集成：远程模式状态 Remote access ready", (await txt("#integration-view"))?.includes("Remote access ready"));
-check("集成：远程模式时间轴全 done", (await page.locator(".timeline-node[data-state='done']").count()) === 8);
-await shot("12-dsh-ready");
-
-// 切换到本地模式：时间轴切回本地 4 步 + 本地 url 胶囊
-await page.click("#toggle-dsh-remote-access");
-await page.waitForTimeout(400);
-check("集成：本地模式时间轴（4 步）", (await page.locator(".timeline-node").count()) === 4);
-check("集成：本地模式 url 胶囊", (await txt("#integration-view"))?.includes("http://127.0.0.1:3899"));
-check("集成：本地模式状态 Local access ready", (await txt("#integration-view"))?.includes("Local access ready"));
-await shot("12b-dsh-local");
-
-// 本地模式一键关闭 → 状态回未运行 + URL 胶囊（Copy/Open 按钮）消失
-await page.click("button:has-text('One-click stop dsh web')");
-await page.waitForSelector(".toast:has-text('dsh web stopped')");
-await page.waitForTimeout(400);
-check("集成：本地模式停止后 url 胶囊消失", !(await visible("#integration-view button:has-text('Copy')")));
-check("集成：本地模式停止后状态 dsh web not running", (await txt("#integration-view"))?.includes("dsh web not running"));
-
-// 切回远程模式并重新启动，供后续 dsh-step 事件桥用例（8 步时间轴）
-await page.click("#toggle-dsh-remote-access");
-await page.waitForTimeout(300);
-check("集成：切回远程模式时间轴（8 步）", (await page.locator(".timeline-node").count()) === 8);
-await page.click("button:has-text('One-click start dsh web')");
-await page.waitForSelector(".toast:has-text('Remote access ready')", { timeout: 8000 });
-await page.waitForTimeout(400);
-
-// dsh-step 事件桥：失败节点问题+解决方案
-await page.evaluate(() => window.__smoke.emit("dsh-step", { index: 7, id: "verify", state: "failed", detail: null, problem: "端口被占用", solution: "关闭 3899 占用进程" }));
-await page.waitForTimeout(300);
-check("事件桥：dsh-step 失败节点显示问题与解决方案", (await txt("#integration-view"))?.includes("端口被占用") && (await txt("#integration-view"))?.includes("关闭 3899 占用进程"));
-await shot("13-dsh-step-failed");
 
 // fastctx 接入
 await page.click("#toggle-fastctx");
-await page.waitForSelector(".toast:has-text('fastctx integrated')");
+await page.waitForSelector("[data-sonner-toast]:has-text('fastctx integrated')");
 check("集成：fastctx 接入成功", (await txt("#integration-view"))?.includes("Integrated"));
 // 摘除（mock ask=Yes）
 await page.click("#toggle-fastctx");
-await page.waitForSelector(".toast:has-text('fastctx unapplied')");
+await page.waitForSelector("[data-sonner-toast]:has-text('fastctx unapplied')");
 check("集成：fastctx 摘除成功（ask 确认后）", true);
 
 // ============ 关于 / 更新 ============
 await page.click("header button:has-text('Settings')");
-await page.click('.nav-item:has-text("About")');
+await page.click('#settings-view nav button:has-text("About")');
 await page.waitForTimeout(300);
 check("关于：版本号 1.2.0-smoke", (await txt("#about-version")) === "1.2.0-smoke");
 check("关于：更新源 Ready", (await txt("#section-about"))?.includes("Ready"));
@@ -375,7 +346,7 @@ await shot("15-update-progress");
 
 // Update Now → install
 await page.click("[data-testid='update-badge']");
-await page.waitForSelector(".toast:has-text('Updated to v1.3.0')");
+await page.waitForSelector("[data-sonner-toast]:has-text('Updated to v1.3.0')");
 check("头部：徽标点击即安装（成功 toast）", true);
 check("头部：安装后更新徽标消失", !(await visible("[data-testid='update-badge']")));
 check("关于：安装后更新行隐藏 + 按钮回 Check for Updates", !(await txt("#section-about"))?.includes("Available Update") && (await txt("#btn-check-update")) === "Check for Updates");

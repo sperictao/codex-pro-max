@@ -3,9 +3,26 @@
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { HelpCircleIcon, MoreHorizontalIcon } from "lucide-react";
 import { useAppStore } from "@/shared/store";
 import { fmtTs } from "@/shared/lib/format";
-import { BTN_DANGER_SM, BTN_SM, INPUT_MONO, TOGGLE } from "@/shared/lib/ui";
+import { Button } from "@/shared/components/ui/button";
+import { Card, CardTitle } from "@/shared/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/shared/components/ui/dropdown-menu";
+import { Input } from "@/shared/components/ui/input";
+import { Switch } from "@/shared/components/ui/switch";
+import { Textarea } from "@/shared/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/shared/components/ui/tooltip";
 import type { GuardGroupView, GuardParamView } from "@/shared/types";
 import { AddParamModal } from "./AddParamModal";
 import * as ops from "./ops";
@@ -31,10 +48,9 @@ function ParamEditor({ p }: { p: GuardParamView }) {
   if (p.valueType === "bool") {
     return (
       <div className="flex items-center gap-2">
-        <input type="checkbox" className={TOGGLE} data-guard-id={p.id}
-          checked={p.value === true} disabled={p.locked}
-          onChange={(e) => void ops.toggleBool(p.id, e.target.checked)} />
-        <span className="text-xs opacity-70">
+        <Switch data-guard-id={p.id} checked={p.value === true} disabled={p.locked}
+          onCheckedChange={(next) => void ops.toggleBool(p.id, next)} />
+        <span className="text-xs tabular-nums text-muted-foreground">
           {p.value === true ? "true" : "false"} {t("(recommended {{default}})", { default: String(p.default) })}
         </span>
       </div>
@@ -43,21 +59,22 @@ function ParamEditor({ p }: { p: GuardParamView }) {
   if (p.valueType === "int" || p.valueType === "string") {
     const saved = String(p.value ?? "");
     return (
-      <input type={p.valueType === "int" ? "number" : "text"} className={INPUT_MONO} data-guard-id={p.id}
+      <Input type={p.valueType === "int" ? "number" : "text"} className="font-mono tabular-nums" data-guard-id={p.id}
         key={`${p.id}:${saved}`} disabled={p.locked} defaultValue={saved}
         onBlur={(e) => { if (e.target.value !== saved) void ops.setValue(p.id, e.target.value); }} />
     );
   }
   if (p.valueType === "text") {
     const saved = String(p.value ?? "");
+    // field-sizing-fixed：保留旧的固定 96px 高度 + 内部滚动，不随文本增长撑开参数卡
     return (
-      <textarea className="guard-textarea" data-guard-id={p.id} key={`${p.id}:${saved}`}
+      <Textarea className="min-h-24 font-mono field-sizing-fixed" data-guard-id={p.id} key={`${p.id}:${saved}`}
         disabled={p.locked} defaultValue={saved}
         onBlur={(e) => { if (e.target.value !== saved) void ops.setValue(p.id, e.target.value); }} />
     );
   }
   return (
-    <span className="text-xs opacity-60">
+    <span className="text-xs text-muted-foreground">
       {t("No editable value; applying performs \"{{action}}\"", { action: t(p.applyMode === "toml_absent" ? "delete" : "write") })}
     </span>
   );
@@ -67,33 +84,36 @@ function ParamCard({ p }: { p: GuardParamView }) {
   const { t } = useTranslation();
   const s = STATUS_MAP[p.status] ?? STATUS_MAP.error;
   return (
-    <div className="guard-param-card rounded-lg border border-border bg-card text-card-foreground p-3">
+    <Card className="guard-param-card gap-0 rounded-lg p-3">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium">
+        <span className="inline-flex items-center gap-1 text-sm font-medium">
           {p.label}
           {(p.description || p.path) && (
-            <>
-              {" "}
-              <span className="guard-param-help" tabIndex={0}>
-                ?
-                <span className="guard-param-desc">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon-xs" aria-label={p.description || p.path}>
+                    <HelpCircleIcon className="size-3" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="flex-col items-start gap-0.5 text-left">
                   {p.description && <span>{p.description}</span>}
-                  {p.path && <span className="guard-param-desc-path">{p.path}</span>}
-                </span>
-              </span>
-            </>
+                  {p.path && <span className="font-mono text-[11px] break-all opacity-70">{p.path}</span>}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
         </span>
         <span className={`status-badge ${s.cls}`}><span className="dot"></span><span>{t(s.key)}</span></span>
       </div>
       <div className="mt-1 flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className={`guard-param-actual font-mono text-xs ${p.status === "match" ? "ok" : "bad"}`}>
+          <div className={`guard-param-actual font-mono text-xs tabular-nums ${p.status === "match" ? "ok" : "bad"}`}>
             {t("Current: ")}{p.actual ?? p.error ?? t("Unknown")}
           </div>
           <div className="mt-2"><ParamEditor p={p} /></div>
           {p.locked && (
-            <div className="mt-1 text-xs opacity-50">
+            <div className="mt-1 text-xs tabular-nums text-muted-foreground">
               {t("Last checked {{checked}} | Last auto-restored {{restored}}", {
                 checked: fmtTs(p.lastChecked),
                 restored: fmtTs(p.lastRestored),
@@ -101,7 +121,7 @@ function ParamCard({ p }: { p: GuardParamView }) {
             </div>
           )}
         </div>
-        <span className="guard-param-actions flex w-[30%] shrink-0 flex-row flex-wrap items-center justify-end gap-1 self-center">
+        <span className="flex w-[30%] shrink-0 flex-row flex-wrap items-center justify-end gap-1 self-center">
           <input type="checkbox" className="text-switch"
             data-state-text={p.applied ? t("Enabled") : t("Disabled")}
             checked={p.applied} disabled={p.locked}
@@ -109,44 +129,51 @@ function ParamCard({ p }: { p: GuardParamView }) {
             aria-label={p.applied ? t("Disable") : t("Enable")}
             onChange={() => void ops.toggleApplied(p.id)} />
           {p.locked ? (
-            <button className={BTN_SM} onClick={() => void ops.setLocked(p.id, false)}>
+            <Button variant="outline" size="sm" onClick={() => void ops.setLocked(p.id, false)}>
               {LOCK_SVG}{t("Unlock")}
-            </button>
+            </Button>
           ) : (
-            <button className={BTN_SM} disabled={!p.applied} onClick={() => void ops.setLocked(p.id, true)}>
+            <Button variant="outline" size="sm" disabled={!p.applied} onClick={() => void ops.setLocked(p.id, true)}>
               {UNLOCK_SVG}{t("Lock")}
-            </button>
+            </Button>
           )}
           {!p.applied && !p.locked && (
-            <button className={BTN_SM} onClick={() => void ops.removeConfig(p.id)}>
+            <Button variant="outline" size="sm" onClick={() => void ops.removeConfig(p.id)}>
               {t("Remove Config")}
-            </button>
+            </Button>
           )}
           {p.custom && (
-            <button className={BTN_DANGER_SM} title={t("Delete custom parameter")} onClick={() => void ops.removeCustom(p.id)}>
-              {t("Delete")}
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon-sm" aria-label={t("More actions")}><MoreHorizontalIcon /></Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem variant="destructive" onSelect={() => void ops.removeCustom(p.id)}>
+                  {t("Delete")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </span>
       </div>
-    </div>
+    </Card>
   );
 }
 
 function GroupCard({ g, onAddParam }: { g: GuardGroupView; onAddParam: (fileId: string) => void }) {
   const { t } = useTranslation();
   return (
-    <div className="rounded-xl border border-border bg-card text-card-foreground p-4" data-group-id={g.id}>
-      <div className="text-sm font-semibold">{g.name}</div>
-      <div className="mb-2 font-mono text-xs opacity-50">~/.codex/{g.file}</div>
+    <Card className="gap-0 p-4 shadow-xs" data-group-id={g.id}>
+      <CardTitle className="text-sm font-semibold">{g.name}</CardTitle>
+      <div className="mb-2 font-mono text-xs text-muted-foreground">~/.codex/{g.file}</div>
       {g.error && <div className="mb-2 text-xs text-destructive">{g.error}</div>}
       <div className="flex flex-col gap-2">
         {g.params.map((p) => <ParamCard key={p.id} p={p} />)}
       </div>
       <div className="mt-2">
-        <button className={BTN_SM} onClick={() => onAddParam(g.id)}>{t("+ Add Parameter")}</button>
+        <Button variant="outline" size="sm" onClick={() => onAddParam(g.id)}>{t("+ Add Parameter")}</Button>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -168,9 +195,9 @@ export function GuardView() {
   };
 
   return (
-    <main className="flex-1 overflow-y-auto p-6" id="guard-view">
+    <main className="flex-1 overflow-y-auto p-4 md:p-6" id="guard-view">
       <h2 className="mb-2 text-base font-semibold">{t("Config Guard")}</h2>
-      <p className="mb-4 max-w-3xl text-xs leading-5 opacity-60">
+      <p className="mb-4 max-w-3xl text-xs leading-5 text-muted-foreground">
         {t("Apply = write the parameter value into its file (auto-backup to")}{" "}
         <code className="rounded bg-muted px-1 font-mono">~/.codex/dashi-backups/</code>{" "}
         {t("before writing); Lock = verify every 60 seconds and revert drift automatically. Locked parameters are read-only; unlock before editing. The master switch and file management are in Settings → Guard.")}
@@ -181,18 +208,19 @@ export function GuardView() {
       </div>
 
       <div className="mt-4">
-        <button
-          className="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 w-full px-4"
+        <Button
+          variant="outline"
+          className="w-full"
           id="guard-add-toggle"
           onClick={() => openAddFor(null)}
         >
-          <span>{t("+ Add Custom Parameter")}</span>
-        </button>
+          {t("+ Add Custom Parameter")}
+        </Button>
       </div>
       <div className="mt-4 max-w-4xl text-center">
-        <button className="cursor-pointer text-xs text-primary underline-offset-4 hover:underline" onClick={() => void ops.openSchemaFile()}>
+        <Button variant="link" size="xs" className="cursor-pointer" onClick={() => void ops.openSchemaFile()}>
           {t("Open schema file (manual editing for advanced users)")}
-        </button>
+        </Button>
       </div>
 
       <AddParamModal

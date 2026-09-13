@@ -157,6 +157,7 @@ export const en = {
   "Last checked {{checked}} | Last auto-restored {{restored}}": "Last checked {{checked}} | Last auto-restored {{restored}}",
   "Delete": "Delete",
   "Delete custom parameter": "Delete custom parameter",
+  "More actions": "More actions",
   "Remove Config": "Remove Config",
   "Config removed": "Config removed",
   "Remove config for {{label}}?\n\nThis will delete the parameter's value from ~/.codex/{{file}} (a backup is saved to ~/.codex/dashi-backups/). The guard entry itself stays; only the written config is removed.": "Remove config for {{label}}?\n\nThis will delete the parameter's value from ~/.codex/{{file}} (a backup is saved to ~/.codex/dashi-backups/). The guard entry itself stays; only the written config is removed.",

@@ -6,10 +6,13 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
+import { toast } from "sonner";
 import { useAppStore } from "@/shared/store";
 import * as cmd from "@/shared/commands";
 import { SelectCard } from "@/shared/components/SelectCard";
-import { BTN, INPUT_MONO, TOGGLE } from "@/shared/lib/ui";
+import { Button } from "@/shared/components/ui/button";
+import { Input } from "@/shared/components/ui/input";
+import { Switch } from "@/shared/components/ui/switch";
 
 const LANG_OPTIONS = [
   { id: "system", labelKey: "Follow System" },
@@ -23,7 +26,7 @@ const EMPTY: CheckResult = { cls: "", textKey: null, raw: null };
 function CheckSpan({ result }: { result: CheckResult }) {
   const { t } = useTranslation();
   return (
-    <span className={`config-validate${result.cls ? ` ${result.cls}` : ""}`}>
+    <span className={`config-validate tabular-nums${result.cls ? ` ${result.cls}` : ""}`}>
       {result.raw ?? (result.textKey ? t(result.textKey) : "")}
     </span>
   );
@@ -37,7 +40,6 @@ export function GeneralSection() {
   const setLanguageSetting = useAppStore((s) => s.setLanguageSetting);
   const setConfigField = useAppStore((s) => s.setConfigField);
   const toggleAutostart = useAppStore((s) => s.toggleAutostart);
-  const toast = useAppStore((s) => s.toast);
 
   const [pathCheck, setPathCheck] = useState<CheckResult>(EMPTY);
   const [nodeCheck, setNodeCheck] = useState<CheckResult>(EMPTY);
@@ -110,19 +112,19 @@ export function GeneralSection() {
       const path = await cmd.getBundledTaskboardPath();
       if (path) {
         setConfigField({ taskboard_path: path });
-        toast(t("Using bundled Taskboard path"), "success");
+        toast.success(t("Using bundled Taskboard path"));
       } else {
-        toast(t("Bundled Taskboard not found"), "error");
+        toast.error(t("Bundled Taskboard not found"));
       }
     } catch (e) {
-      toast(t("Failed to get bundled path: {{error}}", { error: String(e) }), "error");
+      toast.error(t("Failed to get bundled path: {{error}}", { error: String(e) }));
     }
   };
   const openLogDir = async () => {
     try {
       await openUrl(await cmd.getLogDir());
     } catch (e) {
-      toast(String(e), "error");
+      toast.error(String(e));
     }
   };
 
@@ -144,10 +146,10 @@ export function GeneralSection() {
       <div className="flex items-start gap-4 border-b border-border py-4">
         <label className="w-36 shrink-0 pt-2 text-sm font-medium" htmlFor="cfg-path">{t("Taskboard Path")}</label>
         <div className="flex flex-1 items-center gap-2">
-          <input type="text" className={INPUT_MONO} id="cfg-path" placeholder="/path/to/dashi-taskboard"
+          <Input type="text" className="font-mono tabular-nums" id="cfg-path" placeholder="/path/to/dashi-taskboard"
             value={taskboardPath} onChange={(e) => setConfigField({ taskboard_path: e.target.value })} />
-          <button className={BTN} onClick={() => void browsePath()}>{t("Browse")}</button>
-          <button className={BTN} onClick={() => void useBundled()}>{t("Use Bundled")}</button>
+          <Button variant="outline" onClick={() => void browsePath()}>{t("Browse")}</Button>
+          <Button variant="outline" onClick={() => void useBundled()}>{t("Use Bundled")}</Button>
           <CheckSpan result={pathCheck} />
         </div>
       </div>
@@ -155,9 +157,9 @@ export function GeneralSection() {
       <div className="flex items-start gap-4 border-b border-border py-4">
         <label className="w-36 shrink-0 pt-2 text-sm font-medium" htmlFor="cfg-node">{t("Node.js Path")}</label>
         <div className="flex flex-1 items-center gap-2">
-          <input type="text" className={INPUT_MONO} id="cfg-node" placeholder={t("Leave empty to use node from PATH")}
+          <Input type="text" className="font-mono tabular-nums" id="cfg-node" placeholder={t("Leave empty to use node from PATH")}
             value={nodePath} onChange={(e) => setConfigField({ node_path: e.target.value })} />
-          <button className={BTN} onClick={() => void browseNode()}>{t("Browse")}</button>
+          <Button variant="outline" onClick={() => void browseNode()}>{t("Browse")}</Button>
           <CheckSpan result={nodeCheck} />
         </div>
       </div>
@@ -165,9 +167,9 @@ export function GeneralSection() {
       <div className="flex items-start gap-4 border-b border-border py-4">
         <label className="w-36 shrink-0 pt-2 text-sm font-medium" htmlFor="cfg-codex">{t("Codex App Path")}</label>
         <div className="flex flex-1 items-center gap-2">
-          <input type="text" className={INPUT_MONO} id="cfg-codex" placeholder="/Applications/ChatGPT.app"
+          <Input type="text" className="font-mono tabular-nums" id="cfg-codex" placeholder="/Applications/ChatGPT.app"
             value={codexPath} onChange={(e) => setConfigField({ codex_app_path: e.target.value })} />
-          <button className={BTN} onClick={() => void browseCodex()}>{t("Browse")}</button>
+          <Button variant="outline" onClick={() => void browseCodex()}>{t("Browse")}</Button>
           <CheckSpan result={codexCheck} />
         </div>
       </div>
@@ -175,26 +177,25 @@ export function GeneralSection() {
       <div className="flex items-start gap-4 border-b border-border py-4">
         <label className="w-36 shrink-0 pt-1 text-sm font-medium">{t("System Behavior")}</label>
         <div className="flex flex-1 flex-col gap-2">
-          <label className="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-border p-3">
+          <label htmlFor="toggle-tray" className="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-border p-3">
             <span className="flex flex-col gap-0.5">
               <span className="text-sm">{t("Minimize to tray when closing window")}</span>
-              <span className="text-xs opacity-60">
+              <span className="text-xs text-muted-foreground">
                 {t("When enabled, the close button hides the window and the app keeps running in the system tray.")}
               </span>
             </span>
-            <input type="checkbox" className={TOGGLE} id="toggle-tray"
+            <Switch id="toggle-tray"
               checked={config?.minimize_to_tray_on_close ?? false}
-              onChange={(e) => setConfigField({ minimize_to_tray_on_close: e.target.checked })} />
+              onCheckedChange={(next) => setConfigField({ minimize_to_tray_on_close: next })} />
           </label>
-          <label className="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-border p-3">
+          <label htmlFor="toggle-autostart" className="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-border p-3">
             <span className="flex flex-col gap-0.5">
               <span className="text-sm">{t("Launch at login")}</span>
-              <span className="text-xs opacity-60">
+              <span className="text-xs text-muted-foreground">
                 {t("When enabled, the app starts silently in the system tray when you log in.")}
               </span>
             </span>
-            <input type="checkbox" className={TOGGLE} id="toggle-autostart"
-              checked={autostart} onChange={() => void toggleAutostart()} />
+            <Switch id="toggle-autostart" checked={autostart} onCheckedChange={() => void toggleAutostart()} />
           </label>
         </div>
       </div>
@@ -204,11 +205,11 @@ export function GeneralSection() {
         <div className="flex flex-1 items-center justify-between gap-4 rounded-lg border border-border p-3">
           <span className="flex flex-col gap-0.5">
             <span className="text-sm">{t("Open log folder")}</span>
-            <span className="text-xs opacity-60">
+            <span className="text-xs text-muted-foreground">
               {t("Logs are written to files only; open the folder when something goes wrong.")}
             </span>
           </span>
-          <button className={BTN} onClick={() => void openLogDir()}>{t("Open")}</button>
+          <Button variant="outline" onClick={() => void openLogDir()}>{t("Open")}</Button>
         </div>
       </div>
     </section>

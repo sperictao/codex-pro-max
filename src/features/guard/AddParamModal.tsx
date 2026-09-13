@@ -7,7 +7,15 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "@/shared/store";
 import { Modal } from "@/shared/components/Modal";
-import { BTN, BTN_PRIMARY, INPUT, INPUT_MONO, SELECT } from "@/shared/lib/ui";
+import { Button } from "@/shared/components/ui/button";
+import { Input } from "@/shared/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/shared/components/ui/select";
 import * as ops from "./ops";
 
 export function AddParamModal({
@@ -58,80 +66,101 @@ export function AddParamModal({
   };
 
   return (
-    <Modal open={open} onOverlayClick={onClose} cardStyle={{ width: 560 }}>
+    <Modal
+      open={open}
+      onOverlayClick={onClose}
+      cardStyle={{ width: 560 }}
+      title={t("Add Custom Parameter")}
+    >
       <h3 className="text-sm font-semibold">{t("Add Custom Parameter")}</h3>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="mb-1 block text-xs font-medium">ID</label>
-            <div className="flex items-center">
-              <span className="rounded-l-md border border-r-0 border-border bg-muted px-2 py-2 font-mono text-xs opacity-70">custom.</span>
-              <input type="text" className={`${INPUT_MONO} rounded-l-none`} placeholder="my_param"
-                value={id} onChange={(e) => setId(e.target.value)} />
-            </div>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium">{t("Type")}</label>
-            <select className={SELECT} value={mode} onChange={(e) => setMode(e.target.value)}>
-              <option value="toml_key">{t("toml_key (TOML key value)")}</option>
-              <option value="toml_absent">{t("toml_absent (ensure absent)")}</option>
-              <option value="file_overwrite">{t("file_overwrite (overwrite whole file)")}</option>
-              <option value="markdown_block">{t("markdown_block (marked block)")}</option>
-            </select>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="mb-1 block text-xs font-medium">{t("Name")}</label>
-            <input type="text" className={INPUT} placeholder={t("Display name")}
-              value={label} onChange={(e) => setLabel(e.target.value)} />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium">{t("Target File")}</label>
-            <select className={SELECT} value={fileId} onChange={(e) => setFileId(e.target.value)}>
-              {guardFiles.map((f) => (
-                <option key={f.id} value={f.id}>{f.name} ({f.format})</option>
-              ))}
-            </select>
-          </div>
-        </div>
-        {isToml && (
-          <div>
-            <label className="mb-1 block text-xs font-medium">{t("TOML Path")}</label>
-            <input type="text" className={INPUT_MONO} placeholder={t("e.g. features.foo.enabled")}
-              value={path} onChange={(e) => setPath(e.target.value)} />
-          </div>
-        )}
-        {isToml && (
-          <div>
-            <label className="mb-1 block text-xs font-medium">{t("Value Type")}</label>
-            <select className={SELECT} value={valueType} onChange={(e) => setValueType(e.target.value)}>
-              <option value="bool">bool</option>
-              <option value="int">int</option>
-              <option value="string">string</option>
-              <option value="text">{t("text (multi-line text)")}</option>
-              <option value="none">{t("none (no value, toml_absent only)")}</option>
-            </select>
-          </div>
-        )}
-        {showDefaultRow && (
-          <div>
-            <label className="mb-1 block text-xs font-medium">{t("Default Value")}</label>
-            {valueType === "text" ? (
-              <textarea className="guard-form-textarea" value={defaultRaw} onChange={(e) => setDefaultRaw(e.target.value)} />
-            ) : (
-              <input type="text" className={INPUT} value={defaultRaw} onChange={(e) => setDefaultRaw(e.target.value)} />
-            )}
-          </div>
-        )}
+      <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="mb-1 block text-xs font-medium">{t("Description (optional)")}</label>
-          <input type="text" className={INPUT} placeholder={t("What this parameter does")}
-            value={desc} onChange={(e) => setDesc(e.target.value)} />
+          <label className="mb-1 block text-xs font-medium">ID</label>
+          <div className="flex items-center">
+            <span className="rounded-l-md border border-r-0 border-border bg-muted px-2 py-2 font-mono text-xs text-muted-foreground">custom.</span>
+            <Input type="text" className="rounded-l-none font-mono" placeholder="my_param"
+              value={id} onChange={(e) => setId(e.target.value)} />
+          </div>
         </div>
-        <div className="mt-1 flex justify-end gap-2">
-          <button className={BTN} onClick={onClose}>{t("Cancel")}</button>
-          <button className={BTN_PRIMARY} onClick={() => void submit()}>{t("Add")}</button>
+        <div>
+          <label className="mb-1 block text-xs font-medium">{t("Type")}</label>
+          <Select value={mode} onValueChange={setMode}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="toml_key">{t("toml_key (TOML key value)")}</SelectItem>
+              <SelectItem value="toml_absent">{t("toml_absent (ensure absent)")}</SelectItem>
+              <SelectItem value="file_overwrite">{t("file_overwrite (overwrite whole file)")}</SelectItem>
+              <SelectItem value="markdown_block">{t("markdown_block (marked block)")}</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="mb-1 block text-xs font-medium">{t("Name")}</label>
+          <Input type="text" placeholder={t("Display name")}
+            value={label} onChange={(e) => setLabel(e.target.value)} />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium">{t("Target File")}</label>
+          {/* fileId 为空串时 Radix 视作未选中（占位态），与旧原生 select 的空白显示一致 */}
+          <Select value={fileId} onValueChange={setFileId}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {guardFiles.map((f) => (
+                <SelectItem key={f.id} value={f.id}>{f.name} ({f.format})</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      {isToml && (
+        <div>
+          <label className="mb-1 block text-xs font-medium">{t("TOML Path")}</label>
+          <Input type="text" className="font-mono" placeholder={t("e.g. features.foo.enabled")}
+            value={path} onChange={(e) => setPath(e.target.value)} />
+        </div>
+      )}
+      {isToml && (
+        <div>
+          <label className="mb-1 block text-xs font-medium">{t("Value Type")}</label>
+          <Select value={valueType} onValueChange={setValueType}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="bool">bool</SelectItem>
+              <SelectItem value="int">int</SelectItem>
+              <SelectItem value="string">string</SelectItem>
+              <SelectItem value="text">{t("text (multi-line text)")}</SelectItem>
+              <SelectItem value="none">{t("none (no value, toml_absent only)")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+      {showDefaultRow && (
+        <div>
+          <label className="mb-1 block text-xs font-medium">{t("Default Value")}</label>
+          {valueType === "text" ? (
+            <textarea className="guard-form-textarea" value={defaultRaw} onChange={(e) => setDefaultRaw(e.target.value)} />
+          ) : (
+            <Input type="text" value={defaultRaw} onChange={(e) => setDefaultRaw(e.target.value)} />
+          )}
+        </div>
+      )}
+      <div>
+        <label className="mb-1 block text-xs font-medium">{t("Description (optional)")}</label>
+        <Input type="text" placeholder={t("What this parameter does")}
+          value={desc} onChange={(e) => setDesc(e.target.value)} />
+      </div>
+      <div className="mt-1 flex justify-end gap-2">
+        <Button variant="outline" onClick={onClose}>{t("Cancel")}</Button>
+        <Button onClick={() => void submit()}>{t("Add")}</Button>
+      </div>
     </Modal>
   );
 }

@@ -10,6 +10,7 @@ import type { GuardFileView, GuardParamView, GuardView as GuardViewData } from "
 import { GuardView } from "./GuardView";
 import { GuardSettingsSection } from "./GuardSettingsSection";
 import * as ops from "./ops";
+import { toast } from "sonner";
 
 vi.mock("@/shared/commands", () => ({
   guardGetView: vi.fn(),
@@ -36,6 +37,9 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 }));
 
 vi.mock("@tauri-apps/plugin-shell", () => ({ open: vi.fn() }));
+
+// toast 已迁到 sonner（0b）：断言 spy 而非 store 队列（队列已删除，sonner 是唯一事实来源）
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 
 function makeParam(over: Partial<GuardParamView>): GuardParamView {
   return {
@@ -104,7 +108,8 @@ describe("看守视图渲染", () => {
     expect(screen.getByText("config.toml")).toBeInTheDocument();
     // 锁定参数：编辑器禁用 + 时间行 + Unlock 按钮
     const lockedCard = screen.getByText("Locked One").closest(".guard-param-card")!;
-    expect(lockedCard.querySelector("input[data-guard-id='p2']")).toBeDisabled();
+    // Switch 原语渲染 <button role="switch">，不再是 input（0a 迁移）
+    expect(lockedCard.querySelector("[data-guard-id='p2']")).toBeDisabled();
     expect(lockedCard.textContent).toContain("Last checked");
     expect(screen.getByRole("button", { name: "Unlock" })).toBeInTheDocument();
   });
@@ -149,9 +154,7 @@ describe("参数操作", () => {
     fireEvent.change(input, { target: { value: "" } });
     fireEvent.blur(input);
 
-    await waitFor(() =>
-      expect(useAppStore.getState().toasts.some((t) => t.message === "Please enter an integer")).toBe(true),
-    );
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Please enter an integer"));
     expect(cmd.guardSetValue).not.toHaveBeenCalled();
   });
 
@@ -180,7 +183,7 @@ describe("参数操作", () => {
     vi.mocked(cmd.guardSetValue).mockResolvedValue(undefined);
     await ops.toggleBool("p1", true);
     expect(cmd.guardSetValue).toHaveBeenCalledWith("p1", true);
-    expect(useAppStore.getState().toasts.some((t) => t.message.includes("Change failed"))).toBe(false);
+    expect(toast.error).not.toHaveBeenCalledWith(expect.stringContaining("Change failed"));
   });
 });
 
@@ -199,16 +202,14 @@ describe("自定义参数", () => {
   it("空 ID 校验：错误 toast 且不 invoke", async () => {
     const ok = await ops.addCustom({ ...baseForm, id: "" });
     expect(ok).toBe(false);
-    expect(useAppStore.getState().toasts.some((t) => t.message === "Please enter an ID")).toBe(true);
+    expect(toast.error).toHaveBeenCalledWith("Please enter an ID");
     expect(cmd.guardAddCustomParam).not.toHaveBeenCalled();
   });
 
   it("int 默认值非法：Add failed toast 且不 invoke", async () => {
     const ok = await ops.addCustom({ ...baseForm, valueType: "int", defaultRaw: "abc" });
     expect(ok).toBe(false);
-    expect(
-      useAppStore.getState().toasts.some((t) => t.message.includes("Default value must be an integer")),
-    ).toBe(true);
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("Default value must be an integer"));
     expect(cmd.guardAddCustomParam).not.toHaveBeenCalled();
   });
 
@@ -236,7 +237,9 @@ describe("看守文件管理", () => {
     await screen.findByText("extra.toml");
     expect(screen.getByRole("button", { name: "Built-in" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Detect" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
+    // Delete 已收进 ⋯ 菜单（内联只保留 Detect / Edit / Built-in）：打开菜单后断言用户可见的 menuitem
+    await userEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(await screen.findByRole("menuitem", { name: "Delete" })).toBeInTheDocument();
   });
 
   it("检测路径不一致：原生 ask 确认后更新配置路径", async () => {

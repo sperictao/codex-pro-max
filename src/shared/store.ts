@@ -2,6 +2,7 @@
 // 输入即改草稿，Save/启动时才落盘）。Tauri 推送事件经事件桥直写本 store。
 
 import { create } from "zustand";
+import { toast } from "sonner";
 import { getStoredFamily, getStoredTheme, resolveDataTheme, type ThemeMode } from "./theme";
 import { currentLanguage, i18n } from "./i18n";
 import { log } from "./logger";
@@ -20,25 +21,21 @@ import type {
 
 export type View = "home" | "skill" | "guard" | "models" | "integration" | "settings";
 export type SettingsSection = "general" | "appearance" | "network" | "mode" | "guard" | "about";
-export type ToastType = "success" | "error" | "info";
-
-export interface ToastItem {
-  id: string;
-  message: string;
-  type: ToastType;
-}
-
 const initialServices = (): { taskboard: ProcessInfo; injector: ProcessInfo } => ({
   taskboard: { name: "taskboard-server", status: "stopped", pid: null, message: "" },
   injector: { name: "injector", status: "stopped", pid: null, message: "" },
 });
 
+// 切主题会让整屏 transition 重放：挂一帧 .disable-transitions 压掉（craft-spec R9）
 function applyDataTheme(mode: ThemeMode, family: string): void {
-  document.documentElement.dataset.theme = resolveDataTheme(
+  const root = document.documentElement;
+  root.classList.add("disable-transitions");
+  root.dataset.theme = resolveDataTheme(
     mode,
     family,
     window.matchMedia("(prefers-color-scheme: dark)").matches,
   );
+  requestAnimationFrame(() => root.classList.remove("disable-transitions"));
 }
 
 // 看守视图增量刷新基线（旧 lastGuardJson）：内容未变的轮询不触发重渲染
@@ -80,12 +77,8 @@ interface AppStore {
   // 主题（localStorage 是唯一事实来源，store 是渲染镜像）
   themeMode: ThemeMode;
   themeFamily: string;
-  toasts: ToastItem[];
-
   navigate: (view: View) => void;
   setSettingsSection: (section: SettingsSection) => void;
-  toast: (message: string, type?: ToastType) => void;
-  dismissToast: (id: string) => void;
   setThemeMode: (mode: ThemeMode) => void;
   setThemeFamily: (family: string) => void;
   syncSystemTheme: () => void;
@@ -128,7 +121,6 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   guardFiles: [],
   themeMode: getStoredTheme(readStored("theme")),
   themeFamily: getStoredFamily(readStored("theme-family")),
-  toasts: [],
 
   // 设置/集成是 toggle 语义：已在该视图时再点回主页（旧 nav.ts 行为）
   navigate: (view) => {
@@ -140,14 +132,6 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     }
   },
   setSettingsSection: (section) => set({ settingsSection: section }),
-
-  toast: (message, type = "info") => {
-    const id = crypto.randomUUID();
-    set((s) => ({ toasts: [...s.toasts, { id, message, type }] }));
-    // 3s 后组件开始淡出，3.3s 后移除（与旧 toast 时序一致）
-    setTimeout(() => get().dismissToast(id), 3300);
-  },
-  dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 
   setThemeMode: (mode) => {
     localStorage.setItem("theme", mode);
@@ -202,7 +186,7 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       await i18n.changeLanguage(resolved === "zh-CN" ? "zh-CN" : "en");
       document.documentElement.lang = currentLanguage();
     } catch (e) {
-      get().toast(i18n.t("Save failed: {{error}}", { error: String(e) }), "error");
+      toast.error(i18n.t("Save failed: {{error}}", { error: String(e) }));
     }
   },
 
@@ -212,9 +196,9 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       await cmd.updateSettings(currentConfigDraft(get()));
       const latest = await cmd.loadConfig();
       set({ guardState: latest.codex_guard ?? { enabled: false, params: {} } });
-      get().toast(i18n.t("Settings saved"), "success");
+      toast.success(i18n.t("Settings saved"));
     } catch (e) {
-      get().toast(i18n.t("Save failed: {{error}}", { error: String(e) }), "error");
+      toast.error(i18n.t("Save failed: {{error}}", { error: String(e) }));
     }
   },
 
@@ -226,7 +210,7 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       await cmd.autostartSet(next);
     } catch (e) {
       set({ autostart: !next });
-      get().toast(String(e), "error");
+      toast.error(String(e));
     }
   },
 
@@ -236,12 +220,10 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     try {
       await cmd.guardSetEnabled(next);
       set((s) => ({ guardState: { ...s.guardState, enabled: next } }));
-      get().toast(
-        next ? i18n.t("Config guard enabled") : i18n.t("Config guard disabled"),
-        next ? "success" : "info",
-      );
+      if (next) toast.success(i18n.t("Config guard enabled"));
+      else toast.info(i18n.t("Config guard disabled"));
     } catch (e) {
-      get().toast(i18n.t("Toggle failed: {{error}}", { error: String(e) }), "error");
+      toast.error(i18n.t("Toggle failed: {{error}}", { error: String(e) }));
     }
   },
 
@@ -264,15 +246,15 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       const info = await cmd.checkUpdate();
       set({ updateInfo: info.hasUpdate ? info : null, updateLastCheckAt: Date.now(), updateCheckError: null });
       if (info.hasUpdate) {
-        get().toast(i18n.t("New version available: v{{version}}", { version: String(info.availableVersion) }), "info");
+        toast.info(i18n.t("New version available: v{{version}}", { version: String(info.availableVersion) }));
       } else if (info.message) {
-        if (!silent) get().toast(info.message, "error");
+        if (!silent) toast.error(info.message);
       } else if (!silent) {
-        get().toast(i18n.t("Already up to date"), "info");
+        toast.info(i18n.t("Already up to date"));
       }
     } catch (e) {
       set({ updateCheckError: String(e) });
-      if (!silent) get().toast(i18n.t("Failed to check for updates: {{error}}", { error: String(e) }), "error");
+      if (!silent) toast.error(i18n.t("Failed to check for updates: {{error}}", { error: String(e) }));
     } finally {
       set({ updateBusyKind: null });
     }
@@ -289,10 +271,10 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     set({ updateBusyKind: "install" });
     try {
       const msg = await cmd.installUpdate(pending.availableVersion);
-      get().toast(msg, "success");
+      toast.success(msg);
       set({ updateInfo: null });
     } catch (e) {
-      get().toast(i18n.t("Update failed: {{error}}", { error: String(e) }), "error");
+      toast.error(i18n.t("Update failed: {{error}}", { error: String(e) }));
     } finally {
       // 旧 finally：隐藏进度行并归零进度条
       set({ updateBusyKind: null, downloadProgress: null });

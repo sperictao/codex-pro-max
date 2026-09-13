@@ -1,5 +1,23 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 @import "./themes.css";
+
+/* 暗面变体：本项目的暗色由 <html data-theme="<族id>-dark"> 表达（ADR 0008 的命名约定），
+   不是 .dark 类。原语里的 dark: 工具类必须映射到这里，否则整批失效。 */
+@custom-variant dark (&:is([data-theme$="-dark"] *));
+
+/* radix-nova 配方用的是布尔简写（data-open / data-checked / data-horizontal …），Tailwind 会把它们
+   编译成 [data-open] 这类存在性选择器；而本仓安装的 radix-ui 只发 data-state / data-orientation，
+   于是这些状态样式全部静默失效（实测：Switch 轨道透明不可见、Dialog/Select 无进场动画、Separator 无尺寸）。
+   这里把简写重映射到 Radix 的真实属性，同时保留布尔形式，便于将来 Radix 迁移。 */
+@custom-variant data-open (&:is([data-open], [data-state="open"], [data-state="delayed-open"], [data-state="instant-open"]));
+@custom-variant data-closed (&:is([data-closed], [data-state="closed"]));
+@custom-variant data-checked (&:is([data-checked], [data-state="checked"]));
+@custom-variant data-unchecked (&:is([data-unchecked], [data-state="unchecked"]));
+@custom-variant data-disabled (&:is([data-disabled], [data-state="disabled"]));
+@custom-variant data-active (&:is([data-active], [data-state="active"]));
+@custom-variant data-horizontal (&:is([data-horizontal], [data-orientation="horizontal"]));
+@custom-variant data-vertical (&:is([data-vertical], [data-orientation="vertical"]));
 
 /* shadcn token → Tailwind utility 桥（ADR 0008）。
    inline = 工具类直接引用 var(--x)，token 只活在 [data-theme] 块里，随主题切换。 */
@@ -32,20 +50,55 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
 
   --tracking-tighter: var(--tracking-tighter);
   --tracking-tight: var(--tracking-tight);
   --tracking-wide: var(--tracking-wide);
   --tracking-wider: var(--tracking-wider);
   --tracking-widest: var(--tracking-widest);
+
+  /* 上游原语引用的其余 token 族：不补桥，shadow/radius/sidebar/chart 会静默回落 Tailwind 默认值 */
+  --font-heading: var(--font-sans);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --shadow-2xs: var(--shadow-2xs);
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow: var(--shadow);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+  --shadow-2xl: var(--shadow-2xl);
 }
 
 /* 状态语义色不随族：42 个预设无法各自重新定义「绿=运行中」；
    错误色走 var(--destructive)（随族），成功/警告为亮暗皆可的固定值 */
 :root {
-  --status-ok: oklch(0.62 0.17 155);
-  --status-warn: oklch(0.72 0.15 80);
+  --header-height: 3rem; /* R8：顶栏高度成 token，不再散落 py-2.5 */
+  --status-ok: oklch(0.62 0.17 155); /* craft-allow-color: 状态语义固定色（ADR 0008） */
+  --status-warn: oklch(0.72 0.15 80); /* craft-allow-color: 状态语义固定色（ADR 0008） */
 }
+
+/* 主题/字体切换期间挂载，避免整屏 transition 重放（R9） */
+.disable-transitions * { transition: none !important; }
+html { overscroll-behavior: none; }
 
 /* ================= 自有 recipe 类（复合结构/状态，ADR 0008 保留为类） ================= */
 
@@ -98,7 +151,7 @@
   width: 170px;
   height: 170px;
   border-radius: 50%;
-  color: #fff;
+  color: #fff; /* craft-allow-color: 状态语义固定色（ADR 0008） */
   transition: transform 200ms ease, box-shadow 300ms ease, background 300ms ease;
   animation: service-status-pulse 5s ease-in-out infinite;
 }
@@ -112,7 +165,7 @@
   justify-content: center;
   width: 100%;
   height: 100%;
-  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.2));
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.2)); /* craft-allow-color: 状态语义固定色（ADR 0008） */
 }
 .status-indicator-symbol svg {
   display: block;
@@ -120,20 +173,20 @@
   height: 88px;
 }
 .status-indicator-icon.running {
-  background: radial-gradient(circle at 35% 30%, #78f59c 0%, #34c759 58%, #168d34 100%);
-  box-shadow: 0 10px 28px rgba(52, 199, 89, 0.3);
+  background: radial-gradient(circle at 35% 30%, #78f59c 0%, #34c759 58%, #168d34 100%); /* craft-allow-color: 状态语义固定色（ADR 0008） */
+  box-shadow: 0 10px 28px rgba(52, 199, 89, 0.3); /* craft-allow-color: 状态语义固定色（ADR 0008） */
 }
 .status-indicator-icon.stopped {
-  background: radial-gradient(circle at 35% 30%, #c9c9cf 0%, #8e8e93 60%, #636366 100%);
-  box-shadow: 0 10px 28px rgba(99, 99, 102, 0.24);
+  background: radial-gradient(circle at 35% 30%, #c9c9cf 0%, #8e8e93 60%, #636366 100%); /* craft-allow-color: 状态语义固定色（ADR 0008） */
+  box-shadow: 0 10px 28px rgba(99, 99, 102, 0.24); /* craft-allow-color: 状态语义固定色（ADR 0008） */
 }
 .status-indicator-icon.starting {
-  background: radial-gradient(circle at 35% 30%, #ffe88a 0%, #ffcc00 58%, #ff9500 100%);
-  box-shadow: 0 10px 28px rgba(255, 149, 0, 0.3);
+  background: radial-gradient(circle at 35% 30%, #ffe88a 0%, #ffcc00 58%, #ff9500 100%); /* craft-allow-color: 状态语义固定色（ADR 0008） */
+  box-shadow: 0 10px 28px rgba(255, 149, 0, 0.3); /* craft-allow-color: 状态语义固定色（ADR 0008） */
 }
 .status-indicator-icon.failed {
-  background: radial-gradient(circle at 35% 30%, #ff8d86 0%, #ff3b30 58%, #c82920 100%);
-  box-shadow: 0 10px 28px rgba(255, 59, 48, 0.3);
+  background: radial-gradient(circle at 35% 30%, #ff8d86 0%, #ff3b30 58%, #c82920 100%); /* craft-allow-color: 状态语义固定色（ADR 0008） */
+  box-shadow: 0 10px 28px rgba(255, 59, 48, 0.3); /* craft-allow-color: 状态语义固定色（ADR 0008） */
 }
 .status-indicator-text {
   font-size: 24px;
@@ -186,6 +239,12 @@
   min-width: 96px;
 }
 .select-card:hover { border-color: var(--foreground); }
+/* R4：选择卡是可交互控件，必须有可见键盘焦点（原来只有 hover / selected 两态） */
+.select-card:focus-visible {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 50%, transparent);
+}
 .select-card.selected { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
 .select-card .select-card-check {
   position: absolute;
@@ -221,18 +280,18 @@
   gap: 4px;
   padding: 8px 10px;
 }
-.mode-preview .mp-light { background: #fafafa; }
-.mode-preview .mp-dark { background: #0a0a0a; }
+.mode-preview .mp-light { background: #fafafa; } /* craft-allow-color: 模式预览固定为亮/暗基准色 */
+.mode-preview .mp-dark { background: #0a0a0a; } /* craft-allow-color: 模式预览固定为亮/暗基准色 */
 .mode-preview .mp-title { height: 5px; width: 45%; border-radius: 2px; }
 .mode-preview .mp-line { height: 4px; width: 100%; border-radius: 2px; }
 .mode-preview .mp-line.mp-short { width: 65%; }
 .mode-preview .mp-btn { height: 7px; width: 32%; border-radius: 9999px; margin-top: 2px; }
-.mode-preview .mp-light .mp-title { background: rgba(0, 0, 0, 0.4); }
-.mode-preview .mp-light .mp-line { background: rgba(0, 0, 0, 0.12); }
-.mode-preview .mp-light .mp-btn { background: #171717; }
-.mode-preview .mp-dark .mp-title { background: rgba(255, 255, 255, 0.5); }
-.mode-preview .mp-dark .mp-line { background: rgba(255, 255, 255, 0.16); }
-.mode-preview .mp-dark .mp-btn { background: #ededed; }
+.mode-preview .mp-light .mp-title { background: rgba(0, 0, 0, 0.4); } /* craft-allow-color: 模式预览固定为亮/暗基准色 */
+.mode-preview .mp-light .mp-line { background: rgba(0, 0, 0, 0.12); } /* craft-allow-color: 模式预览固定为亮/暗基准色 */
+.mode-preview .mp-light .mp-btn { background: #171717; } /* craft-allow-color: 模式预览固定为亮/暗基准色 */
+.mode-preview .mp-dark .mp-title { background: rgba(255, 255, 255, 0.5); } /* craft-allow-color: 模式预览固定为亮/暗基准色 */
+.mode-preview .mp-dark .mp-line { background: rgba(255, 255, 255, 0.16); } /* craft-allow-color: 模式预览固定为亮/暗基准色 */
+.mode-preview .mp-dark .mp-btn { background: #ededed; } /* craft-allow-color: 模式预览固定为亮/暗基准色 */
 
 /* 主题族色板卡预览：自身 data-theme 局部生效，直接渲染该族亮主题 token */
 .family-preview {
@@ -252,71 +311,31 @@
 .family-preview .fp-dot { width: 10px; height: 10px; border-radius: 9999px; }
 .family-preview .fp-bar { height: 4px; border-radius: 2px; background-color: var(--foreground); opacity: 0.25; }
 
-/* 顶部导航按钮 */
-.header-btn {
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 14px;
-  color: var(--foreground);
-  opacity: 0.65;
-  cursor: pointer;
-  transition: opacity 150ms, background-color 150ms;
-}
-.header-btn:hover { opacity: 1; background-color: var(--accent); color: var(--accent-foreground); }
-.header-btn.active { opacity: 1; background-color: var(--accent); color: var(--accent-foreground); font-weight: 500; }
+/* 顶部导航与设置侧栏已改走 Button 原语（variant ghost/secondary + aria-current），
+   原来靠 opacity 表达状态的 .header-btn / .nav-item recipe 删除（R4：状态由原语单点定义）。 */
 
-/* 设置侧栏 */
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
-  border-radius: 6px;
-  font-size: 14px;
-  width: 100%;
-  color: var(--foreground);
-  opacity: 0.7;
-  cursor: pointer;
-  transition: opacity 150ms, background-color 150ms;
+/* Toast（sonner，0b）：浮层身份走 ring + 语义阴影（R1/R2），类型色映射到状态 token。
+   选择器前缀 html 是为了压过 sonner 自带的 [data-sonner-toast][data-styled=true] 规则。 */
+html [data-sonner-toast][data-styled="true"] {
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--foreground) 10%, transparent), var(--shadow-md);
 }
-.nav-item:hover { opacity: 1; background-color: var(--accent); color: var(--accent-foreground); }
-.nav-item.active { opacity: 1; background-color: var(--accent); color: var(--accent-foreground); font-weight: 500; }
+html [data-sonner-toast][data-type="success"] { border-color: var(--status-ok); }
+html [data-sonner-toast][data-type="error"] { border-color: var(--destructive); }
+html [data-sonner-toast][data-type="info"] { border-color: var(--primary); }
 
-/* Toast */
-.toast {
-  padding: 10px 14px;
-  border-radius: 8px;
-  font-size: 13px;
-  max-width: 420px;
-  color: var(--card-foreground);
-  background-color: var(--card);
-  border: 1px solid var(--border);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-}
-.toast.success { border-color: var(--status-ok); }
-.toast.error { border-color: var(--destructive); }
-.toast.info { border-color: var(--primary); }
-
-/* 弹窗（hidden 类控制显隐，机制不变）
-   .hidden 规则必须压过 .modal-overlay 的 display:flex ——
-   未分层自定义 CSS 优先于 Tailwind utilities，不显式写就会常驻可见 */
+/* 全屏遮罩 recipe：应用内弹窗已改走 Dialog（自带遮罩/动效/焦点陷阱），这里只剩重启 Codex 的加载过渡层在用。
+   按 craft-spec R9 统一为 10% 黑 + blur-xs；加载层在下方单独加重以保证可读。 */
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background-color: rgba(0, 0, 0, 0.4);
+  background-color: rgb(0 0 0 / 0.1); /* craft-allow-color: 遮罩不随主题族（R9 固定 10% 黑） */
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 50;
-  animation: modal-fade-in 0.18s ease-out;
-}
-.modal-overlay.hidden {
-  display: none;
-}
-.modal-card {
-  animation: modal-pop-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: modal-fade-in 0.1s ease-out;
 }
 @keyframes modal-fade-in {
   from { opacity: 0; }
@@ -338,10 +357,7 @@
 /* ================= 重启 Codex：加载过渡层 =================
    复用 .modal-overlay（毛玻璃+入场动画一致），仅把遮罩调淡 */
 .loading-overlay {
-  background-color: rgba(0, 0, 0, 0.2);
-}
-.loading-overlay.hidden {
-  display: none;
+  background-color: rgb(0 0 0 / 0.2); /* craft-allow-color: 加载阻断层需更重的遮罩 */
 }
 /* 大幅加大：大卡片 + 大 spinner + 大文字，仅用主题 token */
 .loading-card {
@@ -352,9 +368,8 @@
   padding: 56px 80px;
   background-color: var(--card);
   color: var(--card-foreground);
-  border: 1px solid var(--border);
   border-radius: 20px;
-  box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--foreground) 10%, transparent), var(--shadow-xl);
   animation: modal-pop-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .loading-spinner {
@@ -372,22 +387,7 @@
   color: var(--muted-foreground);
   font-size: 16px;
 }
-.modal-card {
-  background-color: var(--card);
-  color: var(--card-foreground);
-  border: 1px solid var(--border);
-  border-radius: var(--radius, 12px);
-  padding: 20px;
-  width: 420px;
-  max-width: calc(100vw - 32px);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  box-shadow: 0 24px 32px -8px rgba(0, 0, 0, 0.18);
-}
-
-/* 看守页动态内容（guard-* 动态 HTML 用） */
-.guard-textarea,
+/* AddParamModal 的表单 textarea（GuardView 已改走 Textarea 原语） */
 .guard-form-textarea {
   width: 100%;
   min-height: 96px;
@@ -400,72 +400,13 @@
   color: var(--foreground);
   outline: none;
 }
-.guard-textarea:focus-visible,
 .guard-form-textarea:focus-visible {
   box-shadow: 0 0 0 2px var(--ring);
 }
 .guard-param-actual.ok { color: var(--status-ok); }
 .guard-param-actual.bad { color: var(--destructive); }
-/* 参数说明：标签旁 ? 图标，悬停/聚焦时弹出悬浮卡片 */
-.guard-param-help {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 15px;
-  height: 15px;
-  margin-left: 4px;
-  border-radius: 50%;
-  border: 1px solid var(--border);
-  font-size: 10px;
-  font-weight: normal;
-  vertical-align: 1px;
-  opacity: 0.55;
-  cursor: help;
-  user-select: none;
-  outline: none;
-}
-.guard-param-help:hover,
-.guard-param-help:focus-visible { opacity: 1; border-color: var(--ring); }
-.guard-param-desc {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 10;
-  width: max-content;
-  min-width: 160px;
-  max-width: 320px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--popover);
-  color: var(--popover-foreground);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  font-size: 12px;
-  font-weight: normal;
-  line-height: 1.5;
-  white-space: normal;
-  text-align: left;
-  cursor: default;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transition: opacity 0.15s ease, visibility 0.15s ease;
-}
-.guard-param-help:hover .guard-param-desc,
-.guard-param-help:focus-visible .guard-param-desc { opacity: 1; visibility: visible; }
-.guard-param-desc-path {
-  display: block;
-  margin-top: 4px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  opacity: 0.55;
-  word-break: break-all;
-}
-/* 操作按钮默认隐藏，悬停/键盘聚焦卡片时淡入（保留占位避免布局跳动） */
-.guard-param-actions { opacity: 0; visibility: hidden; transition: opacity 0.15s ease, visibility 0.15s ease; }
-.guard-param-card:hover .guard-param-actions,
-.guard-param-card:focus-within .guard-param-actions { opacity: 1; visibility: visible; }
+/* 参数说明与操作区：手写悬浮卡已换 Tooltip 原语，操作区改为常显（悬停才显隐会让控件键盘不可达）。
+   .guard-param-card 只作为选择钩子保留（guard.test.tsx 的 closest 与冒烟脚本依赖它）。 */
 /* 通用带文字开关：胶囊内部显示状态文字，旋钮位移随宽度自动计算
    用法：<input type="checkbox" class="text-switch" data-state-text="已启用" style="--sw-width: 4rem">
    - data-state-text：胶囊内的文字（随状态切换由调用方更新）
@@ -496,7 +437,7 @@
   height: 20px;
   border-radius: 50%;
   background: var(--background);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-xs);
   /* 弹性滑动：轻微过冲回弹，比线性 ease 更有质感 */
   transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
@@ -541,95 +482,9 @@
   transition: width 200ms;
 }
 
-/* ================= dsh 远程访问时间轴 ================= */
-.timeline-node {
-  position: relative;
-  display: flex;
-  gap: 0.75rem;
-  padding-bottom: 1rem;
-}
-/* 连接线：最后一个节点不画 */
-.timeline-node::before {
-  content: "";
-  position: absolute;
-  left: 0.6875rem;
-  top: 1.5rem;
-  bottom: 0;
-  width: 2px;
-  background-color: var(--border);
-}
-.timeline-node:last-child::before { display: none; }
-
-.timeline-marker {
-  position: relative;
-  z-index: 1;
-  width: 1.375rem;
-  height: 1.375rem;
-  flex-shrink: 0;
-  border-radius: 9999px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.6875rem;
-  line-height: 1;
-  background-color: var(--muted);
-  color: var(--muted-foreground);
-  border: 1px solid var(--border);
-}
-.timeline-node[data-state="done"] .timeline-marker {
-  background-color: var(--status-ok);
-  border-color: transparent;
-  color: #fff;
-}
-.timeline-node[data-state="running"] .timeline-marker {
-  background-color: var(--status-warn);
-  border-color: transparent;
-  animation: timeline-pulse 1s ease-in-out infinite;
-}
-.timeline-node[data-state="failed"] .timeline-marker {
-  background-color: var(--destructive);
-  border-color: transparent;
-  color: #fff;
-}
-.timeline-node[data-state="skipped"] { opacity: 0.45; }
-.timeline-node[data-state="pending"] .timeline-marker { opacity: 0.6; }
-
-.timeline-content { min-width: 0; flex: 1; padding-top: 0.125rem; }
-.timeline-title { font-size: 0.8125rem; font-weight: 500; }
-.timeline-detail { margin-top: 0.125rem; font-size: 0.75rem; opacity: 0.7; word-break: break-all; }
-
-/* 失败节点：问题 + 解决方案 */
-.timeline-issue {
-  margin-top: 0.5rem;
-  padding: 0.5rem 0.625rem;
-  border-radius: 0.5rem;
-  border: 1px solid var(--destructive);
-  background-color: color-mix(in srgb, var(--destructive) 8%, transparent);
-  font-size: 0.75rem;
-}
-.timeline-problem { color: var(--destructive); font-weight: 500; word-break: break-all; white-space: pre-line; }
-.timeline-solution { margin-top: 0.25rem; opacity: 0.9; word-break: break-all; }
-
-/* 运行中节点的小 spinner */
-.timeline-spinner {
-  width: 0.6875rem;
-  height: 0.6875rem;
-  border-radius: 9999px;
-  border: 2px solid rgba(255, 255, 255, 0.4);
-  border-top-color: #fff;
-  animation: timeline-spin 0.8s linear infinite;
-}
-@keyframes timeline-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.45; }
-}
-@keyframes timeline-spin {
-  to { transform: rotate(360deg); }
-}
-
 /* 更新徽标（header 软件名右侧）：幽灵圆形按钮，绿色随亮暗模式
    （参照 cc-switch：light green-600 / dark green-400 + 同色淡底 hover） */
-.update-badge { color: #16a34a; }
-.update-badge:hover { background-color: rgb(22 163 74 / 0.08); }
-[data-theme$="-dark"] .update-badge { color: #4ade80; }
-[data-theme$="-dark"] .update-badge:hover { background-color: rgb(74 222 128 / 0.12); }
+.update-badge { color: #16a34a; } /* craft-allow-color: 状态语义固定色（ADR 0008） */
+.update-badge:hover { background-color: rgb(22 163 74 / 0.08); } /* craft-allow-color: 状态语义固定色（ADR 0008） */
+[data-theme$="-dark"] .update-badge { color: #4ade80; } /* craft-allow-color: 状态语义固定色（ADR 0008） */
+[data-theme$="-dark"] .update-badge:hover { background-color: rgb(74 222 128 / 0.12); } /* craft-allow-color: 状态语义固定色（ADR 0008） */

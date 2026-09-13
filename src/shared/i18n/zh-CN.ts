@@ -158,6 +158,7 @@ export const zhCN: Record<I18nKey, string> = {
   "write": "写入",
   "Last checked {{checked}} | Last auto-restored {{restored}}": "上次校验 {{checked}} ｜ 上次自动恢复 {{restored}}",
   "Delete": "删除",
+  "More actions": "更多操作",
   "Delete custom parameter": "删除自定义参数",
   "Remove Config": "移除配置",
   "Config removed": "配置已移除",

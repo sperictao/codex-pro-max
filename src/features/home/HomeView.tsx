@@ -3,11 +3,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import { useAppStore } from "@/shared/store";
 import { currentConfigDraft } from "@/shared/config";
 import * as cmd from "@/shared/commands";
 import { Modal } from "@/shared/components/Modal";
-import { BTN, BTN_DESTRUCTIVE_LG, BTN_PRIMARY_LG } from "@/shared/lib/ui";
+import { Button } from "@/shared/components/ui/button";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import type { ProcessInfo, ProcessStatus } from "@/shared/types";
 
 // 后端错误前缀：Codex 已运行但未开 CDP（仅 Windows 发出）
@@ -70,31 +72,35 @@ function ServiceCard({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="rounded-xl border border-border bg-card text-card-foreground flex flex-col gap-3 p-4">
-      <div className="flex items-center justify-between">
-        <div className="text-sm font-medium">{kind === "taskboard" ? t("Taskboard Server") : t("Codex Injector")}</div>
-        <div className={`status-badge ${info.status}`}>
-          <span className="dot"></span>
-          <span>{t(STATUS_TEXT[info.status] ?? STATUS_TEXT.stopped)}</span>
+    <Card className="shadow-xs">
+      <CardHeader>
+        <CardTitle className="text-sm">{kind === "taskboard" ? t("Taskboard Server") : t("Codex Injector")}</CardTitle>
+        <CardAction>
+          <div className={`status-badge ${info.status}`}>
+            <span className="dot"></span>
+            <span>{t(STATUS_TEXT[info.status] ?? STATUS_TEXT.stopped)}</span>
+          </div>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <div className="min-h-8 truncate font-mono text-xs tabular-nums text-muted-foreground">
+          {info.message || (received ? "-" : t("Not started"))}
         </div>
-      </div>
-      <div className="min-h-8 truncate font-mono text-xs opacity-70">
-        {info.message || (received ? "-" : t("Not started"))}
-      </div>
-      <div className="flex gap-2">
-        <button className={BTN} disabled={info.status === "running" || info.status === "starting"} onClick={onStart}>
-          {t("Start")}
-        </button>
-        <button className={BTN} disabled={info.status !== "running"} onClick={onStop}>
-          {t("Stop")}
-        </button>
-        {onOpen && (
-          <button className={BTN} disabled={info.status !== "running"} onClick={onOpen}>
-            {t("Open")}
-          </button>
-        )}
-      </div>
-    </div>
+        <div className="flex gap-2">
+          <Button variant="outline" disabled={info.status === "running" || info.status === "starting"} onClick={onStart}>
+            {t("Start")}
+          </Button>
+          <Button variant="outline" disabled={info.status !== "running"} onClick={onStop}>
+            {t("Stop")}
+          </Button>
+          {onOpen && (
+            <Button variant="outline" disabled={info.status !== "running"} onClick={onOpen}>
+              {t("Open")}
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -102,7 +108,6 @@ export function HomeView() {
   const { t } = useTranslation();
   const services = useAppStore((s) => s.services);
   const servicesReceived = useAppStore((s) => s.servicesReceived);
-  const toast = useAppStore((s) => s.toast);
   const refreshStatus = useAppStore((s) => s.refreshStatus);
   const navigate = useAppStore((s) => s.navigate);
   const setSettingsSection = useAppStore((s) => s.setSettingsSection);
@@ -153,7 +158,7 @@ export function HomeView() {
   const onStartAll = async () => {
     const cfg = draft();
     if (!cfg.taskboard_path) {
-      toast(t("Please configure the Taskboard path in Settings first"), "error");
+      toast.error(t("Please configure the Taskboard path in Settings first"));
       navigate("settings");
       setSettingsSection("general");
       return;
@@ -162,13 +167,13 @@ export function HomeView() {
     try {
       await cmd.updateSettings(cfg);
       if (!(await startWithCodexRestart(() => cmd.startAll(cfg)))) {
-        toast(t("Launch cancelled"), "info");
+        toast.info(t("Launch cancelled"));
         return;
       }
-      toast(t("All services started"), "success");
+      toast.success(t("All services started"));
       await refreshStatus();
     } catch (e) {
-      toast(t("Launch failed: {{error}}", { error: String(e) }), "error");
+      toast.error(t("Launch failed: {{error}}", { error: String(e) }));
     } finally {
       setStartAllBusy(false);
     }
@@ -178,10 +183,10 @@ export function HomeView() {
     setStopAllBusy(true);
     try {
       await cmd.stopAll();
-      toast(t("All services stopped"), "info");
+      toast.info(t("All services stopped"));
       await refreshStatus();
     } catch (e) {
-      toast(t("Stop failed: {{error}}", { error: String(e) }), "error");
+      toast.error(t("Stop failed: {{error}}", { error: String(e) }));
     } finally {
       setStopAllBusy(false);
     }
@@ -192,17 +197,17 @@ export function HomeView() {
     try {
       if (kind === "taskboard") {
         await cmd.startTaskboard(cfg);
-        toast(t("Taskboard server started"), "success");
+        toast.success(t("Taskboard server started"));
       } else {
         if (!(await startWithCodexRestart(() => cmd.startInjector(cfg)))) {
-          toast(t("Launch cancelled"), "info");
+          toast.info(t("Launch cancelled"));
           return;
         }
-        toast(t("Codex injector started"), "success");
+        toast.success(t("Codex injector started"));
       }
       await refreshStatus();
     } catch (e) {
-      toast(t("Launch failed: {{error}}", { error: String(e) }), "error");
+      toast.error(t("Launch failed: {{error}}", { error: String(e) }));
     }
   };
 
@@ -210,14 +215,14 @@ export function HomeView() {
     try {
       if (kind === "taskboard") {
         await cmd.stopTaskboard();
-        toast(t("Taskboard server stopped"), "info");
+        toast.info(t("Taskboard server stopped"));
       } else {
         await cmd.stopInjector();
-        toast(t("Codex injector stopped"), "info");
+        toast.info(t("Codex injector stopped"));
       }
       await refreshStatus();
     } catch (e) {
-      toast(t("Stop failed: {{error}}", { error: String(e) }), "error");
+      toast.error(t("Stop failed: {{error}}", { error: String(e) }));
     }
   };
 
@@ -225,7 +230,7 @@ export function HomeView() {
     try {
       await cmd.openTaskboard(draft());
     } catch (e) {
-      toast(t("Open failed: {{error}}", { error: String(e) }), "error");
+      toast.error(t("Open failed: {{error}}", { error: String(e) }));
     }
   };
 
@@ -235,7 +240,7 @@ export function HomeView() {
   const allStopped = list.every((s) => s.status === "stopped" || s.status === "failed");
 
   return (
-    <main className="flex-1 overflow-y-auto p-6" id="main-view">
+    <main className="flex-1 overflow-y-auto p-4 md:p-6" id="main-view">
       <div className="status-indicator" id="service-status-indicator" role="status" aria-live="polite">
         <div className="status-indicator-icon-container">
           <div className={`status-indicator-icon ${indicator.state}`} aria-hidden="true">
@@ -245,7 +250,7 @@ export function HomeView() {
         <div className={`status-indicator-text ${indicator.state}`}>{t(indicator.textKey)}</div>
       </div>
 
-      <div className="mb-3 text-sm font-semibold">{t("Service Status")}</div>
+      <div className="mb-4 text-sm font-semibold">{t("Service Status")}</div>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <ServiceCard kind="taskboard" info={services.taskboard} received={servicesReceived.taskboard}
           onStart={() => void onStart("taskboard")()} onStop={() => void onStop("taskboard")()}
@@ -255,15 +260,15 @@ export function HomeView() {
       </div>
 
       <div className="mt-6 flex justify-center gap-4">
-        <button className={BTN_PRIMARY_LG} id="btn-start-all" disabled={anyRunning || startAllBusy} onClick={() => void onStartAll()}>
+        <Button size="lg" className="h-12 w-64" id="btn-start-all" disabled={anyRunning || startAllBusy} onClick={() => void onStartAll()}>
           {startAllBusy ? t("Starting...") : t("Start All")}
-        </button>
-        <button className={BTN_DESTRUCTIVE_LG} id="btn-stop-all" disabled={allStopped || stopAllBusy} onClick={() => void onStopAll()}>
+        </Button>
+        <Button variant="destructive" size="lg" className="h-12 w-64" id="btn-stop-all" disabled={allStopped || stopAllBusy} onClick={() => void onStopAll()}>
           {stopAllBusy ? t("Stopping...") : t("Stop All")}
-        </button>
+        </Button>
       </div>
 
-      <Modal open={restartAskOpen} labelledBy="codex-restart-modal-title" cardClassName="codex-modal-lg">
+      <Modal open={restartAskOpen} labelledBy="codex-restart-modal-title" title={t("Restart Codex")} cardClassName="codex-modal-lg">
         <div className="flex items-start gap-4">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-muted text-primary" aria-hidden="true">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>
@@ -276,16 +281,17 @@ export function HomeView() {
           </div>
         </div>
         <div className="mt-3 flex justify-end gap-2">
-          <button className={`${BTN} h-9 px-4 text-sm`} onClick={() => settleRestart(false)}>
+          <Button variant="outline" size="lg" className="px-4" onClick={() => settleRestart(false)}>
             {t("Cancel")}
-          </button>
-          <button
+          </Button>
+          <Button
             ref={restartConfirmRef}
-            className="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-4 text-sm"
+            size="lg"
+            className="px-4"
             onClick={() => settleRestart(true)}
           >
             {t("Restart Codex")}
-          </button>
+          </Button>
         </div>
       </Modal>
 

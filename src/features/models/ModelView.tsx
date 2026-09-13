@@ -6,22 +6,39 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ask } from "@tauri-apps/plugin-dialog";
-import { useAppStore } from "@/shared/store";
+import { MoreHorizontalIcon } from "lucide-react";
+import { toast } from "sonner";
 import { Modal } from "@/shared/components/Modal";
+import { Badge } from "@/shared/components/ui/badge";
+import { Button } from "@/shared/components/ui/button";
 import {
-  BTN,
-  BTN_DANGER_SM,
-  BTN_PRIMARY,
-  BTN_SM,
-  INPUT,
-  INPUT_MONO,
-  SELECT,
-} from "@/shared/lib/ui";
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/shared/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/shared/components/ui/dropdown-menu";
+import { Input } from "@/shared/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/shared/components/ui/select";
 import * as cmd from "@/shared/commands";
 import type { ModelConfigView, ModelPreset, ModelProviderView } from "@/shared/types";
 
 const EFFORTS = ["minimal", "low", "medium", "high", "xhigh"];
 const BUILTIN = "openai";
+// Radix Select 禁止空字符串 value：以哨兵承载「Default (not set)」，回写时映射回 ""
+const NONE = "__none__";
 
 // ============ 供应商编辑弹窗 ============
 
@@ -37,7 +54,6 @@ function ProviderModal({
   onSaved: () => Promise<void>;
 }) {
   const { t } = useTranslation();
-  const toast = useAppStore((s) => s.toast);
   const [id, setId] = useState("");
   const [name, setName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
@@ -67,23 +83,28 @@ function ProviderModal({
         envKey: authMode === "env" ? envKey.trim() : "",
         bearerToken: authMode === "key" ? token.trim() : "",
       });
-      toast(t("Provider saved"), "success");
+      toast.success(t("Provider saved"));
       await onSaved();
       onClose();
     } catch (e) {
-      toast(t("Operation failed: {{error}}", { error: String(e) }), "error");
+      toast.error(t("Operation failed: {{error}}", { error: String(e) }));
     }
   };
 
   return (
-    <Modal open={open} onOverlayClick={onClose} cardStyle={{ width: 560 }}>
+    <Modal
+      open={open}
+      onOverlayClick={onClose}
+      cardStyle={{ width: 560 }}
+      title={editing ? t("Edit Provider") : t("Add Provider")}
+    >
       <h3 className="text-sm font-semibold">{editing ? t("Edit Provider") : t("Add Provider")}</h3>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="mb-1 block text-xs font-medium">ID</label>
-          <input
+          <Input
             type="text"
-            className={INPUT_MONO}
+            className="font-mono tabular-nums"
             placeholder="deepseek"
             value={id}
             disabled={!!editing}
@@ -92,14 +113,14 @@ function ProviderModal({
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium">{t("Display name")}</label>
-          <input type="text" className={INPUT} placeholder="DeepSeek" value={name} onChange={(e) => setName(e.target.value)} />
+          <Input type="text" placeholder="DeepSeek" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
       </div>
       <div>
         <label className="mb-1 block text-xs font-medium">{t("Base URL")}</label>
-        <input
+        <Input
           type="text"
-          className={INPUT_MONO}
+          className="font-mono tabular-nums"
           placeholder="https://api.deepseek.com/v1"
           value={baseUrl}
           onChange={(e) => setBaseUrl(e.target.value)}
@@ -107,18 +128,23 @@ function ProviderModal({
       </div>
       <div>
         <label className="mb-1 block text-xs font-medium">{t("Authentication")}</label>
-        <select className={SELECT} value={authMode} onChange={(e) => setAuthMode(e.target.value as typeof authMode)}>
-          <option value="env">{t("Environment variable name")}</option>
-          <option value="key">{t("API key (written to config.toml)")}</option>
-          <option value="none">{t("No auth (local endpoints)")}</option>
-        </select>
+        <Select value={authMode} onValueChange={(v) => setAuthMode(v as typeof authMode)}>
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="env">{t("Environment variable name")}</SelectItem>
+            <SelectItem value="key">{t("API key (written to config.toml)")}</SelectItem>
+            <SelectItem value="none">{t("No auth (local endpoints)")}</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
       {authMode === "env" && (
         <div>
           <label className="mb-1 block text-xs font-medium">{t("Env var name")}</label>
-          <input
+          <Input
             type="text"
-            className={INPUT_MONO}
+            className="font-mono tabular-nums"
             placeholder="DEEPSEEK_API_KEY"
             value={envKey}
             onChange={(e) => setEnvKey(e.target.value)}
@@ -128,16 +154,14 @@ function ProviderModal({
       {authMode === "key" && (
         <div>
           <label className="mb-1 block text-xs font-medium">API Key</label>
-          <input type="text" className={INPUT_MONO} placeholder="sk-..." value={token} onChange={(e) => setToken(e.target.value)} />
+          <Input type="text" className="font-mono tabular-nums" placeholder="sk-..." value={token} onChange={(e) => setToken(e.target.value)} />
         </div>
       )}
       <div className="mt-1 flex justify-end gap-2">
-        <button className={BTN} onClick={onClose}>
+        <Button variant="outline" onClick={onClose}>
           {t("Cancel")}
-        </button>
-        <button className={BTN_PRIMARY} onClick={() => void submit()}>
-          {t("Save")}
-        </button>
+        </Button>
+        <Button onClick={() => void submit()}>{t("Save")}</Button>
       </div>
     </Modal>
   );
@@ -147,7 +171,6 @@ function ProviderModal({
 
 export function ModelView() {
   const { t } = useTranslation();
-  const toast = useAppStore((s) => s.toast);
 
   const [view, setView] = useState<ModelConfigView | null>(null);
   const [model, setModel] = useState("");
@@ -168,9 +191,9 @@ export function ModelView() {
       setProvider(v.provider || BUILTIN);
       setEffort(v.effort);
     } catch (e) {
-      toast(t("Failed to load model config: {{error}}", { error: String(e) }), "error");
+      toast.error(t("Failed to load model config: {{error}}", { error: String(e) }));
     }
-  }, [t, toast]);
+  }, [t]);
 
   useEffect(() => {
     void refresh();
@@ -179,10 +202,10 @@ export function ModelView() {
   const apply = async () => {
     try {
       await cmd.modelApply(model, provider, effort);
-      toast(t("Model configuration applied"), "success");
+      toast.success(t("Model configuration applied"));
       await refresh();
     } catch (e) {
-      toast(t("Operation failed: {{error}}", { error: String(e) }), "error");
+      toast.error(t("Operation failed: {{error}}", { error: String(e) }));
     }
   };
 
@@ -194,10 +217,10 @@ export function ModelView() {
     if (!ok) return;
     try {
       await cmd.modelProviderDelete(p.id);
-      toast(t("Provider deleted"), "success");
+      toast.success(t("Provider deleted"));
       await refresh();
     } catch (e) {
-      toast(t("Operation failed: {{error}}", { error: String(e) }), "error");
+      toast.error(t("Operation failed: {{error}}", { error: String(e) }));
     }
   };
 
@@ -205,22 +228,22 @@ export function ModelView() {
     const preset: ModelPreset = { id: "", label: presetLabel, model, provider, effort };
     try {
       await cmd.modelPresetSave(preset);
-      toast(t("Preset saved"), "success");
+      toast.success(t("Preset saved"));
       setPresetModal(false);
       setPresetLabel("");
       await refresh();
     } catch (e) {
-      toast(t("Operation failed: {{error}}", { error: String(e) }), "error");
+      toast.error(t("Operation failed: {{error}}", { error: String(e) }));
     }
   };
 
   const applyPreset = async (p: ModelPreset) => {
     try {
       await cmd.modelApply(p.model, p.provider, p.effort);
-      toast(t("Model configuration applied"), "success");
+      toast.success(t("Model configuration applied"));
       await refresh();
     } catch (e) {
-      toast(t("Operation failed: {{error}}", { error: String(e) }), "error");
+      toast.error(t("Operation failed: {{error}}", { error: String(e) }));
     }
   };
 
@@ -232,10 +255,10 @@ export function ModelView() {
     if (!ok) return;
     try {
       await cmd.modelPresetDelete(p.id);
-      toast(t("Preset deleted"), "success");
+      toast.success(t("Preset deleted"));
       await refresh();
     } catch (e) {
-      toast(t("Operation failed: {{error}}", { error: String(e) }), "error");
+      toast.error(t("Operation failed: {{error}}", { error: String(e) }));
     }
   };
 
@@ -259,135 +282,173 @@ export function ModelView() {
         : t("No auth");
 
   return (
-    <main className="flex-1 overflow-y-auto p-6" id="model-view">
+    <main className="flex-1 overflow-y-auto p-4 md:p-6" id="model-view">
       <h2 className="mb-4 text-base font-semibold">{t("Models")}</h2>
 
       {/* 当前模型 */}
-      <div className="rounded-xl border border-border bg-card text-card-foreground flex flex-col gap-3 p-4">
-        <div className="text-sm font-medium">{t("Active Model")}</div>
-        <div className="grid grid-cols-3 gap-3">
-          <div>
-            <label className="mb-1 block text-xs font-medium">{t("Model id")}</label>
-            <input
-              type="text"
-              className={INPUT_MONO}
-              placeholder="gpt-5-codex"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-            />
+      <Card className="shadow-xs">
+        <CardHeader>
+          <CardTitle>{t("Active Model")}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium">{t("Model id")}</label>
+              <Input
+                type="text"
+                className="font-mono tabular-nums"
+                placeholder="gpt-5-codex"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium">{t("Provider")}</label>
+              <Select value={provider} onValueChange={(v) => setProvider(v)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {providerOptions.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium">{t("Reasoning Effort")}</label>
+              <Select value={effort === "" ? NONE : effort} onValueChange={(v) => setEffort(v === NONE ? "" : v)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>{t("Default (not set)")}</SelectItem>
+                  {EFFORTS.map((e) => (
+                    <SelectItem key={e} value={e} className="tabular-nums">
+                      {e}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium">{t("Provider")}</label>
-            <select className={SELECT} value={provider} onChange={(e) => setProvider(e.target.value)}>
-              {providerOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium">{t("Reasoning Effort")}</label>
-            <select className={SELECT} value={effort} onChange={(e) => setEffort(e.target.value)}>
-              <option value="">{t("Default (not set)")}</option>
-              {EFFORTS.map((e) => (
-                <option key={e} value={e}>
-                  {e}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-xs opacity-60">
+        </CardContent>
+        <CardContent className="flex items-center justify-between gap-3">
+          <span className="text-xs text-muted-foreground">
             {t("Empty model id clears the key (Codex default model). Changes are written to")}{" "}
-            <span className="font-mono">~/.codex/config.toml</span>
+            <span className="font-mono tabular-nums">~/.codex/config.toml</span>
             {t(" (backed up before each write; restart Codex sessions to take effect).")}
           </span>
-          <button className={BTN_PRIMARY} onClick={() => void apply()}>
-            {t("Apply")}
-          </button>
-        </div>
-      </div>
+          <Button onClick={() => void apply()}>{t("Apply")}</Button>
+        </CardContent>
+      </Card>
 
       {/* 供应商 */}
-      <div className="mt-4 rounded-xl border border-border bg-card text-card-foreground flex flex-col gap-3 p-4">
-        <div className="flex items-center justify-between">
-          <div className="text-sm font-medium">{t("Providers")}</div>
-          <button
-            className={BTN_SM}
-            onClick={() => setProviderModal({ open: true, editing: null })}
-          >
-            {t("Add Provider")}
-          </button>
-        </div>
-        {(view?.providers ?? []).length === 0 && (
-          <div className="text-xs opacity-60">
-            {t("No custom providers; Codex uses the built-in OpenAI by default.")}
-          </div>
-        )}
-        {(view?.providers ?? []).map((p) => (
-          <div key={p.id} className="flex items-start justify-between gap-3 rounded-lg border border-border p-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 text-sm">
-                <span>{p.name || p.id}</span>
-                {p.active && (
-                  <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs text-primary">{t("Active")}</span>
-                )}
-              </div>
-              <div className="truncate font-mono text-xs opacity-60">
-                {p.id} · {p.baseUrl}
-              </div>
-              <div className="text-xs opacity-60">{authSummary(p)}</div>
+      <Card className="mt-4 shadow-xs">
+        <CardHeader>
+          <CardTitle>{t("Providers")}</CardTitle>
+          <CardAction>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setProviderModal({ open: true, editing: null })}
+            >
+              {t("Add Provider")}
+            </Button>
+          </CardAction>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {(view?.providers ?? []).length === 0 && (
+            <div className="text-xs text-muted-foreground">
+              {t("No custom providers; Codex uses the built-in OpenAI by default.")}
             </div>
-            <div className="flex shrink-0 gap-2">
-              <button className={BTN_SM} onClick={() => setProviderModal({ open: true, editing: p })}>
-                {t("Edit")}
-              </button>
-              <button className={BTN_DANGER_SM} onClick={() => void deleteProvider(p)}>
-                {t("Delete")}
-              </button>
+          )}
+          {(view?.providers ?? []).map((p) => (
+            <div key={p.id} className="flex items-start justify-between gap-3 rounded-lg border border-border p-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-sm">
+                  <span>{p.name || p.id}</span>
+                  {p.active && <Badge variant="secondary">{t("Active")}</Badge>}
+                </div>
+                <div className="truncate font-mono text-xs tabular-nums text-muted-foreground">
+                  {p.id} · {p.baseUrl}
+                </div>
+                <div className="text-xs text-muted-foreground">{authSummary(p)}</div>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <Button variant="outline" size="sm" onClick={() => setProviderModal({ open: true, editing: p })}>
+                  {t("Edit")}
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon-sm" aria-label={t("More actions")}>
+                      <MoreHorizontalIcon />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem variant="destructive" onSelect={() => void deleteProvider(p)}>
+                      {t("Delete")}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </CardContent>
+      </Card>
 
       {/* 预设 */}
-      <div className="mt-4 rounded-xl border border-border bg-card text-card-foreground flex flex-col gap-3 p-4">
-        <div className="flex items-center justify-between">
-          <div className="text-sm font-medium">{t("Presets")}</div>
-          <button
-            className={BTN_SM}
-            disabled={!model.trim()}
-            title={model.trim() ? undefined : t("Configure a model above first")}
-            onClick={() => setPresetModal(true)}
-          >
-            {t("Save current as preset")}
-          </button>
-        </div>
-        {(view?.presets ?? []).length === 0 && (
-          <div className="text-xs opacity-60">{t("No presets yet; save the model above as one.")}</div>
-        )}
-        {(view?.presets ?? []).map((p) => (
-          <div key={p.id} className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
-            <div className="min-w-0">
-              <div className="text-sm">{p.label}</div>
-              <div className="truncate font-mono text-xs opacity-60">
-                {p.model} · {p.provider || BUILTIN}
-                {p.effort ? ` · ${p.effort}` : ""}
+      <Card className="mt-4 shadow-xs">
+        <CardHeader>
+          <CardTitle>{t("Presets")}</CardTitle>
+          <CardAction>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!model.trim()}
+              title={model.trim() ? undefined : t("Configure a model above first")}
+              onClick={() => setPresetModal(true)}
+            >
+              {t("Save current as preset")}
+            </Button>
+          </CardAction>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {(view?.presets ?? []).length === 0 && (
+            <div className="text-xs text-muted-foreground">{t("No presets yet; save the model above as one.")}</div>
+          )}
+          {(view?.presets ?? []).map((p) => (
+            <div key={p.id} className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+              <div className="min-w-0">
+                <div className="text-sm">{p.label}</div>
+                <div className="truncate font-mono text-xs tabular-nums text-muted-foreground">
+                  {p.model} · {p.provider || BUILTIN}
+                  {p.effort ? ` · ${p.effort}` : ""}
+                </div>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <Button variant="outline" size="sm" onClick={() => void applyPreset(p)}>
+                  {t("Apply")}
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon-sm" aria-label={t("More actions")}>
+                      <MoreHorizontalIcon />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem variant="destructive" onSelect={() => void deletePreset(p)}>
+                      {t("Delete")}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
-            <div className="flex shrink-0 gap-2">
-              <button className={BTN_SM} onClick={() => void applyPreset(p)}>
-                {t("Apply")}
-              </button>
-              <button className={BTN_DANGER_SM} onClick={() => void deletePreset(p)}>
-                {t("Delete")}
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </CardContent>
+      </Card>
 
       <ProviderModal
         open={providerModal.open}
@@ -397,29 +458,31 @@ export function ModelView() {
       />
 
       {/* 存预设：只需要一个名字，模型三字段取当前表单值 */}
-      <Modal open={presetModal} onOverlayClick={() => setPresetModal(false)} cardStyle={{ width: 460 }}>
+      <Modal
+        open={presetModal}
+        onOverlayClick={() => setPresetModal(false)}
+        cardStyle={{ width: 460 }}
+        title={t("Save current as preset")}
+      >
         <h3 className="text-sm font-semibold">{t("Save current as preset")}</h3>
         <div>
           <label className="mb-1 block text-xs font-medium">{t("Preset name")}</label>
-          <input
+          <Input
             type="text"
-            className={INPUT}
             placeholder={t("e.g. Fast scout")}
             value={presetLabel}
             onChange={(e) => setPresetLabel(e.target.value)}
           />
         </div>
-        <div className="font-mono text-xs opacity-60">
+        <div className="font-mono text-xs tabular-nums text-muted-foreground">
           {model} · {provider}
           {effort ? ` · ${effort}` : ""}
         </div>
         <div className="mt-1 flex justify-end gap-2">
-          <button className={BTN} onClick={() => setPresetModal(false)}>
+          <Button variant="outline" onClick={() => setPresetModal(false)}>
             {t("Cancel")}
-          </button>
-          <button className={BTN_PRIMARY} onClick={() => void savePreset()}>
-            {t("Save")}
-          </button>
+          </Button>
+          <Button onClick={() => void savePreset()}>{t("Save")}</Button>
         </div>
       </Modal>
     </main>

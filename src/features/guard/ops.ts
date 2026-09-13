@@ -4,6 +4,7 @@
 import { ask } from "@tauri-apps/plugin-dialog";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
 import { useAppStore } from "@/shared/store";
+import { toast } from "sonner";
 import * as cmd from "@/shared/commands";
 import { log } from "@/shared/logger";
 import { i18n } from "@/shared/i18n";
@@ -31,7 +32,7 @@ export async function toggleBool(id: string, next: boolean): Promise<void> {
     await cmd.guardSetValue(id, next);
     await store().refreshGuardView(true);
   } catch (e) {
-    store().toast(t("Change failed: {{error}}", { error: String(e) }), "error");
+    toast.error(t("Change failed: {{error}}", { error: String(e) }));
   }
 }
 
@@ -41,14 +42,14 @@ export async function setValue(id: string, raw: string): Promise<void> {
     if (!p) return;
     const value = p.valueType === "int" ? parseInt(raw, 10) : raw;
     if (p.valueType === "int" && Number.isNaN(value)) {
-      store().toast(t("Please enter an integer"), "error");
+      toast.error(t("Please enter an integer"));
       await store().refreshGuardView(true);
       return;
     }
     await cmd.guardSetValue(id, value);
     await store().refreshGuardView(true);
   } catch (e) {
-    store().toast(t("Save failed: {{error}}", { error: String(e) }), "error");
+    toast.error(t("Save failed: {{error}}", { error: String(e) }));
     await store().refreshGuardView(true);
   }
 }
@@ -56,9 +57,9 @@ export async function setValue(id: string, raw: string): Promise<void> {
 export async function applyParam(id: string): Promise<void> {
   try {
     await cmd.guardApply(id);
-    store().toast(t("Applied"), "success");
+    toast.success(t("Applied"));
   } catch (e) {
-    store().toast(t("Apply failed: {{error}}", { error: String(e) }), "error");
+    toast.error(t("Apply failed: {{error}}", { error: String(e) }));
   }
   await store().refreshGuardView(true);
 }
@@ -66,9 +67,9 @@ export async function applyParam(id: string): Promise<void> {
 export async function disableParam(id: string): Promise<void> {
   try {
     await cmd.guardSetApplied(id, false);
-    store().toast(t("Disabled"), "info");
+    toast.info(t("Disabled"));
   } catch (e) {
-    store().toast(t("Operation failed: {{error}}", { error: String(e) }), "error");
+    toast.error(t("Operation failed: {{error}}", { error: String(e) }));
   }
   await store().refreshGuardView(true);
 }
@@ -83,7 +84,7 @@ export async function toggleApplied(id: string): Promise<void> {
       await applyParam(id);
     }
   } catch (e) {
-    store().toast(t("Operation failed: {{error}}", { error: String(e) }), "error");
+    toast.error(t("Operation failed: {{error}}", { error: String(e) }));
     await store().refreshGuardView(true);
   }
 }
@@ -91,9 +92,10 @@ export async function toggleApplied(id: string): Promise<void> {
 export async function setLocked(id: string, locked: boolean): Promise<void> {
   try {
     await cmd.guardSetLocked(id, locked);
-    store().toast(locked ? t("Locked") : t("Unlocked"), locked ? "success" : "info");
+    if (locked) toast.success(t("Locked"));
+    else toast.info(t("Unlocked"));
   } catch (e) {
-    store().toast(t("Operation failed: {{error}}", { error: String(e) }), "error");
+    toast.error(t("Operation failed: {{error}}", { error: String(e) }));
   }
   await store().refreshGuardView(true);
 }
@@ -109,10 +111,10 @@ export async function removeConfig(id: string): Promise<void> {
   if (!ok) return;
   try {
     await cmd.guardRemoveConfig(id);
-    store().toast(t("Config removed"), "success");
+    toast.success(t("Config removed"));
     await store().refreshGuardView(true);
   } catch (e) {
-    store().toast(t("Operation failed: {{error}}", { error: String(e) }), "error");
+    toast.error(t("Operation failed: {{error}}", { error: String(e) }));
   }
 }
 
@@ -124,10 +126,10 @@ export async function removeCustom(id: string): Promise<void> {
   if (!ok) return;
   try {
     await cmd.guardRemoveCustomParam(id);
-    store().toast(t("Deleted"), "success");
+    toast.success(t("Deleted"));
     await store().refreshGuardView(true);
   } catch (e) {
-    store().toast(t("Delete failed: {{error}}", { error: String(e) }), "error");
+    toast.error(t("Delete failed: {{error}}", { error: String(e) }));
   }
 }
 
@@ -163,11 +165,11 @@ function parseDefaultValue(value: string, effectiveType: string): unknown {
 
 // 返回 true 表示添加成功（调用方清空表单并关弹窗）
 export async function addCustom(form: AddCustomForm): Promise<boolean> {
-  if (!form.id) { store().toast(t("Please enter an ID"), "error"); return false; }
-  if (!form.label) { store().toast(t("Please enter a name"), "error"); return false; }
-  if (!form.fileId) { store().toast(t("Please select a target file"), "error"); return false; }
+  if (!form.id) { toast.error(t("Please enter an ID")); return false; }
+  if (!form.label) { toast.error(t("Please enter a name")); return false; }
+  if (!form.fileId) { toast.error(t("Please select a target file")); return false; }
   if ((form.mode === "toml_key" || form.mode === "toml_absent") && !form.path) {
-    store().toast(t("Please enter a TOML path"), "error");
+    toast.error(t("Please enter a TOML path"));
     return false;
   }
   try {
@@ -184,11 +186,11 @@ export async function addCustom(form: AddCustomForm): Promise<boolean> {
       custom: true,
     };
     await cmd.guardAddCustomParam(param, form.fileId);
-    store().toast(t("Custom parameter added"), "success");
+    toast.success(t("Custom parameter added"));
     await store().refreshGuardView(true);
     return true;
   } catch (e) {
-    store().toast(t("Add failed: {{error}}", { error: String(e) }), "error");
+    toast.error(t("Add failed: {{error}}", { error: String(e) }));
     return false;
   }
 }
@@ -201,9 +203,9 @@ export async function openSchemaFile(): Promise<void> {
     try {
       const path = await cmd.guardGetSchemaFilePath();
       await navigator.clipboard.writeText(path);
-      store().toast(t("Path copied to clipboard: {{path}}", { path }), "info");
+      toast.info(t("Path copied to clipboard: {{path}}", { path }));
     } catch {
-      store().toast(t("Open failed: {{error}}", { error: String(e) }), "error");
+      toast.error(t("Open failed: {{error}}", { error: String(e) }));
     }
   }
 }
@@ -241,37 +243,35 @@ export async function detectFile(id: string, auto = false): Promise<void> {
       );
       if (ok) {
         await cmd.guardUpdateFile(id, updated.name, detected);
-        store().toast(t("Updated to the detected path"), "success");
+        toast.success(t("Updated to the detected path"));
         await refreshFiles();
         await store().refreshGuardView(true);
       }
     } else if (!auto) {
-      store().toast(
-        detected ? t("Detection complete: path matches") : t("File not found under ~/.codex"),
-        detected ? "success" : "info",
-      );
+      if (detected) toast.success(t("Detection complete: path matches"));
+      else toast.info(t("File not found under ~/.codex"));
     }
   } catch (e) {
-    if (!auto) store().toast(t("Detection failed: {{error}}", { error: String(e) }), "error");
+    if (!auto) toast.error(t("Detection failed: {{error}}", { error: String(e) }));
   }
 }
 
 export async function saveFile(editingId: string | null, name: string, file: string, format: string): Promise<boolean> {
-  if (!name) { store().toast(t("Please enter a file name"), "error"); return false; }
-  if (!file) { store().toast(t("Please enter a file path"), "error"); return false; }
+  if (!name) { toast.error(t("Please enter a file name")); return false; }
+  if (!file) { toast.error(t("Please enter a file path")); return false; }
   try {
     if (editingId) {
       await cmd.guardUpdateFile(editingId, name, file);
-      store().toast(t("Updated"), "success");
+      toast.success(t("Updated"));
     } else {
       await cmd.guardAddFile(name, file, format);
-      store().toast(t("File added"), "success");
+      toast.success(t("File added"));
     }
     await refreshFiles();
     await store().refreshGuardView(true);
     return true;
   } catch (e) {
-    store().toast(t(editingId ? "Update failed: {{error}}" : "Add failed: {{error}}", { error: String(e) }), "error");
+    toast.error(t(editingId ? "Update failed: {{error}}" : "Add failed: {{error}}", { error: String(e) }));
     return false;
   }
 }
@@ -286,10 +286,10 @@ export async function removeFile(id: string): Promise<void> {
   if (!ok) return;
   try {
     await cmd.guardRemoveFile(id);
-    store().toast(t("Deleted"), "success");
+    toast.success(t("Deleted"));
     await refreshFiles();
     await store().refreshGuardView(true);
   } catch (e) {
-    store().toast(t("Delete failed: {{error}}", { error: String(e) }), "error");
+    toast.error(t("Delete failed: {{error}}", { error: String(e) }));
   }
 }

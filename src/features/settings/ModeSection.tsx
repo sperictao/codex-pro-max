@@ -2,7 +2,7 @@
 
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "@/shared/store";
-import { TOGGLE } from "@/shared/lib/ui";
+import { Switch } from "@/shared/components/ui/switch";
 
 export function ModeSection() {
   const { t } = useTranslation();
@@ -17,9 +17,9 @@ export function ModeSection() {
 
       <div className="flex items-start gap-4 border-b border-border py-4">
         <label className="w-36 shrink-0 pt-1 text-sm font-medium">{t("Launch Mode")}</label>
-        <label className="flex flex-1 cursor-pointer items-center gap-3">
-          <input type="checkbox" className={TOGGLE} id="toggle-mode" checked={separateWindow}
-            onChange={(e) => setConfigField({ separate_window_mode: e.target.checked })} />
+        <label className="flex flex-1 cursor-pointer items-center gap-3" htmlFor="toggle-mode">
+          <Switch id="toggle-mode" checked={separateWindow}
+            onCheckedChange={(next) => setConfigField({ separate_window_mode: next })} />
           <span className="text-sm">
             {separateWindow
               ? t("Separate window mode (does not restart Codex)")
@@ -30,9 +30,9 @@ export function ModeSection() {
 
       <div className="flex items-start gap-4 py-4">
         <label className="w-36 shrink-0 pt-1 text-sm font-medium">{t("Auto-open Browser")}</label>
-        <label className="flex flex-1 cursor-pointer items-center gap-3">
-          <input type="checkbox" className={TOGGLE} id="toggle-auto-open" checked={autoOpen}
-            onChange={(e) => setConfigField({ auto_open: e.target.checked })} />
+        <label className="flex flex-1 cursor-pointer items-center gap-3" htmlFor="toggle-auto-open">
+          <Switch id="toggle-auto-open" checked={autoOpen}
+            onCheckedChange={(next) => setConfigField({ auto_open: next })} />
           <span className="text-sm">
             {autoOpen ? t("Open browser automatically on start") : t("Do not open browser automatically")}
           </span>

@@ -3,11 +3,13 @@
 
 import { useTranslation } from "react-i18next";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
+import { toast } from "sonner";
 import { useAppStore } from "@/shared/store";
 import * as cmd from "@/shared/commands";
 import { fmtTs } from "@/shared/lib/format";
 import { openRepo } from "@/shared/lib/links";
-import { BTN } from "@/shared/lib/ui";
+import { Button } from "@/shared/components/ui/button";
+import { Card, CardTitle } from "@/shared/components/ui/card";
 
 export function AboutSection() {
   const { t } = useTranslation();
@@ -20,14 +22,13 @@ export function AboutSection() {
   const updateCheckError = useAppStore((s) => s.updateCheckError);
   const downloadProgress = useAppStore((s) => s.downloadProgress);
   const installPendingUpdate = useAppStore((s) => s.installPendingUpdate);
-  const toast = useAppStore((s) => s.toast);
 
   const openHelp = async (target: "docs" | "template") => {
     try {
       const paths = await cmd.getUpdaterHelpPaths();
       await openUrl(target === "docs" ? paths.docsPath : paths.templatePath);
     } catch (e) {
-      toast(t("Failed to open help: {{error}}", { error: String(e) }), "error");
+      toast.error(t("Failed to open help: {{error}}", { error: String(e) }));
     }
   };
 
@@ -82,13 +83,13 @@ export function AboutSection() {
 
       <div className="flex items-start gap-4 border-b border-border py-3">
         <span className="w-36 shrink-0 text-sm font-medium">{t("App Version")}</span>
-        <span className="font-mono text-sm" id="about-version">{appVersion}</span>
+        <span className="font-mono text-sm tabular-nums" id="about-version">{appVersion}</span>
       </div>
 
       {/* 更新状态聚合卡 */}
-      <div className="mt-3 flex max-w-2xl flex-col gap-3 rounded-xl border border-border bg-card p-4 text-card-foreground">
+      <Card className="mt-3 max-w-2xl gap-3 p-4 shadow-xs">
         <div className="flex items-center justify-between gap-3">
-          <div className="text-sm font-medium">{t("Updates")}</div>
+          <CardTitle className="text-sm">{t("Updates")}</CardTitle>
           <span className={`status-badge ${healthBadge.cls}`}>
             <span className="dot"></span>
             <span>{healthBadge.text}</span>
@@ -100,20 +101,20 @@ export function AboutSection() {
             {healthDetail}
             <span className="ml-2">
               {t("Configuration Help")}:{" "}
-              <a className="cursor-pointer text-primary underline-offset-4 hover:underline" onClick={() => void openHelp("docs")}>
+              <button type="button" className="cursor-pointer rounded-sm text-primary underline-offset-4 hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none" onClick={() => void openHelp("docs")}>
                 {t("Setup Guide")}
-              </a>
+              </button>
               {" · "}
-              <a className="cursor-pointer text-primary underline-offset-4 hover:underline" onClick={() => void openHelp("template")}>
+              <button type="button" className="cursor-pointer rounded-sm text-primary underline-offset-4 hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none" onClick={() => void openHelp("template")}>
                 {t("Config Template")}
-              </a>
+              </button>
             </span>
           </div>
         )}
 
         <div className="text-sm">
           {updateInfo?.hasUpdate && updateInfo.availableVersion ? (
-            <span>
+            <span className="tabular-nums">
               v{updateInfo.currentVersion} →{" "}
               <span className="font-medium text-primary">v{updateInfo.availableVersion}</span>
             </span>
@@ -122,20 +123,20 @@ export function AboutSection() {
           ) : updateLastCheckAt !== null ? (
             <span>{t("Already up to date")}</span>
           ) : (
-            <span className="opacity-60">{t("Checking...")}</span>
+            <span className="text-muted-foreground">{t("Checking...")}</span>
           )}
         </div>
-        {notes && <div className="text-xs whitespace-pre-wrap opacity-70">{notes}</div>}
+        {notes && <div className="text-xs whitespace-pre-wrap text-muted-foreground">{notes}</div>}
         {updateLastCheckAt !== null && (
-          <div className="text-xs opacity-50">
+          <div className="text-xs text-muted-foreground tabular-nums">
             {t("Last checked {{at}}", { at: fmtTs(Math.floor(updateLastCheckAt / 1000)) })}
           </div>
         )}
 
         <div className="flex items-center gap-3">
-          <button className={BTN} id="btn-check-update" disabled={updateBusyKind !== null} onClick={() => void installPendingUpdate()}>
+          <Button variant="outline" id="btn-check-update" disabled={updateBusyKind !== null} onClick={() => void installPendingUpdate()}>
             {updateBtnText}
-          </button>
+          </Button>
         </div>
 
         {p && (
@@ -144,16 +145,16 @@ export function AboutSection() {
             <div className="update-progress-track">
               <div className="update-progress-bar" style={progressWidth ? { width: progressWidth } : undefined}></div>
             </div>
-            <span className="text-xs">{progressText}</span>
+            <span className="text-xs tabular-nums">{progressText}</span>
           </div>
         )}
-      </div>
+      </Card>
 
       <div className="mt-3 flex items-start gap-4 border-t border-border py-3">
         <span className="w-36 shrink-0 text-sm font-medium">GitHub</span>
-        <a className="cursor-pointer text-sm text-primary underline-offset-4 hover:underline" onClick={() => void openRepo()}>
+        <button type="button" className="cursor-pointer rounded-sm text-sm text-primary underline-offset-4 hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none" onClick={() => void openRepo()}>
           {t("Open in Browser")}
-        </a>
+        </button>
       </div>
     </section>
   );

@@ -4,14 +4,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ask } from "@tauri-apps/plugin-dialog";
-import { useAppStore } from "@/shared/store";
+import { toast } from "sonner";
 import * as cmd from "@/shared/commands";
-import { BTN, TOGGLE } from "@/shared/lib/ui";
+import { Badge } from "@/shared/components/ui/badge";
+import { Button } from "@/shared/components/ui/button";
+import { Card, CardTitle } from "@/shared/components/ui/card";
+import { Switch } from "@/shared/components/ui/switch";
 import type { FastctxStatus } from "@/shared/types";
 
 export function FastctxCard() {
   const { t } = useTranslation();
-  const toast = useAppStore((s) => s.toast);
   const [status, setStatus] = useState<FastctxStatus>({
     installed: false,
     version: null,
@@ -24,9 +26,9 @@ export function FastctxCard() {
     try {
       setStatus(await cmd.fastctxDetect());
     } catch (e) {
-      toast(t("fastctx detection failed: {{error}}", { error: String(e) }), "error");
+      toast.error(t("fastctx detection failed: {{error}}", { error: String(e) }));
     }
-  }, [t, toast]);
+  }, [t]);
 
   useEffect(() => {
     void refresh();
@@ -46,26 +48,26 @@ export function FastctxCard() {
       let st = status;
       if (!st.installed) {
         await cmd.fastctxInstall();
-        toast(t("fastctx installed; integrating…"), "info");
+        toast.info(t("fastctx installed; integrating…"));
         st = await cmd.fastctxDetect();
         setStatus(st);
       }
       if (st.integrated) {
         await cmd.fastctxUnapply();
-        toast(t("fastctx unapplied; restart Codex sessions to take full effect"), "info");
+        toast.info(t("fastctx unapplied; restart Codex sessions to take full effect"));
       } else {
         const res = await cmd.fastctxApply();
-        toast(t("fastctx integrated; restart Codex sessions to activate"), "success");
+        toast.success(t("fastctx integrated; restart Codex sessions to activate"));
         if (!res.selfCheckPassed) {
           const line =
             res.selfCheckOutput.split("\n").find((l) => l.includes("[FAIL]")) ??
             res.selfCheckOutput.split("\n")[0] ??
             "";
-          toast(t("fastctx self-check failed: {{line}} (open the console to troubleshoot)", { line }), "error");
+          toast.error(t("fastctx self-check failed: {{line}} (open the console to troubleshoot)", { line }));
         }
       }
     } catch (e) {
-      toast(t("fastctx operation failed: {{error}}", { error: String(e) }), "error");
+      toast.error(t("fastctx operation failed: {{error}}", { error: String(e) }));
     } finally {
       setBusy(false);
       await refresh();
@@ -74,13 +76,13 @@ export function FastctxCard() {
 
   const openConsole = async () => {
     if (!status.installed) {
-      toast(t("fastctx not detected; turn on the integration toggle to install it automatically"), "error");
+      toast.error(t("fastctx not detected; turn on the integration toggle to install it automatically"));
       return;
     }
     try {
       await cmd.fastctxOpenConsole();
     } catch (e) {
-      toast(t("Failed to open console: {{error}}", { error: String(e) }), "error");
+      toast.error(t("Failed to open console: {{error}}", { error: String(e) }));
     }
   };
 
@@ -93,25 +95,24 @@ export function FastctxCard() {
         : t("Installed{{version}}, not integrated", { version: status.version ? ` (${status.version})` : "" });
 
   return (
-    <div className="mt-4 rounded-xl border border-border bg-card text-card-foreground flex flex-col gap-3 p-4">
-      <div className="text-sm font-medium">FastCtx</div>
+    <Card className="px-(--card-spacing) shadow-xs">
+      <CardTitle className="text-sm">FastCtx</CardTitle>
 
-      <label className="flex flex-1 cursor-pointer items-center justify-between gap-4 rounded-lg border border-border p-3" id="fastctx-row">
+      <label htmlFor="toggle-fastctx" className="flex flex-1 cursor-pointer items-center justify-between gap-4 rounded-lg border border-border p-3" id="fastctx-row">
         <span className="flex flex-col gap-0.5">
           <span className="text-sm">{t("Integrate fastctx repo tools (MCP)")}</span>
-          <span className="text-xs opacity-60">
+          <span className="text-xs text-muted-foreground">
             {t("Provides structured read/grep/glob/replace/run tools for Codex. Integrate = fastctx apply; unapply = fastctx unapply (removes ~/.fastctx managed data; the npm package stays and can be re-integrated anytime).")}
           </span>
         </span>
-        <input type="checkbox" className={TOGGLE} id="toggle-fastctx"
-          checked={status.integrated} onChange={() => void toggle()} />
+        <Switch id="toggle-fastctx" checked={status.integrated} onCheckedChange={() => void toggle()} />
       </label>
 
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-sm">{statusText}</div>
+          <div className="text-sm tabular-nums">{statusText}</div>
           {!status.installed && (
-            <div className="mt-1.5 text-xs opacity-60">
+            <div className="mt-1.5 text-xs tabular-nums text-muted-foreground">
               {t("fastctx not detected; turning on the toggle will install it automatically via")}{" "}
               <span className="font-mono">npm install --global fastctx</span>{" "}
               {t("(requires Node.js 18+).")}
@@ -119,18 +120,18 @@ export function FastctxCard() {
           )}
         </div>
         {status.latestVersion && (
-          <span className="shrink-0 rounded-full bg-primary/15 px-2.5 py-0.5 font-mono text-xs text-primary">
+          <Badge variant="secondary" className="shrink-0 font-mono tabular-nums">
             {`v${status.latestVersion}`}
-          </span>
+          </Badge>
         )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <button className={BTN} onClick={() => void openConsole()}>{t("Open fastctx Console")}</button>
-        <span className="text-xs opacity-60">
+        <Button variant="outline" onClick={() => void openConsole()}>{t("Open fastctx Console")}</Button>
+        <span className="text-xs text-muted-foreground">
           {t("Output tier, background jobs and updates are managed in the fastctx console")}
         </span>
       </div>
-    </div>
+    </Card>
   );
 }

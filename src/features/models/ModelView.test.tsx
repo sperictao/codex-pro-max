@@ -126,7 +126,9 @@ describe("预设保存与删除", () => {
     render(<ModelView />);
     await screen.findByText("Scout");
 
-    await user.click(screen.getAllByRole("button", { name: "Delete" })[1]);
+    await user.click(screen.getAllByRole("button", { name: "More actions" })[1]);
+    // Delete 已收进 ⋯ 菜单（craft-spec 步骤 1..6）
+    await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
 
     expect(askMock).toHaveBeenCalledTimes(1);
     expect(cmd.modelPresetDelete).toHaveBeenCalledWith("p1");
@@ -160,7 +162,9 @@ describe("供应商保存与删除", () => {
     render(<ModelView />);
     await screen.findByText("DeepSeek");
 
-    await user.click(screen.getAllByRole("button", { name: "Delete" })[0]);
+    await user.click(screen.getAllByRole("button", { name: "More actions" })[0]);
+    // Delete 已收进 ⋯ 菜单（craft-spec 步骤 1..6）
+    await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
 
     expect(cmd.modelProviderDelete).toHaveBeenCalledWith("deepseek");
   });
@@ -171,7 +175,9 @@ describe("供应商保存与删除", () => {
     render(<ModelView />);
     await screen.findByText("DeepSeek");
 
-    await user.click(screen.getAllByRole("button", { name: "Delete" })[0]);
+    await user.click(screen.getAllByRole("button", { name: "More actions" })[0]);
+    // Delete 已收进 ⋯ 菜单（craft-spec 步骤 1..6）
+    await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
 
     expect(cmd.modelProviderDelete).not.toHaveBeenCalled();
   });

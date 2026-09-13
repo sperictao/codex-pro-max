@@ -4,7 +4,7 @@ import { SelectCard } from "@/shared/components/SelectCard";
 import { THEME_FAMILIES } from "@/shared/theme-families";
 import type { ThemeMode } from "@/shared/theme";
 
-// 外观分区：模式三卡 + 41 族色板卡网格（色板卡局部 data-theme 渲染该族亮主题缩略）
+// 外观分区：模式三卡 + 42 族色板卡网格（色板卡局部 data-theme 渲染该族亮主题缩略）
 const MODE_OPTIONS: { id: ThemeMode; labelKey: string; preview: "both" | "light" | "dark" }[] = [
   { id: "system", labelKey: "Follow System", preview: "both" },
   { id: "light", labelKey: "Light", preview: "light" },
@@ -66,7 +66,7 @@ export function AppearanceSection() {
         ))}
       </div>
 
-      <p className="mt-4 text-xs opacity-60">
+      <p className="mt-4 text-xs text-muted-foreground">
         {t("Theme changes apply immediately. With Follow System, the theme switches automatically with the OS appearance.")}
       </p>
     </section>

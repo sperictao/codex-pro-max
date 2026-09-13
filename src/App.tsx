@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
 import { getVersion } from "@tauri-apps/api/app";
@@ -9,6 +10,7 @@ import { log } from "./shared/logger";
 import { currentConfigDraft } from "./shared/config";
 import { i18n } from "./shared/i18n";
 import { Toaster } from "./shared/components/Toaster";
+import { Button } from "./shared/components/ui/button";
 import { openRepo } from "./shared/lib/links";
 import { UpdateBadge } from "./features/updater/UpdateBadge";
 import { HomeView } from "./features/home/HomeView";
@@ -95,7 +97,7 @@ export function App() {
         await useAppStore.getState().refreshUpdaterHealth();
         void useAppStore.getState().checkForUpdates(true);
       } catch (e) {
-        useAppStore.getState().toast(i18n.t("Initialization failed: {{error}}", { error: String(e) }), "error");
+        toast.error(i18n.t("Initialization failed: {{error}}", { error: String(e) }));
       }
     })();
 
@@ -128,27 +130,24 @@ export function App() {
 
   return (
     <>
-      <header className="flex shrink-0 items-center justify-between border-b border-border px-4 py-2.5">
+      <header className="flex h-(--header-height) shrink-0 items-center justify-between border-b border-border px-4">
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="cursor-pointer text-sm font-semibold"
-            title="GitHub"
-            onClick={() => void openRepo()}
-          >
+          <Button variant="ghost" size="sm" className="font-semibold" title="GitHub" onClick={() => void openRepo()}>
             Codex Pro Max
-          </button>
+          </Button>
           <UpdateBadge />
         </div>
         <div className="flex items-center gap-1">
           {NAV_ITEMS.filter((item) => item.view !== "guard" || guardEnabled).map((item) => (
-            <button
+            <Button
               key={item.view}
-              className={`header-btn${activeView === item.view ? " active" : ""}`}
+              variant={activeView === item.view ? "secondary" : "ghost"}
+              size="sm"
+              aria-current={activeView === item.view ? "page" : undefined}
               onClick={() => navigate(item.view)}
             >
               {item.labelKey ? t(item.labelKey) : "Skill"}
-            </button>
+            </Button>
           ))}
         </div>
       </header>

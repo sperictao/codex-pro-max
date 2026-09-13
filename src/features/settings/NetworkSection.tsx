@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "@/shared/store";
-import { INPUT_MONO } from "@/shared/lib/ui";
+import { Input } from "@/shared/components/ui/input";
 
 export function NetworkSection() {
   const { t } = useTranslation();
@@ -33,19 +33,19 @@ export function NetworkSection() {
 
       <div className="flex items-start gap-4 border-b border-border py-4">
         <label className="w-36 shrink-0 pt-2 text-sm font-medium" htmlFor="cfg-host">{t("Taskboard Host")}</label>
-        <input type="text" className={`${INPUT_MONO} max-w-xs`} id="cfg-host" value={host}
+        <Input type="text" className="font-mono max-w-xs tabular-nums" id="cfg-host" value={host}
           onChange={(e) => { setHost(e.target.value); setConfigField({ taskboard_host: e.target.value }); }} />
       </div>
 
       <div className="flex items-start gap-4 border-b border-border py-4">
         <label className="w-36 shrink-0 pt-2 text-sm font-medium" htmlFor="cfg-port">{t("Taskboard Port")}</label>
-        <input type="number" className={`${INPUT_MONO} max-w-[200px]`} id="cfg-port" value={port}
+        <Input type="number" className="font-mono max-w-[200px] tabular-nums" id="cfg-port" value={port}
           onChange={(e) => { setPort(e.target.value); setConfigField({ taskboard_port: parseInt(e.target.value, 10) || 0 }); }} />
       </div>
 
       <div className="flex items-start gap-4 py-4">
         <label className="w-36 shrink-0 pt-2 text-sm font-medium" htmlFor="cfg-cdp">{t("CDP Debug Port")}</label>
-        <input type="number" className={`${INPUT_MONO} max-w-[200px]`} id="cfg-cdp" value={cdp}
+        <Input type="number" className="font-mono max-w-[200px] tabular-nums" id="cfg-cdp" value={cdp}
           onChange={(e) => { setCdp(e.target.value); setConfigField({ cdp_port: parseInt(e.target.value, 10) || 0 }); }} />
       </div>
     </section>

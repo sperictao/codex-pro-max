@@ -1,5 +1,5 @@
 import { open as openUrl } from "@tauri-apps/plugin-shell";
-import { useAppStore } from "../store";
+import { toast } from "sonner";
 import { i18n } from "../i18n";
 
 export const REPO_URL = "https://github.com/sperictao/codex-pro-max";
@@ -9,6 +9,6 @@ export async function openRepo(): Promise<void> {
   try {
     await openUrl(REPO_URL);
   } catch (e) {
-    useAppStore.getState().toast(i18n.t("Failed to open link: {{error}}", { error: String(e) }), "error");
+    toast.error(i18n.t("Failed to open link: {{error}}", { error: String(e) }));
   }
 }

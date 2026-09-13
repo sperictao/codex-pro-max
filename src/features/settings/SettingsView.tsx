@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useAppStore, type SettingsSection } from "@/shared/store";
-import { BTN_PRIMARY } from "@/shared/lib/ui";
+import { Button } from "@/shared/components/ui/button";
 import { GeneralSection } from "./GeneralSection";
 import { AppearanceSection } from "./AppearanceSection";
 import { NetworkSection } from "./NetworkSection";
@@ -68,18 +68,21 @@ export function SettingsView() {
       <div className="flex h-full">
         <nav className="flex w-44 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border p-3">
           {SECTIONS.map((s) => (
-            <button
+            <Button
               key={s.id}
-              className={`nav-item${section === s.id ? " active" : ""}`}
+              variant={section === s.id ? "secondary" : "ghost"}
+              size="sm"
+              className="w-full justify-start gap-2"
+              aria-current={section === s.id ? "page" : undefined}
               onClick={() => setSettingsSection(s.id)}
             >
               {s.icon}
               <span>{t(s.labelKey)}</span>
-            </button>
+            </Button>
           ))}
         </nav>
 
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-4 md:p-6">
           {section === "general" && <GeneralSection />}
           {section === "appearance" && <AppearanceSection />}
           {section === "network" && <NetworkSection />}
@@ -88,9 +91,9 @@ export function SettingsView() {
           {section === "about" && <AboutSection />}
           {!footerHidden && (
             <div className="mt-4 flex justify-end border-t border-border pt-4" id="settings-footer">
-              <button className={BTN_PRIMARY} id="btn-save-config" onClick={() => void saveConfig()}>
+              <Button id="btn-save-config" onClick={() => void saveConfig()}>
                 {t("Save Settings")}
-              </button>
+              </Button>
             </div>
           )}
         </div>

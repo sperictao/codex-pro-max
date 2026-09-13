@@ -1,30 +1,23 @@
-import { useEffect, useState } from "react";
-import { useAppStore, type ToastItem } from "../store";
+import type { CSSProperties } from "react";
+import { Toaster as SonnerToaster } from "sonner";
 
-// Toaster：右下角堆叠，3 秒后 0.3s 淡出移除（行为与旧 toast 一致；JSX 默认转义文本）
+// Toast 由 sonner 拥有队列、定时、堆叠与滑动关闭（0b：store 的 toast 队列已删除）。
+// 样式按主题 token 重贴（craft-spec R1/R2/R9）；类型色在 style.css 里按 [data-type] 映射到状态 token。
+// duration 3300 冻结旧观感：3s 起淡出、3.3s 移除。
+const TOKEN_STYLE = {
+  "--normal-bg": "var(--popover)",
+  "--normal-text": "var(--popover-foreground)",
+  "--normal-border": "var(--border)",
+  "--border-radius": "var(--radius)",
+} as CSSProperties;
+
 export function Toaster() {
-  const toasts = useAppStore((s) => s.toasts);
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2" id="toast-container">
-      {toasts.map((item) => (
-        <Toast key={item.id} item={item} />
-      ))}
-    </div>
-  );
-}
-
-function Toast({ item }: { item: ToastItem }) {
-  const [fading, setFading] = useState(false);
-  useEffect(() => {
-    const timer = setTimeout(() => setFading(true), 3000);
-    return () => clearTimeout(timer);
-  }, []);
-  return (
-    <div
-      className={`toast ${item.type}`}
-      style={fading ? { opacity: 0, transition: "opacity 0.3s" } : undefined}
-    >
-      {item.message}
-    </div>
+    <SonnerToaster
+      position="bottom-right"
+      duration={3300}
+      style={TOKEN_STYLE}
+      className="toaster group"
+    />
   );
 }
