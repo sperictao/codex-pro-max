@@ -120,7 +120,7 @@ function FileModal({
   return (
     <Modal
       open={open}
-      onOverlayClick={onClose}
+      onRequestClose={onClose}
       labelledBy="guard-file-modal-title"
       title={editing ? t("Edit Guard File") : t("Add Guard File")}
     >
