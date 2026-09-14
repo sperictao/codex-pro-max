@@ -109,8 +109,7 @@ export function HomeView() {
   const services = useAppStore((s) => s.services);
   const servicesReceived = useAppStore((s) => s.servicesReceived);
   const refreshStatus = useAppStore((s) => s.refreshStatus);
-  const navigate = useAppStore((s) => s.navigate);
-  const setSettingsSection = useAppStore((s) => s.setSettingsSection);
+  const goto = useAppStore((s) => s.goto);
 
   const [startAllBusy, setStartAllBusy] = useState(false);
   const [stopAllBusy, setStopAllBusy] = useState(false);
@@ -159,8 +158,7 @@ export function HomeView() {
     const cfg = draft();
     if (!cfg.taskboard_path) {
       toast.error(t("Please configure the Taskboard path in Settings first"));
-      navigate("settings");
-      setSettingsSection("general");
+      goto("settings", "general");
       return;
     }
     setStartAllBusy(true);

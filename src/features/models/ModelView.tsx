@@ -94,7 +94,7 @@ function ProviderModal({
   return (
     <Modal
       open={open}
-      onOverlayClick={onClose}
+      onRequestClose={onClose}
       cardStyle={{ width: 560 }}
       title={editing ? t("Edit Provider") : t("Add Provider")}
     >
@@ -460,7 +460,7 @@ export function ModelView() {
       {/* 存预设：只需要一个名字，模型三字段取当前表单值 */}
       <Modal
         open={presetModal}
-        onOverlayClick={() => setPresetModal(false)}
+        onRequestClose={() => setPresetModal(false)}
         cardStyle={{ width: 460 }}
         title={t("Save current as preset")}
       >
