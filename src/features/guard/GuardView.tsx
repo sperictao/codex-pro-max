@@ -195,7 +195,7 @@ export function GuardView() {
   };
 
   return (
-    <main className="flex-1 overflow-y-auto p-4 md:p-6" id="guard-view">
+    <main className="app-page-scroll flex-1 overflow-y-auto" id="guard-view">
       <h2 className="mb-2 text-base font-semibold">{t("Config Guard")}</h2>
       <p className="mb-4 max-w-3xl text-xs leading-5 text-muted-foreground">
         {t("Apply = write the parameter value into its file (auto-backup to")}{" "}
