@@ -16,7 +16,8 @@ type HmacSha256 = Hmac<Sha256>;
 pub const CODEX_RUNNING_NO_CDP_MARK: &str = "CODEX_RUNNING_NO_CDP|";
 
 /// 纯路径判定：与 main.rs 的 Windows Codex 安装探测保持一致，同时排除 npm Codex CLI。
-/// 放在非 cfg(windows) 区域是为了让 Linux/macOS CI 也能覆盖 Windows 路径回归测试。
+/// Windows 正常构建使用；测试构建在其他平台也保留，以覆盖 Windows 路径回归。
+#[cfg(any(target_os = "windows", test))]
 fn is_desktop_codex_path(exe_name: &str, path: Option<&str>) -> bool {
     let name = exe_name.to_ascii_lowercase();
     if name == "chatgpt.exe" {
