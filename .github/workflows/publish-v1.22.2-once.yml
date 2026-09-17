@@ -1,0 +1,70 @@
+name: publish-v1.22.2-once
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/publish-v1.22.2-once.yml"
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TARGET_SHA: 9c4a1e6f35faf2cdf10afe745472984f6dab516f
+      RELEASE_TAG: v1.22.2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Verify release target
+        shell: bash
+        run: |
+          set -euo pipefail
+          git cat-file -e "${TARGET_SHA}^{commit}"
+          git show "${TARGET_SHA}:package.json" | grep -F '"version": "1.22.2"' >/dev/null
+          git show "${TARGET_SHA}:src-tauri/tauri.conf.json" | grep -F '"version": "1.22.2"' >/dev/null
+          git show "${TARGET_SHA}:src-tauri/Cargo.toml" | grep -F 'version = "1.22.2"' >/dev/null
+          git cat-file -e "${TARGET_SHA}:release-notes/${RELEASE_TAG}.md"
+
+      - name: Ensure release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_sha="$(git ls-remote --tags origin "refs/tags/${RELEASE_TAG}" | awk '{print $1}')"
+          if [[ -n "${remote_sha}" ]]; then
+            if [[ "${remote_sha}" != "${TARGET_SHA}" ]]; then
+              echo "${RELEASE_TAG} already exists at ${remote_sha}, expected ${TARGET_SHA}" >&2
+              exit 1
+            fi
+            echo "${RELEASE_TAG} already points to ${TARGET_SHA}"
+          else
+            git push origin "${TARGET_SHA}:refs/tags/${RELEASE_TAG}"
+          fi
+
+      - name: Dispatch build-release on release tag
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl -sS -o /tmp/dispatch-body -w '%{http_code}' \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/build-release.yml/dispatches" \
+            -d "{\"ref\":\"${RELEASE_TAG}\"}")"
+          if [[ "${code}" != "204" ]]; then
+            cat /tmp/dispatch-body >&2 || true
+            echo "workflow dispatch failed with HTTP ${code}" >&2
+            exit 1
+          fi
+          echo "build-release dispatched for ${RELEASE_TAG}"
