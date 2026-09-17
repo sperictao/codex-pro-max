@@ -67,7 +67,7 @@ jobs:
       - name: Ensure taskboard resource dirs exist
         run: mkdir -p vendor/dashi-taskboard/dist/web
       - name: Install vendored taskboard dependencies
-        run: npm --prefix vendor/dashi-taskboard install
+        run: npm --prefix vendor/dashi-taskboard ci
       - name: Clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
       - name: Test
