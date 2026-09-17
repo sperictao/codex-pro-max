@@ -282,7 +282,7 @@ export function ModelView() {
         : t("No auth");
 
   return (
-    <main className="flex-1 overflow-y-auto p-4 md:p-6" id="model-view">
+    <main className="app-page-scroll flex-1 overflow-y-auto" id="model-view">
       <h2 className="mb-4 text-base font-semibold">{t("Models")}</h2>
 
       {/* 当前模型 */}

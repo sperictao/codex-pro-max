@@ -1,0 +1,55 @@
+/*
+ * Shared content width and gutters for top-level workspaces.
+ *
+ * Keep scroll containers full-width while constraining the usable page content
+ * to the same responsive measure used by dsh-pro-max. This is the single
+ * source of truth for page width and outer spacing across top-level views.
+ */
+:root {
+  --app-page-max-width: 48rem;
+  --app-page-gutter: 1rem;
+}
+
+@media (min-width: 40rem) {
+  :root {
+    --app-page-gutter: 1.5rem;
+  }
+}
+
+@media (min-width: 64rem) {
+  :root {
+    --app-page-max-width: 56rem;
+  }
+}
+
+@media (min-width: 80rem) {
+  :root {
+    --app-page-max-width: 64rem;
+  }
+}
+
+@media (min-width: 96rem) {
+  :root {
+    --app-page-max-width: 72rem;
+  }
+}
+
+.app-page-width {
+  max-width: var(--app-page-max-width);
+}
+
+/*
+ * Top-level views own vertical scrolling. Keep their scrollbars at the window
+ * edge and grow the horizontal padding once the shared max width is reached.
+ */
+.app-page-scroll {
+  min-width: 0;
+  padding-block: var(--app-page-gutter);
+  padding-inline: max(var(--app-page-gutter), calc((100% - var(--app-page-max-width)) / 2));
+}
+
+/* Settings keeps a persistent sidebar, so its content pane uses the same gutter
+ * while an inner .app-page-width wrapper owns the maximum readable width. */
+.app-page-gutter {
+  padding: var(--app-page-gutter);
+}

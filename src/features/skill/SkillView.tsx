@@ -69,7 +69,7 @@ export function SkillView() {
   const detail = detectError ?? status?.detail ?? "";
 
   return (
-    <main className="flex-1 overflow-y-auto p-4 md:p-6" id="skill-view">
+    <main className="app-page-scroll flex-1 overflow-y-auto" id="skill-view">
       <h2 className="mb-4 text-base font-semibold">Codex Skill</h2>
       <Card className="max-w-2xl shadow-xs">
         <CardHeader>
