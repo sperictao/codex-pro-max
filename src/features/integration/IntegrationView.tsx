@@ -7,7 +7,7 @@ import { FastctxCard } from "./FastctxCard";
 export function IntegrationView() {
   const { t } = useTranslation();
   return (
-    <main className="flex-1 overflow-y-auto p-4 md:p-6" id="integration-view">
+    <main className="app-page-scroll flex-1 overflow-y-auto" id="integration-view">
       <h2 className="mb-4 text-base font-semibold">{t("Integrations")}</h2>
       <FastctxCard />
     </main>
