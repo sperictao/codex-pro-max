@@ -50,30 +50,34 @@ jobs:
               '[[package]]\nname = "codex-pro-max"\nversion = "1.22.0"',
               '[[package]]\nname = "codex-pro-max"\nversion = "1.22.3"',
           )
-          replace_once(
-              ".github/workflows/quality.yml",
-              "      - name: Install vendored taskboard dependencies\n        run: npm --prefix vendor/dashi-taskboard install",
-              "      - name: Install vendored taskboard dependencies\n        run: npm --prefix vendor/dashi-taskboard ci",
-          )
-          replace_once(
-              ".github/workflows/build-release.yml",
-              "      - name: Checkout\n        uses: actions/checkout@v5\n      - name: Setup Node",
-              "      - name: Checkout\n        uses: actions/checkout@v5\n        with:\n          submodules: recursive\n      - name: Setup Node",
-          )
           PY
 
           cat > scripts/check-release.mjs <<'EOF'
           #!/usr/bin/env node
           // 发布前置校验（本地打 tag 前与 CI validate job 共用）：
           //   必查：package.json / tauri.conf.json / Cargo.toml / Cargo.lock 四处版本一致
-          //   必查：Taskboard 运行时资源白名单完整，且预构建阶段应存在的 submodule 路径真实存在
+          //   必查：Taskboard 运行时资源白名单完整，且固定 submodule 中预构建阶段应存在的资源真实存在
           //         dist/web 与 node_modules 由 build:taskboard 在后续构建阶段生成，因此预检仅校验其映射存在
           //   --tag <vX.Y.Z>：追加校验 tag 与版本一致 + release-notes/<tag>.md 存在
           // 用法：node scripts/check-release.mjs [--tag v0.12.2]
+          import { execFileSync } from "node:child_process";
           import { existsSync, readFileSync } from "node:fs";
           import { dirname, resolve } from "node:path";
 
           const read = (p) => readFileSync(p, "utf8");
+          const taskboardPackagePath = "vendor/dashi-taskboard/package.json";
+          if (!existsSync(taskboardPackagePath)) {
+            try {
+              execFileSync(
+                "git",
+                ["submodule", "update", "--init", "--recursive", "vendor/dashi-taskboard"],
+                { stdio: "inherit" },
+              );
+            } catch (error) {
+              console.error("✗ 无法初始化 vendor/dashi-taskboard submodule");
+              process.exit(1);
+            }
+          }
 
           const pkgVersion = JSON.parse(read("package.json")).version;
           const tauriConfPath = "src-tauri/tauri.conf.json";
@@ -133,7 +137,6 @@ jobs:
             }
           }
 
-          const taskboardPackagePath = "vendor/dashi-taskboard/package.json";
           if (existsSync(taskboardPackagePath)) {
             const taskboardPkg = JSON.parse(read(taskboardPackagePath));
             if (taskboardPkg.engines?.node !== ">=22.5") {
@@ -164,8 +167,8 @@ jobs:
           ## Changes
 
           - Repackage the bundled `dashi-taskboard` at `c9fb80c` (`v1.1.23`) after reviewing the current upstream runtime changes. New runtime files remain covered by the existing `server` / `shared` / `scripts` / `cli` / `inject` resource roots, so the bundle whitelist is not widened unnecessarily.
-          - Switch vendored Taskboard dependency installation from `npm install` to `npm ci` in both release builds and CI, making the packaged web UI and runtime dependencies follow the submodule lockfile exactly.
-          - Strengthen release preflight: initialize submodules during validation, verify the required Taskboard resource contract, and validate the `dashi-taskboard` Node engine requirement before packaging.
+          - Switch vendored Taskboard dependency installation from `npm install` to `npm ci` in release builds and CI, making the packaged web UI and runtime dependencies follow the submodule lockfile exactly.
+          - Strengthen release preflight: initialize the pinned Taskboard submodule when needed, verify the required Taskboard resource contract, and validate the `dashi-taskboard` Node engine requirement before packaging.
           - Sync the release version to `1.22.3` across `package.json`, Tauri config, `Cargo.toml`, and the root package entry in `Cargo.lock`; release validation now checks all four locations.
           EOF
 
@@ -176,7 +179,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock \
-            .github/workflows/quality.yml .github/workflows/build-release.yml \
             scripts/check-release.mjs release-notes/v1.22.3.md
           git diff --cached --check
           git commit -m "release: prepare v1.22.3 taskboard repack"
