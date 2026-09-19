@@ -1,7 +1,7 @@
 {
   "name": "codex-pro-max",
   "private": true,
-  "version": "1.22.0",
+  "version": "1.22.3",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "tauri": "node scripts/tauri.mjs",
     "build:updater": "node scripts/build-updater.mjs",
-    "build:taskboard": "npm --prefix vendor/dashi-taskboard install && npm --prefix vendor/dashi-taskboard run build:web",
+    "build:taskboard": "npm --prefix vendor/dashi-taskboard ci && npm --prefix vendor/dashi-taskboard run build:web",
     "ensure:taskboard": "node -e \"require('fs').mkdirSync('vendor/dashi-taskboard/dist/web',{recursive:true})\"",
     "check:craft": "node scripts/check-craft.mjs",
     "check:release": "node scripts/check-release.mjs",

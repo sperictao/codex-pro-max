@@ -109,8 +109,7 @@ export function HomeView() {
   const services = useAppStore((s) => s.services);
   const servicesReceived = useAppStore((s) => s.servicesReceived);
   const refreshStatus = useAppStore((s) => s.refreshStatus);
-  const navigate = useAppStore((s) => s.navigate);
-  const setSettingsSection = useAppStore((s) => s.setSettingsSection);
+  const goto = useAppStore((s) => s.goto);
 
   const [startAllBusy, setStartAllBusy] = useState(false);
   const [stopAllBusy, setStopAllBusy] = useState(false);
@@ -159,8 +158,7 @@ export function HomeView() {
     const cfg = draft();
     if (!cfg.taskboard_path) {
       toast.error(t("Please configure the Taskboard path in Settings first"));
-      navigate("settings");
-      setSettingsSection("general");
+      goto("settings", "general");
       return;
     }
     setStartAllBusy(true);
@@ -240,7 +238,7 @@ export function HomeView() {
   const allStopped = list.every((s) => s.status === "stopped" || s.status === "failed");
 
   return (
-    <main className="flex-1 overflow-y-auto p-4 md:p-6" id="main-view">
+    <main className="app-page-scroll flex-1 overflow-y-auto" id="main-view">
       <div className="status-indicator" id="service-status-indicator" role="status" aria-live="polite">
         <div className="status-indicator-icon-container">
           <div className={`status-indicator-icon ${indicator.state}`} aria-hidden="true">

@@ -19,9 +19,9 @@ export function SettingsView() {
   const footerHidden = section === "about" || section === "appearance" || section === "guard";
 
   return (
-    <main className="min-h-0 flex-1" id="settings-view">
-      <div className="flex h-full">
-        <nav className="flex w-44 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border p-3">
+    <main className="min-h-0 min-w-0 flex-1" id="settings-view">
+      <div className="flex h-full min-w-0">
+        <nav className="flex w-52 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border p-3">
           {SECTIONS.map((s) => (
             <Button
               key={s.id}
@@ -37,20 +37,24 @@ export function SettingsView() {
           ))}
         </nav>
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-6">
-          {section === "general" && <GeneralSection />}
-          {section === "appearance" && <AppearanceSection />}
-          {section === "network" && <NetworkSection />}
-          {section === "mode" && <ModeSection />}
-          {section === "guard" && <GuardSettingsSection />}
-          {section === "about" && <AboutSection />}
-          {!footerHidden && (
-            <div className="mt-4 flex justify-end border-t border-border pt-4" id="settings-footer">
-              <Button id="btn-save-config" onClick={() => void saveConfig()}>
-                {t("Save Settings")}
-              </Button>
+        <div className="min-w-0 flex-1 overflow-y-auto">
+          <div className="app-page-gutter min-h-full">
+            <div className="app-page-width mx-auto w-full">
+              {section === "general" && <GeneralSection />}
+              {section === "appearance" && <AppearanceSection />}
+              {section === "network" && <NetworkSection />}
+              {section === "mode" && <ModeSection />}
+              {section === "guard" && <GuardSettingsSection />}
+              {section === "about" && <AboutSection />}
+              {!footerHidden && (
+                <div className="mt-4 flex justify-end border-t border-border pt-4" id="settings-footer">
+                  <Button id="btn-save-config" onClick={() => void saveConfig()}>
+                    {t("Save Settings")}
+                  </Button>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
     </main>

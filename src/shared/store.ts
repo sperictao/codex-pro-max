@@ -77,8 +77,7 @@ interface AppStore {
   // 主题（localStorage 是唯一事实来源，store 是渲染镜像）
   themeMode: ThemeMode;
   themeFamily: string;
-  navigate: (view: View) => void;
-  /** 显式跳转（命令面板用）：不带顶栏的 toggle 语义，可同时落到某个设置分区 */
+  /** 幂等跳转；section 仅在显式传入时更新。入口自己的 toggle 行为不得放进全局导航。 */
   goto: (view: View, section?: SettingsSection) => void;
   setSettingsSection: (section: SettingsSection) => void;
   setThemeMode: (mode: ThemeMode) => void;
@@ -124,15 +123,6 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   themeMode: getStoredTheme(readStored("theme")),
   themeFamily: getStoredFamily(readStored("theme-family")),
 
-  // 设置/集成是 toggle 语义：已在该视图时再点回主页（旧 nav.ts 行为）
-  navigate: (view) => {
-    const cur = get().activeView;
-    if ((view === "settings" || view === "integration") && cur === view) {
-      set({ activeView: "home" });
-    } else {
-      set({ activeView: view });
-    }
-  },
   goto: (view, section) => set(section ? { activeView: view, settingsSection: section } : { activeView: view }),
   setSettingsSection: (section) => set({ settingsSection: section }),
 

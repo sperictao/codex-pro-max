@@ -46,18 +46,18 @@
 
 | 原语 | 引入时的调用点 | 依赖 | 状态 |
 | --- | --- | --- | --- |
-| Button（含 ButtonGroup） | 49 个 `<button>` + 7 个类串常量 | cva | ✅ |
+| Button | 49 个 `<button>` + 7 个类串常量 | cva | ✅ |
 | Input / Textarea | 31 | — | ✅ |
 | Select | 7 个原生 `<select>` | radix-ui | ✅ |
 | Switch | 8（7× 假开关 + 1× `.text-switch`） | radix-ui | ✅ |
 | Card | 10 处重复卡片块 | — | ✅ |
-| Dialog | `Modal` 壳 + 6 处调用 | radix-ui | ✅ 取代手写遮罩，顺带拿到焦点陷阱与 Escape |
+| Dialog | `Modal` 壳 + 6 处调用 | radix-ui | ✅ 取代手写遮罩，可关闭弹窗同时获得焦点陷阱与 Escape |
 | Badge | 状态徽章 4 文件 + Active/版本胶囊 | — | ✅ |
 | Tooltip | 看守参数说明悬浮卡 | radix-ui | ✅ 取代手写绝对定位说明卡 |
-| Separator | 顶栏竖分隔 | — | ✅ |
-| DropdownMenu | 0（先给首屏接线） | radix-ui | ✅ 看守参数/文件行与模型供应商/预设行的 Delete 收进 `⋯`，主操作留行内 |
-| Command（cmdk） | 0（需真实入口才算功能） | cmdk | ✅ Cmd/Ctrl+K 面板 + 顶栏搜索入口，清单复用 `shared/navigation` |
+| DropdownMenu | 看守参数/文件行 + 模型供应商/预设行 | radix-ui | ✅ Delete 收进 `⋯`，主操作留行内 |
+| Command（cmdk） | Cmd/Ctrl+K 面板 + 顶栏搜索入口 | cmdk | ✅ 清单复用 `shared/navigation` |
 | Toast（sonner） | store 队列 + `Toaster.tsx` + `.toast` recipe | sonner | ✅ |
+| ButtonGroup / Separator | 0 | — | ❌ **不预置**：当前没有真实调用点；需要时与第一个调用点同提交引入 |
 | Table | 0 | — | ❌ **不引入**：全仓没有需要表格密度的屏（看守参数带内联编辑器、模型与预设列表各只有 2–4 行）；为凑调用点而引入正是本节反对的「囤原语」。将来真出现表格场景时再按调用点引入 |
 
 **胶囊约定**：状态/版本胶囊一律 `<Badge variant="secondary">`，**不允许调用点自写着色**（原 `bg-primary/15 text-primary` 那类着色已统一移除）；需要等宽数字时加 `font-mono`。
@@ -84,9 +84,9 @@
 **移植适配（必读，改动原语或新增原语前先看这里）**
 
 - **暗面变体**：本项目的暗色是 `<html data-theme="<族id>-dark">`，不是 `.dark` 类。`src/style.css` 必须保留 `@custom-variant dark (&:is([data-theme$="-dark"] *));`——去掉它，上游原语里的全部 `dark:` 工具类会静默失效（实测产物中 `prefers-color-scheme` 出现 0 次）。
-- **导入改写**：上游原语用 npm 的 `cn` 包与 `@/components/ui/*` 路径；本仓改为 `@/shared/lib/utils` 与相对导入 `./button` / `./separator`，并删掉 `"use client"` 指令（Vite SPA 下无意义）。
+- **导入改写**：上游原语用 npm 的 `cn` 包与 `@/components/ui/*` 路径；本仓改为 `@/shared/lib/utils` 与原语间相对导入（如 `./button`），并删掉 `"use client"` 指令（Vite SPA 下无意义）。
 - **同名 token 不是自引用**：`--shadow-xs` 等顶层 token 名与 Tailwind 主题名同名。`@theme inline { --shadow-xs: var(--shadow-xs); }` 不会自引用——`inline` 不产出该自定义属性，工具类直接内联 `var(--shadow-xs)`，值由 `[data-theme]` 作用域提供（实测 `.shadow-xs{--tw-shadow:var(--shadow-xs)}`）。
-- **状态变体必须重映射（最容易踩的坑）**：配方用的是布尔简写（`data-open:` / `data-checked:` / `data-horizontal:` …），Tailwind 把它们编译成 `[data-open]` 这类存在性选择器；但本仓装的 `radix-ui` 只发 `data-state` / `data-orientation`。**缺了 `style.css` 里那 8 条 `@custom-variant` 重映射，这些状态样式会静默失效**——实测表现为 Switch 轨道透明（控件不可见）、Dialog/Select 无进场动画、Separator 无尺寸。新增原语时若用到别的简写（如 `data-highlighted:`），必须同步加重映射。已知残留：`data-placeholder:` 无人设置（上游同样是死代码），只影响未选值时的占位文字颜色。
+- **状态变体必须重映射（最容易踩的坑）**：配方用的是布尔简写（`data-open:` / `data-checked:` / `data-horizontal:` …），Tailwind 把它们编译成 `[data-open]` 这类存在性选择器；但本仓装的 `radix-ui` 只发 `data-state` / `data-orientation`。**缺了 `style.css` 里那 8 条 `@custom-variant` 重映射，这些状态样式会静默失效**——实测表现为 Switch 轨道透明（控件不可见）、Dialog/Select 无进场动画。新增原语时若用到别的简写（如 `data-highlighted:`），必须同步加重映射。已知残留：`data-placeholder:` 无人设置（上游同样是死代码），只影响未选值时的占位文字颜色。
 - **sonner 覆盖提权**：sonner 自带 `[data-sonner-toast][data-styled=true]` 规则且在本文件之后进入 bundle，覆盖必须加 `html` 前缀（`html [data-sonner-toast]…`）。
 
 8. Toast 换 sonner（**可拆为独立提交 0b 以便单独回滚**）：删 store 队列与 `.toast` recipe，约 57 处 `store().toast(msg, type)` 改为直连 `toast.success/error/info`（`guard/ops.ts` 32 处、`ModelView` 16 处、`HomeView` 15 处最集中），`guard.test.tsx` 的 4 条 `getState().toasts` 断言改为 spy sonner。
@@ -95,18 +95,21 @@
 
 `home` → `guard`（DropdownMenu 接管参数行操作、Tooltip 接管参数说明）→ `models`（Select 主战场；DropdownMenu 复用）→ `integration` → `settings` → `updater`
 
-每屏的完成标志：该屏不再引用已删除的类串、无裸颜色字面量、所有交互元素五态齐备、间距落在 R8 带内、`check-craft` 通过。
+每屏的完成标志：该屏不再引用已删除的类串、无裸颜色字面量、关键交互原语满足显式状态契约、间距落在 R8 带内；页面级行为由 Vitest / smoke 继续覆盖。
 
 **保留项**：产品语义 recipe（`.select-card` / `.status-badge` / 时间轴 / 模式预览 / 状态指示器）不是原语，保留为 recipe 类，但必须改读 token 且不得写死颜色。
 
-## 5. 一致性门（`scripts/check-craft.mjs`，v1）
+## 5. 一致性门（`scripts/check-craft.mjs`，v2）
 
 1. `src/shared/lib/ui.ts` 不得存在。
 2. `src/**/*.tsx` 与 `src/style.css` 不得出现颜色字面量（`#hex` / `rgb(` / `rgba(` / `hsl(` / `oklch(`）；每处例外必须同行带 `craft-allow-color` 标记注释。`src/themes.css`（生成物）不在扫描范围。
-3. `src/style.css` 的 `@theme inline` 必须含 shadow 阶梯、`radius-2xl/3xl/4xl`、`font-heading`、`sidebar`、`chart` 桥。
-4. 每个 `src/shared/components/ui/*.tsx` 必须含状态四元组片段；容器/展示型原语（Separator/Card/Dialog/Tooltip）与用 roving focus 的菜单类（DropdownMenu 用 `data-highlighted`/`:focus` 表达高亮）用 `craft-allow-no-states` 声明豁免并写明原因。
+3. `src/style.css` 的 `@theme inline` 必须完整包含 shadow 阶梯、`radius-2xl/3xl/4xl`、`font-heading`、全部 `sidebar-*` 与 `chart-1..5` 桥。
+4. 关键交互原语按**自身交互模型**登记并检查明确状态契约：Button 检查 focus/hover/pressed/disabled；Input/Textarea 检查 focus/invalid/disabled；Select 检查 trigger focus/invalid/disabled 与 item focus；Switch 检查 focus/checked/unchecked/disabled；Command/DropdownMenu 这类 roving-focus 组件检查 selected/focus 与 disabled。**不接受“文件里任意位置出现一次 `focus-visible`”或文件级豁免注释作为通过条件。**
 5. `src/**/*.tsx` 不得出现原生 `<select`。
 6. `src/shared/store.ts` 不得再出现 toast 队列状态（`toasts`）；`src/style.css` 不得出现 `.toast` recipe。
+7. `src/shared/components/ui/*.tsx` 每个原语都必须有 UI 层之外的真实 import 调用点；零调用点原语不得预置，需要时与第一个调用点同提交引入。
+
+`check-craft` 只保证以上可静态验证的约束；它**不等价于**完整 UI/UX、可访问性或交互回归测试。键盘流程、弹层行为、页面状态机仍由 Vitest 与 smoke/e2e 承担。
 
 ## 6. 与既有决策的关系
 

@@ -15,6 +15,28 @@ type HmacSha256 = Hmac<Sha256>;
 #[allow(dead_code)] // Linux 构建无此流程
 pub const CODEX_RUNNING_NO_CDP_MARK: &str = "CODEX_RUNNING_NO_CDP|";
 
+/// 纯路径判定：与 main.rs 的 Windows Codex 安装探测保持一致，同时排除 npm Codex CLI。
+/// Windows 正常构建使用；测试构建在其他平台也保留，以覆盖 Windows 路径回归。
+#[cfg(any(target_os = "windows", test))]
+fn is_desktop_codex_path(exe_name: &str, path: Option<&str>) -> bool {
+    let name = exe_name.to_ascii_lowercase();
+    if name == "chatgpt.exe" {
+        return true;
+    }
+    if name != "codex.exe" {
+        return false;
+    }
+
+    let Some(path) = path else { return false };
+    let path = path.replace('/', "\\").to_ascii_lowercase();
+    path.contains("\\openai\\codex\\")
+        || path.contains("\\programs\\codex\\")
+        || path.contains("\\program files\\codex\\")
+        || path.contains("\\microsoft\\windowsapps\\codex.exe")
+        || path.contains("\\windowsapps\\openai.codex_")
+        || path.contains("\\windowsapps\\openai.codexbeta_")
+}
+
 /// 枚举桌面版 Codex/ChatGPT 进程 PID（仅 Windows）
 /// codex.exe 必须按路径复核（CLI 同名，在 npm 全局目录，误杀会毁掉用户 CLI 会话）；
 /// chatgpt.exe 无同名 CLI，按名匹配即可
@@ -49,19 +71,8 @@ fn codex_processes() -> Vec<u32> {
 
 #[cfg(target_os = "windows")]
 fn is_desktop_codex(exe_name: &str, pid: u32) -> bool {
-    let name = exe_name.to_lowercase();
-    if name == "chatgpt.exe" {
-        return true;
-    }
-    if name == "codex.exe" {
-        return process_path(pid)
-            .map(|p| {
-                let p = p.to_lowercase();
-                p.contains("\\openai\\codex\\") || p.contains("\\windowsapps\\openai.")
-            })
-            .unwrap_or(false);
-    }
-    false
+    let path = process_path(pid);
+    is_desktop_codex_path(exe_name, path.as_deref())
 }
 
 /// 查进程完整路径；无权访问（系统进程等）时返回 None，调用方按非目标处理
@@ -580,15 +591,28 @@ async fn ensure_codex_cdp(
                 })?;
         }
     }
-    // 等窗口和 CDP 就绪，最多 15 秒
-    for _ in 0..30 {
+    // Windows 冷启动/商店版首次启动更慢，最多等 30 秒；其他平台维持 15 秒。
+    let cdp_wait_rounds = if cfg!(target_os = "windows") { 60 } else { 30 };
+    for _ in 0..cdp_wait_rounds {
         if cdp_reachable(port) {
             return Ok(());
         }
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
-    // Windows 上 new_instance 被忽略（无法强制新实例），超时多半意味着 Codex 已在
-    // 运行且没带调试参数——单实例激活会丢弃参数，故两种模式给出一致提示
+
+    // Windows：启动后再检查一次进程。若 Codex 已经起来但 CDP 仍未监听，说明调试参数
+    // 没有生效（最常见是单实例激活吞掉参数）。返回现有标记，让前端走关闭并重启流程。
+    #[cfg(target_os = "windows")]
+    if !codex_processes().is_empty() {
+        let err = format!(
+            "{}{}",
+            CODEX_RUNNING_NO_CDP_MARK,
+            tr("Codex is already running without the CDP debug port")
+        );
+        log::error!("[ensure_codex_cdp] {}", err);
+        return Err(err);
+    }
+
     Err(if new_instance && cfg!(target_os = "macos") {
         let err = trf("Timed out waiting for Codex CDP port {port} to be ready", &[("port", port.to_string())]);
         log::error!("[ensure_codex_cdp] {}", err);
@@ -896,7 +920,10 @@ impl ProcessManager {
 
 #[cfg(test)]
 mod tests {
-    use super::{hmac_proof, refresh_liveness, resolve_node, ManagedProcess, ProcessStatus};
+    use super::{
+        hmac_proof, is_desktop_codex_path, refresh_liveness, resolve_node, ManagedProcess,
+        ProcessStatus,
+    };
 
     #[test]
     fn resolves_existing_node() {
@@ -907,6 +934,30 @@ mod tests {
         if node != "node" {
             assert!(std::path::Path::new(&node).exists(), "探测结果不存在: {}", node);
         }
+    }
+
+    #[test]
+    fn windows_codex_desktop_paths_match_supported_install_locations() {
+        let paths = [
+            r"C:\Users\tester\AppData\Local\OpenAI\Codex\bin\Codex.exe",
+            r"C:\Users\tester\AppData\Local\Programs\Codex\Codex.exe",
+            r"C:\Program Files\Codex\Codex.exe",
+            r"C:\Program Files\WindowsApps\OpenAI.Codex_1.2.3.0_x64__2p2nqsd0c76g0\app\Codex.exe",
+            r"C:\Users\tester\AppData\Local\Microsoft\WindowsApps\Codex.exe",
+        ];
+        for path in paths {
+            assert!(
+                is_desktop_codex_path("Codex.exe", Some(path)),
+                "desktop Codex path was not recognized: {path}"
+            );
+        }
+        assert!(is_desktop_codex_path("ChatGPT.exe", None));
+    }
+
+    #[test]
+    fn windows_codex_cli_path_is_not_treated_as_desktop_app() {
+        let cli = r"C:\Users\tester\AppData\Roaming\npm\node_modules\@openai\codex\vendor\x86_64-pc-windows-msvc\codex\codex.exe";
+        assert!(!is_desktop_codex_path("Codex.exe", Some(cli)));
     }
 
     #[test]

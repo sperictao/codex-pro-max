@@ -31,7 +31,7 @@ export function App() {
   const { t } = useTranslation();
   const activeView = useAppStore((s) => s.activeView);
   const guardEnabled = useAppStore((s) => s.guardState.enabled);
-  const navigate = useAppStore((s) => s.navigate);
+  const goto = useAppStore((s) => s.goto);
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   // Cmd/Ctrl+K 开关命令面板
@@ -135,8 +135,8 @@ export function App() {
 
   // 看守总开关关闭且当前在看守页 → 跳回主页（旧 renderGuardToggle 行为）
   useEffect(() => {
-    if (!guardEnabled && activeView === "guard") navigate("home");
-  }, [guardEnabled, activeView, navigate]);
+    if (!guardEnabled && activeView === "guard") goto("home");
+  }, [guardEnabled, activeView, goto]);
 
   return (
     <>
@@ -166,7 +166,11 @@ export function App() {
               variant={activeView === item.view ? "secondary" : "ghost"}
               size="sm"
               aria-current={activeView === item.view ? "page" : undefined}
-              onClick={() => navigate(item.view)}
+              onClick={() => {
+                const toggleBack =
+                  activeView === item.view && (item.view === "settings" || item.view === "integration");
+                goto(toggleBack ? "home" : item.view);
+              }}
             >
               {item.labelKey ? t(item.labelKey) : "Skill"}
             </Button>
