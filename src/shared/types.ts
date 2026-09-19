@@ -131,7 +131,7 @@ export interface DownloadProgress {
 
 // ============ 模型配置（config.toml 模型域；见 features/models） ============
 
-/// 模型预设：一组可一键应用的模型组合（预设库在启动器配置，应用即写 config.toml）
+/** 模型预设：一组可一键应用的模型组合（预设库在启动器配置，应用即写 config.toml） */
 export interface ModelPreset {
   id: string;
   label: string;
@@ -140,19 +140,125 @@ export interface ModelPreset {
   effort: string;
 }
 
-export interface ModelProviderView {
-  id: string;
-  name: string;
-  baseUrl: string;
-  envKey: string;
-  bearerToken: string;
-  active: boolean;
-}
-
-export interface ModelConfigView {
+/** config.toml 顶层三键；空 = 删键回落 Codex 默认 */
+export interface ActiveModelView {
   model: string;
   provider: string;
   effort: string;
-  providers: ModelProviderView[];
+}
+
+/**
+ * 一个 `[model_providers.<id>]` 段的投影。
+ * 托管字段强类型；`extra` 承载 Codex 新增/未文档化的键，编辑时原样保留。
+ * 密钥明文永不回传：`bearerToken` 只写不读，存在性看 `hasBearerToken`。
+ */
+export interface ProviderSchema {
+  route: string;
+  name: string | null;
+  baseURL: string | null;
+  envKey: string | null;
+  /** 只写：空串 = 清除磁盘上的 experimental_bearer_token */
+  bearerToken?: string;
+  hasBearerToken: boolean;
+  wireApi: string | null;
+  queryParams: Record<string, string>;
+  httpHeaders: Record<string, string>;
+  envHttpHeaders: Record<string, string>;
+  requestMaxRetries: number | null;
+  streamMaxRetries: number | null;
+  streamIdleTimeoutMs: number | null;
+  startupTimeoutMs: number | null;
+  toolTimeoutSec: number | null;
+  requiresOpenaiAuth: boolean | null;
+  supportsWebsockets: boolean | null;
+  /** 非托管键原样透传 */
+  extra: unknown;
+  /** 表里出现过但本应用不认识的键名（只读提示） */
+  unknownKeys: string[];
+}
+
+/** 目录条目：models.dev 中一款模型的容量与能力声明 */
+export interface CatalogEntry {
+  provider: string;
+  id: string;
+  name: string;
+  context: number | null;
+  maxTokens: number | null;
+  input: string[];
+  reasoning: boolean;
+  reasoningLevels: string[];
+}
+
+/** 目录视图：按已配置路由筛选后的条目 + 快照新鲜度 */
+export interface CatalogView {
+  /** 从未拉取或缓存损坏：UI 显示引导而不是空表 */
+  missing: boolean;
+  fetchedAt: number;
+  stale: boolean;
+  providers: Record<string, CatalogEntry[]>;
+}
+
+/** 环境变量引用的来源层；只有 user-env 是本应用能写的 */
+export type CredentialSource = "process" | "user-env" | "project-env";
+
+export interface CredentialInfo {
+  configured: boolean;
+  source: CredentialSource | null;
+  writable: boolean;
+}
+
+export interface CredentialEntry {
+  name: string;
+  info: CredentialInfo;
+}
+
+/** 模型页视图：一次取齐，无密钥明文 */
+export interface ModelConfigView {
+  active: ActiveModelView;
+  providers: ProviderSchema[];
   presets: ModelPreset[];
+  catalog: CatalogView;
+  credentials: CredentialEntry[];
+  /** 可选推理档；档位表只有 Rust 一处事实来源 */
+  efforts: string[];
+}
+
+/** 连通性验证结果：失败也是正常结果，不抛错 */
+export interface ConnectionResult {
+  ok: boolean;
+  endpoint: string;
+  authenticated: boolean;
+  status: number | null;
+  modelCount: number | null;
+  error: string | null;
+}
+
+export interface RemoteModel {
+  id: string;
+}
+
+/** 一个可导入候选；凭据明文永不进入本结构 */
+export interface ImportCandidate {
+  key: string;
+  route: string;
+  name: string;
+  baseURL: string | null;
+  wireApi: string | null;
+  envKey: string | null;
+  /** env = 环境变量引用 | literal = 来源持明文（值不导入） | none */
+  credential: "env" | "literal" | "none";
+  models: string[];
+}
+
+export interface ImportGroup {
+  source: string;
+  entries: ImportCandidate[];
+}
+
+export interface ImportRunResult {
+  imported: number;
+  skipped: number;
+  failed: number;
+  /** 选中条目里来源持明文密钥的数量（提示补 env_key） */
+  literal: number;
 }

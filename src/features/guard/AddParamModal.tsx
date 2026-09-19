@@ -68,7 +68,7 @@ export function AddParamModal({
   return (
     <Modal
       open={open}
-      onOverlayClick={onClose}
+      onRequestClose={onClose}
       cardStyle={{ width: 560 }}
       title={t("Add Custom Parameter")}
     >

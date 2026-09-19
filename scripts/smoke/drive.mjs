@@ -358,6 +358,71 @@ check("导航：进入集成页", await visible("#integration-view"));
 await page.click("header button:has-text('Integrations')");
 check("导航：再点集成回主页", await visible("#main-view"));
 
+// ============ 模型视图 ============
+const DIALOG = '[data-slot="dialog-content"]';
+await page.click("header button:has-text('Models')");
+await page.waitForSelector("#model-view");
+check("模型视图：当前模型 id 回填", (await page.locator("#active-model-id").inputValue()) === "gpt-5-codex");
+check("模型视图：两个供应商各一行", (await txt("#model-view"))?.includes("Local vLLM"));
+check("模型视图：认证摘要显示环境变量名", (await txt("#model-view"))?.includes("Env var: DEEPSEEK_API_KEY"));
+check("模型视图：凭据来源可见", (await txt("#model-view"))?.includes("resolved from Process environment"));
+check("模型视图：wire 协议胶囊", await page.locator("#model-view [data-slot='badge']:has-text('responses')").count() > 0);
+check("模型视图：目录状态为最新", (await txt("#model-view"))?.includes("Catalog is up to date"));
+await shot("17-models");
+
+// 目录选模型：命中条目带出容量与推理档
+await page.click("#model-view button[aria-label='Pick a model']");
+await page.waitForSelector(DIALOG);
+check("选模型：目录条目可选", await page.locator(DIALOG + " button:has-text('DeepSeek Reasoner')").count() > 0);
+await shot("18-model-picker");
+await page.click(DIALOG + " button:has-text('DeepSeek Reasoner')");
+await page.waitForTimeout(400);
+check("选模型：写回模型 id", (await page.locator("#active-model-id").inputValue()) === "deepseek-reasoner");
+check("模型视图：命中目录后展示上下文窗口", (await txt("#model-view"))?.includes("Context window"));
+check("模型视图：展示最大输出", (await txt("#model-view"))?.includes("max output"));
+check("模型视图：展示推理标记", (await txt("#model-view"))?.includes("reasoning"));
+
+// Apply 三键
+await page.click("#model-view button:has-text('Apply')");
+await page.waitForSelector("[data-sonner-toast]:has-text('Model configuration applied')");
+check("模型视图：Apply 成功 toast", true);
+
+// 供应商编辑：完整字段 + 未知键透传提示
+await page.locator("#model-view button:has-text('Edit')").first().click();
+await page.waitForSelector(DIALOG);
+check("供应商编辑：wire 协议已回填", (await page.locator("#provider-wire-api").textContent())?.includes("responses"));
+check("供应商编辑：静态请求头回填", (await page.locator("#provider-http-headers-key-0").inputValue()) === "X-Smoke");
+check("供应商编辑：环境变量请求头回填", (await page.locator("#provider-env-headers-key-0").inputValue()) === "X-Trace");
+check("供应商编辑：重试次数回填", (await page.locator("#provider-requestMaxRetries").inputValue()) === "4");
+check("供应商编辑：未知键只读列出", (await txt(DIALOG))?.includes("future_key"));
+await shot("19-provider-dialog");
+
+// 连通性验证
+await page.click(DIALOG + " button:has-text('Test connection')");
+await page.waitForTimeout(400);
+check("供应商编辑：连通性展示 HTTP 200", (await txt(DIALOG))?.includes("HTTP 200"));
+check("供应商编辑：连通性展示模型数", (await txt(DIALOG))?.includes("2 models"));
+await page.click(DIALOG + " button:has-text('Cancel')");
+await page.waitForTimeout(300);
+
+// 导入：来源分组与凭据类型区分
+await page.click("#model-view button:has-text('Import providers')");
+await page.waitForSelector(DIALOG);
+check("导入：来源分组渲染", (await txt(DIALOG))?.includes("opencode"));
+check("导入：明文密钥只提示不导入", (await txt(DIALOG))?.includes("Holds a literal key"));
+check("导入：环境变量引用可识别", (await txt(DIALOG))?.includes("Env var: RELAY_KEY"));
+await shot("20-import-dialog");
+await page.click(DIALOG + " button:has-text('Cancel')");
+await page.waitForTimeout(300);
+
+// 破坏性行操作收进 ⋯ 菜单
+await page.click("#model-view button[aria-label='More actions']");
+await page.waitForSelector('[data-slot="dropdown-menu-content"]');
+check("模型视图：Delete 收进 ⋯ 菜单", await page.locator("[role='menuitem']:has-text('Delete')").count() > 0);
+await page.keyboard.press("Escape");
+await page.waitForTimeout(250);
+
+
 // ============ 命令面板（Cmd+K） ============
 await page.click('header button[aria-label="Command Palette"]');
 await page.waitForSelector('[data-slot="command-input"]');

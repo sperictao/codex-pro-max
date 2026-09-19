@@ -4,15 +4,22 @@
 import { invoke } from "@tauri-apps/api/core";
 import { log } from "./logger";
 import type {
+  CatalogView,
+  ConnectionResult,
+  CredentialEntry,
   CustomParamPayload,
   FastctxApplyResult,
   FastctxStatus,
   GuardFileView,
   GuardView,
+  ImportGroup,
+  ImportRunResult,
   LauncherConfig,
   ModelConfigView,
   ModelPreset,
   ProcessInfo,
+  ProviderSchema,
+  RemoteModel,
   SkillStatus,
   UpdateInfo,
   UpdaterConfigHealth,
@@ -97,18 +104,38 @@ export const installUpdate = (expectedVersion: string | null) =>
 export const modelConfigView = () => invokeTyped<ModelConfigView>("model_config_view");
 export const modelApply = (model: string, provider: string, effort: string) =>
   invokeTyped<void>("model_apply", { model, provider, effort });
-export const modelProviderSave = (p: {
-  id: string;
-  name: string;
-  baseUrl: string;
-  envKey: string;
-  bearerToken: string;
-}) => invokeTyped<void>("model_provider_save", p);
+/** bearerToken 语义：null = 保持磁盘原值；"" = 显式清除；非空 = 写入新值 */
+export const modelProviderSave = (
+  provider: ProviderSchema,
+  bearerToken: string | null,
+  previousUnknownKeys: string[] = [],
+) => invokeTyped<void>("model_provider_save", { provider, bearerToken, previousUnknownKeys });
 export const modelProviderDelete = (id: string) =>
   invokeTyped<void>("model_provider_delete", { id });
 export const modelPresetSave = (preset: ModelPreset) =>
   invokeTyped<void>("model_preset_save", { preset });
 export const modelPresetDelete = (id: string) => invokeTyped<void>("model_preset_delete", { id });
+
+// 目录（models.dev 快照）：刷新是显式动作，视图读取只走缓存
+export const modelCatalogRefresh = () => invokeTyped<CatalogView>("model_catalog_refresh");
+
+// 凭据：环境变量引用的就绪状态与用户级 .env 写入
+export const modelCredentialDescribe = (names: string[]) =>
+  invokeTyped<CredentialEntry[]>("model_credential_describe", { names });
+/** value 为 null = 从 ~/.codex/.env 删除该变量 */
+export const modelCredentialSet = (name: string, value: string | null) =>
+  invokeTyped<void>("model_credential_set", { name, value });
+
+// 连通性与远端模型列表
+export const modelTestConnection = (provider: ProviderSchema) =>
+  invokeTyped<ConnectionResult>("model_test_connection", { provider });
+export const modelRemoteList = (provider: ProviderSchema) =>
+  invokeTyped<RemoteModel[]>("model_remote_list", { provider });
+
+// 从本机其他 agent 工具导入供应商声明
+export const modelImportScan = () => invokeTyped<ImportGroup[]>("model_import_scan");
+export const modelImportRun = (keys: string[]) =>
+  invokeTyped<ImportRunResult>("model_import_run", { keys });
 
 // ============ 语言 ============
 export const getResolvedLanguage = () => invokeTyped<string>("get_resolved_language");

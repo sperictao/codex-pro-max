@@ -26,6 +26,58 @@ const config: AnyRec = {
 };
 let resolvedLanguage = "en";
 
+// ============ 模型域 fixture ============
+// 形态与 Rust 侧 ModelConfigView 一致：视图不含任何密钥明文，
+// 直填密钥只以 hasBearerToken 表达存在性。
+const modelView: AnyRec = {
+  active: { model: "gpt-5-codex", provider: "deepseek", effort: "low" },
+  providers: [
+    {
+      route: "deepseek", name: "DeepSeek", baseURL: "https://api.deepseek.com/v1",
+      envKey: "DEEPSEEK_API_KEY", bearerToken: "", hasBearerToken: false,
+      wireApi: "responses", queryParams: {}, httpHeaders: { "X-Smoke": "1" },
+      envHttpHeaders: { "X-Trace": "SMOKE_TRACE" }, requestMaxRetries: 4,
+      streamMaxRetries: 5, streamIdleTimeoutMs: 300000, startupTimeoutMs: null,
+      toolTimeoutSec: null, requiresOpenaiAuth: null, supportsWebsockets: null,
+      extra: {}, unknownKeys: ["future_key"],
+    },
+    {
+      route: "local", name: "Local vLLM", baseURL: "http://127.0.0.1:8000/v1",
+      envKey: null, bearerToken: "", hasBearerToken: false, wireApi: null,
+      queryParams: {}, httpHeaders: {}, envHttpHeaders: {}, requestMaxRetries: null,
+      streamMaxRetries: null, streamIdleTimeoutMs: null, startupTimeoutMs: null,
+      toolTimeoutSec: null, requiresOpenaiAuth: null, supportsWebsockets: null,
+      extra: {}, unknownKeys: [],
+    },
+  ],
+  presets: [{ id: "p1", label: "Scout", model: "deepseek-chat", provider: "deepseek", effort: "low" }],
+  catalog: {
+    missing: false, fetchedAt: 1760000000, stale: false,
+    providers: {
+      deepseek: [
+        { provider: "deepseek", id: "deepseek-chat", name: "DeepSeek Chat", context: 128000, maxTokens: 8192, input: ["text"], reasoning: false, reasoningLevels: [] },
+        { provider: "deepseek", id: "deepseek-reasoner", name: "DeepSeek Reasoner", context: 128000, maxTokens: 65536, input: ["text"], reasoning: true, reasoningLevels: ["low", "medium", "high"] },
+      ],
+    },
+  },
+  credentials: [
+    { name: "DEEPSEEK_API_KEY", info: { configured: true, source: "process", writable: false } },
+    { name: "SMOKE_TRACE", info: { configured: false, source: null, writable: true } },
+  ],
+  efforts: ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+};
+
+const importGroups = [
+  {
+    source: "opencode",
+    entries: [
+      { key: "opencode:relay", route: "relay", name: "Relay", baseURL: "https://relay.dev/v1", wireApi: null, envKey: "RELAY_KEY", credential: "env", models: ["m1", "m2"] },
+      { key: "opencode:plain", route: "plain", name: "Plain", baseURL: "https://plain.dev/v1", wireApi: null, envKey: null, credential: "literal", models: [] },
+    ],
+  },
+  { source: "claude-code", entries: [] },
+];
+
 const processes: AnyRec[] = [
   { name: "taskboard-server", status: "stopped", pid: null, message: "" },
   { name: "injector", status: "stopped", pid: null, message: "" },
@@ -177,6 +229,53 @@ const routes: Record<string, (args: AnyRec) => any> = {
   guard_remove_file: ({ id }) => { guardFiles = guardFiles.filter((x) => x.id !== id); },
   guard_get_schema_file_path: () => "/tmp/schema.json",
   guard_relativize_picked_path: ({ absPath }) => String(absPath).replace(/^.*\.codex\//, ""),
+
+  // —— 模型域：语义与 Rust 侧一致（空 = 删键；密钥只上行不下行）——
+  model_config_view: () => structuredClone(modelView),
+  model_apply: ({ model, provider, effort }) => {
+    modelView.active = { model, provider, effort };
+  },
+  model_provider_save: ({ provider, bearerToken }) => {
+    const saved = structuredClone(provider);
+    // bearerToken 三态：null = 保持原值，"" = 清除，非空 = 写入
+    saved.hasBearerToken = bearerToken === null ? saved.hasBearerToken : String(bearerToken).length > 0;
+    const i = modelView.providers.findIndex((p: AnyRec) => p.route === saved.route);
+    if (i >= 0) modelView.providers[i] = saved;
+    else modelView.providers.push(saved);
+  },
+  model_provider_delete: ({ id }) => {
+    modelView.providers = modelView.providers.filter((p: AnyRec) => p.route !== id);
+    if (modelView.active.provider === id) modelView.active.provider = "openai";
+  },
+  model_preset_save: ({ preset }) => {
+    modelView.presets.push({ ...preset, id: preset.id || `p-${modelView.presets.length + 1}` });
+  },
+  model_preset_delete: ({ id }) => {
+    modelView.presets = modelView.presets.filter((p: AnyRec) => p.id !== id);
+  },
+  model_catalog_refresh: () => structuredClone(modelView.catalog),
+  model_credential_describe: ({ names }) =>
+    (names as string[]).map((name) => ({
+      name,
+      info: modelView.credentials.find((c: AnyRec) => c.name === name)?.info ?? { configured: false, source: null, writable: true },
+    })),
+  model_credential_set: () => null,
+  model_test_connection: ({ provider }) => ({
+    ok: true,
+    endpoint: `${String(provider.baseURL).replace(/\/$/, "")}/models`,
+    authenticated: !!provider.envKey || !!provider.bearerToken,
+    status: 200,
+    modelCount: 2,
+    error: null,
+  }),
+  model_remote_list: () => [{ id: "deepseek-chat" }, { id: "deepseek-reasoner" }],
+  model_import_scan: () => structuredClone(importGroups),
+  model_import_run: ({ keys }) => ({
+    imported: (keys as string[]).length,
+    skipped: 0,
+    failed: 0,
+    literal: (keys as string[]).filter((k) => k.startsWith("opencode:plain")).length,
+  }),
 
   check_skill_status: () => ({ state: "installed", detail: "Symlink 指向 /opt/dashi-taskboard", targetPath: "/opt/dashi-taskboard" }),
   install_skill: () => "Installed to ~/.codex/skills/manage-taskboard",

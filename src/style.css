@@ -413,64 +413,6 @@ html [data-sonner-toast][data-type="info"] { border-color: var(--primary); }
 .guard-param-actual.bad { color: var(--destructive); }
 /* 参数说明与操作区：手写悬浮卡已换 Tooltip 原语，操作区改为常显（悬停才显隐会让控件键盘不可达）。
    .guard-param-card 只作为选择钩子保留（guard.test.tsx 的 closest 与冒烟脚本依赖它）。 */
-/* 通用带文字开关：胶囊内部显示状态文字，旋钮位移随宽度自动计算
-   用法：<input type="checkbox" class="text-switch" data-state-text="已启用" style="--sw-width: 4rem">
-   - data-state-text：胶囊内的文字（随状态切换由调用方更新）
-   - --sw-width：胶囊宽度，默认 6.25rem；最短文字可收窄，旋钮位移 = 宽度 - 24px 自动算出 */
-.text-switch {
-  position: relative;
-  flex-shrink: 0;
-  width: var(--sw-width, 6.25rem); /* 默认 100px：最长文字 "Disabled"（12px ≈ 52px）居中后两侧各留 ≥2px */
-  height: 1.5rem;       /* 24px，与 h-6 按钮齐平 */
-  appearance: none;
-  border: none;
-  border-radius: 9999px;
-  background: var(--input);
-  cursor: pointer;
-  outline: none;
-  transition: background-color 0.2s ease;
-}
-.text-switch:checked { background: var(--primary); }
-.text-switch:disabled { cursor: not-allowed; opacity: 0.5; }
-.text-switch:focus-visible { box-shadow: 0 0 0 2px var(--ring); }
-/* 旋钮：20px，上下左右各留 2px，checked 位移 = 宽度 - 2*2 - 20 */
-.text-switch::before {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--background);
-  box-shadow: var(--shadow-xs);
-  /* 弹性滑动：轻微过冲回弹，比线性 ease 更有质感 */
-  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.text-switch:checked::before { transform: translateX(calc(var(--sw-width, 6.25rem) - 24px)); }
-/* 按下时旋钮轻微缩小，给触摸反馈 */
-.text-switch:active:not(:disabled)::before { transform: scale(0.85); }
-.text-switch:checked:active:not(:disabled)::before { transform: translateX(calc(var(--sw-width, 6.25rem) - 24px)) scale(0.85); }
-/* 状态文字：始终居中，置于旋钮之上 */
-.text-switch::after {
-  content: attr(data-state-text);
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 1;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
-  white-space: nowrap;
-  opacity: 0.7;
-  pointer-events: none;
-  transition: color 0.2s ease, opacity 0.2s ease;
-}
-.text-switch:checked::after {
-  color: var(--primary-foreground);
-  opacity: 1;
-}
 
 /* 更新进度条 */
 .update-progress-track {

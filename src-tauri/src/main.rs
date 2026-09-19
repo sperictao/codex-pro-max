@@ -12,7 +12,13 @@ mod codex_guard;
 mod fastctx;
 mod i18n;
 mod logging;
+mod model_catalog;
 mod model_config;
+mod model_credentials;
+mod model_import;
+mod model_manifest;
+mod model_remote;
+mod model_schema;
 mod process_manager;
 mod updater;
 mod version;
@@ -1126,6 +1132,13 @@ pub fn run() {
             model_config::model_provider_delete,
             model_config::model_preset_save,
             model_config::model_preset_delete,
+            model_config::model_catalog_refresh,
+            model_config::model_credential_describe,
+            model_config::model_credential_set,
+            model_remote::model_test_connection,
+            model_remote::model_remote_list,
+            model_import::model_import_scan,
+            model_import::model_import_run,
             updater::get_updater_config_health,
             updater::get_updater_help_paths,
             updater::check_update,

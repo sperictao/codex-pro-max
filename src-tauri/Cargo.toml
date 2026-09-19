@@ -21,8 +21,12 @@ tauri-plugin-autostart = "2"
 tauri-plugin-window-state = "2"
 tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# preserve_order：模型目录快照按上游顺序渲染，TOML extra 透传保序
+serde_json = { version = "1", features = ["preserve_order"] }
 toml_edit = "0.22"
+# 模型目录快照（models.dev 全量 JSON）与供应商连通性验证：
+# rustls 免系统 openssl 依赖，gzip 压缩传输；异步客户端（联网命令走 async）
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "gzip"] }
 tokio = { version = "1", features = ["full"] }
 log = "0.4"
 sys-locale = "0.3"

@@ -122,12 +122,11 @@ function ParamCard({ p }: { p: GuardParamView }) {
           )}
         </div>
         <span className="flex w-[30%] shrink-0 flex-row flex-wrap items-center justify-end gap-1 self-center">
-          <input type="checkbox" className="text-switch"
-            data-state-text={p.applied ? t("Enabled") : t("Disabled")}
+          <Switch
             checked={p.applied} disabled={p.locked}
             title={p.applied ? t("Disable") : t("Enable")}
             aria-label={p.applied ? t("Disable") : t("Enable")}
-            onChange={() => void ops.toggleApplied(p.id)} />
+            onCheckedChange={() => void ops.toggleApplied(p.id)} />
           {p.locked ? (
             <Button variant="outline" size="sm" onClick={() => void ops.setLocked(p.id, false)}>
               {LOCK_SVG}{t("Unlock")}
@@ -195,7 +194,7 @@ export function GuardView() {
   };
 
   return (
-    <main className="flex-1 overflow-y-auto p-4 md:p-6" id="guard-view">
+    <main className="app-page-scroll flex-1 overflow-y-auto" id="guard-view">
       <h2 className="mb-2 text-base font-semibold">{t("Config Guard")}</h2>
       <p className="mb-4 max-w-3xl text-xs leading-5 text-muted-foreground">
         {t("Apply = write the parameter value into its file (auto-backup to")}{" "}

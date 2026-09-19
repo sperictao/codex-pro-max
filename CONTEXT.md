@@ -84,20 +84,32 @@
 
 ## 模型配置（Model Config）
 
-启动器的第四功能域：对 `~/.codex/config.toml` 模型域做可视化管理（参考 CCursor 的 Model Config）：当前模型切换、模型供应商增删改、模型预设库。
+启动器的第四功能域：对 `~/.codex/config.toml` 模型域做可视化管理：当前模型切换、模型供应商增删改、模型预设库，另加模型目录、凭据就绪状态、连通性验证与本机导入。设计决策见 [ADR 0012](docs/adr/0012-model-domain-rebuilt-to-codex-schema.md)。
 
 ### 术语
 
-- **当前模型（Active Model）** — config.toml 顶层 `model` / `model_provider` / `model_reasoning_effort` 三键。「应用」= 把三个字段写入 config.toml；三键统一「空 = 删键回落默认」，`model_provider` 为 `openai`（内置）与空等价。
-- **模型供应商（Provider）** — config.toml 的 `[model_providers.<id>]` 表：`name` / `base_url` / 认证（`env_key` 环境变量名 或 `experimental_bearer_token` 直填 Key，二选一，也可都空供本地无鉴权端点）。增删改直接读写 config.toml；id 创建后不可改，`openai` 为内置保留 id。
+- **当前模型（Active Model）** — config.toml 顶层 `model` / `model_provider` / `model_reasoning_effort` 三键。「应用」= 把三个字段写入 config.toml；三键统一「空 = 删键回落默认」，`model_provider` 为 `openai`（内置）与空等价。推理档取并集 `none | minimal | low | medium | high | xhigh | max`（官方参考表未列 `none`/`max`，但真实配置已在用），档位表只有 Rust `model_config::EFFORTS` 一处事实来源，前端经视图的 `efforts` 取用。
+- **模型供应商（Provider）** — config.toml 的 `[model_providers.<id>]` 表，覆盖 Codex 的全部托管键：`name`、`base_url`、`wire_api`（`chat` 缺省 / `responses`）、认证（`env_key` 环境变量名 或 `experimental_bearer_token` 直填 Key，二选一，也可都空供本地无鉴权端点）、`query_params`、`http_headers`、`env_http_headers`、`request_max_retries`、`stream_max_retries`、`stream_idle_timeout_ms`、`startup_timeout_ms`、`tool_timeout_sec`、`requires_openai_auth`、`supports_websockets`。增删改直接读写 config.toml；id 创建后不可改，`openai` 为内置保留 id。
+- **透传键（Extra）** — 托管键之外的键（Codex 演进中的新键，如未来的字段，或用户手写的 `[model_providers.<id>.y]` 子表）。投影进 `ProviderSchema.extra` 并在保存时原样写回；视图另列 `unknownKeys` 只读展示。保存时按"编辑前读到的键名单"先清后写，因此用户在 UI 里删掉的透传键会真的消失。
 - **模型预设（Preset）** — 存在启动器配置里的 `{label, model, provider, effort}` 组合，一键应用 = 写当前模型三键（与应用当前模型同一条写入路径）。config.toml 无此概念，预设库归启动器所有。
+- **模型目录（Catalog）** — models.dev 全量快照（约 27MB，与 CCursor / dsh 同源）的本地缓存，落在 `~/.codex-pro-max/models-cache.json`。它**不是事实来源**：只回答"官方标称多少上下文/输出、支持哪些输入模态与推理档"。前端拿到的是按已配置路由裁剪后的子集。
+- **模型状态（Model Status）** — 某路由下某个模型 id 与目录的关系，四态：`no-catalog`（目录未下载）、`unlisted`（目录不覆盖该路由，本地自建端点常见，不告警）、`unknown`（目录覆盖该路由但无此 id，提示可能拼写错误）、`listed`（命中，带出容量与推理档）。
+- **凭据就绪（Credential Readiness）** — `env_key` 引用的变量在 Codex 可见的哪一层有非空值。三层按优先级：**进程环境**（Codex 作为子进程继承，只读）→ **用户级 `~/.codex/.env`**（本应用可写，唯一能被 UI 修复的一层）→ **项目级 `.env`**（只读）。
+- **连通性验证（Connection Test）** — 按供应商的 base_url 与鉴权拼出 `GET {base}/models` 并读回 OpenAI 兼容列表。**失败也是正常结果**（网络失败、401、超时都进结果结构），UI 展示"哪一步没通"，不弹错误 toast。
+- **导入（Import）** — 扫描本机其他 agent 工具（Codex 自身、Claude Code、opencode、常见 `*_API_KEY` 环境变量）已声明的供应商，导入成 `[model_providers.*]`。只搬**环境变量引用**；来源持明文密钥的一律不读取、不展示、不落盘。
 
 ### 语义边界
 
 - config.toml 是唯一事实来源：不落第二份 providers.json；视图数据在进入页面与每次操作后从 config.toml 现读，不轮询（无锁定语义，区别于看守域的「锁定 + 60s 轮询」）。
 - 与看守域共享 config.toml 但键集不相交：本域只动 `model` / `model_provider` / `model_reasoning_effort` / `[model_providers.*]`；`model_context_window`、`model_auto_compact_token_limit` 归看守域。
+- **托管键之外一律不动**：未知键进 `extra` 原样写回，不留「可见即被删」的陷阱。托管键统一「空 = 删键」，因此 config.toml 里不会留下 `base_url = ""` 这类空壳。
+- **密钥只写不读**：`bearer_token` 标 `skip_serializing`，任何视图、日志、调试输出都带不出真值；存在性由 `has_bearer_token` 表达。编辑已有供应商时密钥输入框留空 = 保持磁盘原值（`None`），显式清空 = 删除键（`Some("")`）。
+- **注释与排版保留**：写入走 toml_edit 的就地改写（类型相容时只换 value），用户写在托管键上的注释不因同表其他键的增删而丢；手写的子表不被抹掉。
+- 目录只做提示不设准入：本地端点的模型按定义不在目录里，用目录拒绝 id 会拦下完全合法的配置。目录缺失/损坏按「没有目录」降级，不让模型页报错。
 - 删除使用中的供应商 = 同时删 `model_provider` 键（回落内置 OpenAI）；引用它的预设不回滚，应用时报「供应商不存在」。删除供应商/预设不回滚已写入的键（与看守域「不回滚」一致）。
 - 保存预设时校验 provider 已定义（或为内置/空），避免攒下注定失败的预设；每次写入 config.toml 前备份到 `~/.codex/dashi-backups/`（与看守域同一备份机制）。
+- 导入不覆盖：已存在的路由由后端跳过。凭据只带走环境变量引用，明文来源只计数提示。
+
 
 ## 启动器壳（Shell）
 

@@ -21,7 +21,7 @@ import { SettingsView } from "./features/settings/SettingsView";
 import { SkillView } from "./features/skill/SkillView";
 import { GuardView } from "./features/guard/GuardView";
 import { IntegrationView } from "./features/integration/IntegrationView";
-import { ModelView } from "./features/models/ModelView";
+import { ModelsView } from "./features/models/ModelsView";
 
 // 快捷键提示按平台显示（macOS ⌘ / 其余 Ctrl+）
 const PRIMARY_MODIFIER =
@@ -178,7 +178,7 @@ export function App() {
       {activeView === "settings" && <SettingsView />}
       {activeView === "skill" && <SkillView />}
       {activeView === "guard" && <GuardView />}
-      {activeView === "models" && <ModelView />}
+      {activeView === "models" && <ModelsView />}
       {activeView === "integration" && <IntegrationView />}
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       <Toaster />

@@ -62,6 +62,10 @@
 
 **胶囊约定**：状态/版本胶囊一律 `<Badge variant="secondary">`，**不允许调用点自写着色**（原 `bg-primary/15 text-primary` 那类着色已统一移除）；需要等宽数字时加 `font-mono`。
 
+**布尔字段一律用 Switch 原语**：全仓 checkbox（看守的假开关、模型域的 `requires_openai_auth` / `supports_websockets` / 导入候选多选）都作开关用，一律 `<Switch>`，不写裸 `<input type="checkbox">`。
+
+**域内组件不进原语层**：`src/features/models/` 下的 `ProviderDialog` / `ModelPickerDialog` / `ImportDialog` / `HeadersEditor` 组合原语、承载本域语义（供应商字段、目录条目、请求头行），留在域内；原语层的判定标准仍是「跨域复用且无领域语义」。纯推导（校验、归一化、目录判定、格式化）放同目录 `ops.ts`，便于脱离 DOM 单测。
+
 **不引入**：Checkbox（全仓 checkbox 均作开关用，0 真实调用点）；`cn` npm 包（已有 `clsx + tailwind-merge`）。
 
 **sonner 落法**：`Toaster.tsx` 改为 sonner 的薄包装，位置右下（与现行为一致），按上游配方重贴主题——`--normal-bg: var(--popover)`、`--normal-text: var(--popover-foreground)`、`--normal-border: var(--border)`、`--border-radius: var(--radius)`，图标强制 `size-4`。store 的 toast 队列状态（`toasts` / `dismissToast` / `ToastItem` / `ToastType`）与 `style.css` 的 `.toast` recipe **删除**，调用点直连 `toast.success/error/info`——队列若保留就是与 sonner 各自持有定时器（我们 3.3s、sonner 默认 4s），属于第二份真相。
