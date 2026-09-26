@@ -1,0 +1,57 @@
+name: publish-v1.23.1-once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/publish-v1.23.1-once.yml"
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TARGET_SHA: 15c9f975cde33cdf1bbbedb86e54575471cf40a4
+      RELEASE_TAG: v1.23.1
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      - name: Validate exact release commit and Taskboard
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout --detach "${TARGET_SHA}"
+          git submodule update --init --recursive vendor/dashi-taskboard
+          npm --prefix vendor/dashi-taskboard ci
+          npm --prefix vendor/dashi-taskboard run check
+          node scripts/check-release.mjs --tag "${RELEASE_TAG}"
+
+      - name: Create release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "Tag ${RELEASE_TAG} already exists; refusing to retarget it."
+            exit 1
+          fi
+          git push origin "${TARGET_SHA}:refs/tags/${RELEASE_TAG}"
+
+      - name: Dispatch build-release on tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run build-release.yml --ref "${RELEASE_TAG}"
