@@ -34,8 +34,11 @@ jobs:
           set -euo pipefail
           git checkout --detach "${TARGET_SHA}"
           git submodule update --init --recursive vendor/dashi-taskboard
-          npm --prefix vendor/dashi-taskboard ci
-          npm --prefix vendor/dashi-taskboard run check
+          (
+            cd vendor/dashi-taskboard
+            npm ci
+            npm run check
+          )
           node scripts/check-release.mjs --tag "${RELEASE_TAG}"
 
       - name: Create release tag
