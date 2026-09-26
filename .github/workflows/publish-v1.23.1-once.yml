@@ -37,7 +37,10 @@ jobs:
           (
             cd vendor/dashi-taskboard
             npm ci
-            npm run check
+            npm run typecheck
+            npm run build:web
+            node --test
+            npx vitest run web/src/components/MarkdownDocument.test.tsx --environment jsdom --config web/vite.config.ts
           )
           node scripts/check-release.mjs --tag "${RELEASE_TAG}"
 
